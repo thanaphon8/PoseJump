@@ -88,6 +88,10 @@ const HAND_MIN_VIS = 0.3;
 // เปิดเป็น true ถ้าต้องการดูเส้นโครงร่างตอนจูนระบบ
 const SHOW_SKELETON = false;
 
+// false = ภาพเต็มจอ ไม่มีแถบดำ (ตัดเฉพาะขอบซ้ายขวาที่เกินจอ ความสูงภาพไม่ถูกตัด จึงไม่ซูมแนวตั้ง)
+// true = แสดงภาพเต็มเฟรมทั้งภาพ แต่จะมีแถบดำบนล่าง
+const FORCE_CONTAIN = false;
+
 type Placement = {
   visible: boolean;
   distance: boolean;
@@ -945,10 +949,11 @@ export default function Home() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: facing },
-          // ภาพแนวตั้ง 9:16 เต็มจอมือถือ ความละเอียดพอให้เครื่องเก่าจับท่าได้ลื่น
-          width: { ideal: 540 },
-          height: { ideal: 960 },
-          aspectRatio: { ideal: 9 / 16 },
+          // ภาพแนวตั้ง 3:4 ตามสัดส่วนเซนเซอร์จริงของมือถือ ได้มุมกว้างเต็ม ไม่ถูกครอปจนดูซูม
+          // (เดิมขอ 9:16 ทำให้เบราว์เซอร์ตัดบนล่างของภาพทิ้งไปราว 25%)
+          width: { ideal: 600 },
+          height: { ideal: 800 },
+          aspectRatio: { ideal: 3 / 4 },
           frameRate: { ideal: 30, max: 30 },
         },
         audio: false,
@@ -958,6 +963,21 @@ export default function Home() {
         return;
       }
       streamRef.current = stream;
+
+      // ถ้ากล้องรองรับซูม ให้ตั้งไว้ที่ต่ำสุด (บางเครื่องคือมุมกว้างพิเศษ) ไม่รองรับก็ข้าม
+      try {
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities?.() as
+          | { zoom?: { min: number; max: number } }
+          | undefined;
+        if (caps?.zoom) {
+          await track.applyConstraints({
+            advanced: [{ zoom: caps.zoom.min } as MediaTrackConstraintSet],
+          });
+        }
+      } catch {
+        // ตั้งซูมไม่ได้ก็ใช้ค่าเดิม
+      }
 
       const video = videoRef.current;
       if (!video) throw new Error("ไม่พบ video element");
@@ -1316,8 +1336,9 @@ export default function Home() {
   const isPrep = phase === "positioning" || phase === "countdown";
   const flip = facing === "user" ? "-scale-x-100" : "";
   // จอสูงกว่าภาพ (มือถือแนวตั้ง) ให้ภาพเต็มจอ จอกว้างกว่าภาพ (แท็บเล็ต เดสก์ท็อป) ให้เห็นภาพครบ
+  // FORCE_CONTAIN = true แสดงภาพเต็มเฟรมไม่ครอปข้าง (จอยาวๆ จะมีแถบดำบนล่าง)
   const fit =
-    vp.w > 0 && vp.w / vp.h > vdim.w / vdim.h
+    FORCE_CONTAIN || (vp.w > 0 && vp.w / vp.h > vdim.w / vdim.h)
       ? "object-contain"
       : "object-cover";
 
