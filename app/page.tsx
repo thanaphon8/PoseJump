@@ -77,16 +77,20 @@ const MAX_BOTTOM = 0.97;
 const CENTER_TOL = 0.25;
 
 // ขั้นตอนตั้งมือถือด้วยไจโร (หน่วยเป็นองศา)
-// เอียงขึ้นลงและซ้ายขวาได้ไม่เกินเท่านี้ ถึงนับว่าตั้งตรง
+// มุมเป้าหมายของมือถือ (ค่า beta ของไจโร) 90 = ตั้งตรง น้อยกว่า 90 = เอนหลังหน้าจอเงยขึ้น
+// 80 = เอนหลังราว 10 องศา เหมือนพิงกำแพง กล้องเงยขึ้นนิดเดียวให้เห็นตั้งแต่ศีรษะถึงเท้า
+// กล้องหลังใช้มุมกลับด้าน (180 - ค่านี้) เพราะกล้องหันออกด้านตรงข้ามหน้าจอ
+const LEVEL_TARGET_BETA = 80;
+// คลาดจากมุมเป้าหมายและเอียงซ้ายขวาได้ไม่เกินเท่านี้ ถึงนับว่าได้มุม
 const LEVEL_TOL_DEG = 4;
 // ช่วงแกว่งสูงสุดภายในช่วงเวลา LEVEL_WINDOW_MS ที่ยังนับว่านิ่ง
 const LEVEL_JITTER_DEG = 1.2;
 const LEVEL_WINDOW_MS = 500;
 // ต้องตั้งตรงและนิ่งต่อเนื่องเท่านี้ ถึงไปขั้นสแกนตัว
 const LEVEL_HOLD_MS = 1500;
-// ลูกศรขยับกี่พิกเซลต่อ 1 องศา และขยับได้สูงสุดกี่องศา
-const LEVEL_PX_PER_DEG = 6;
-const LEVEL_RANGE_DEG = 25;
+// ปุ่มกลมขยับกี่พิกเซลต่อ 1 องศา และขยับได้สูงสุดกี่องศา
+const LEVEL_PX_PER_DEG = 4;
+const LEVEL_RANGE_DEG = 22;
 
 // ท่าจับเชือก (ปรับได้)
 // มือแต่ละข้างต้องห่างจากแนวกลางลำตัวอย่างน้อยกี่เท่าของความกว้างไหล่
@@ -126,6 +130,8 @@ const EMPTY_PLACEMENT: Placement = {
 type LevelInfo = {
   pitchOk: boolean;
   rollOk: boolean;
+  // ทิศของลูกศรในปุ่มกลม: down = ปุ่มอยู่สูงกว่าเป้าหมาย up = ต่ำกว่า ok = ได้มุมแล้ว
+  dir: "up" | "down" | "ok";
   hold: number;
   hint: string;
 };
@@ -133,8 +139,9 @@ type LevelInfo = {
 const EMPTY_LEVEL: LevelInfo = {
   pitchOk: false,
   rollOk: false,
+  dir: "down",
   hold: 0,
-  hint: "ตั้งมือถือให้ตรง",
+  hint: "ปรับมุมเอียงมือถือ",
 };
 
 // ท่าจับเชือก: มือสองข้างกางออกด้านข้างลำตัว คนละข้างของลำตัว ไม่สนความสูงของมือ
@@ -635,8 +642,9 @@ export default function Home() {
     r: number;
     buf: { t: number; p: number; r: number }[];
   }>({ init: false, p: 0, r: 0, buf: [] });
-  const levelArrowRef = useRef<HTMLDivElement>(null);
+  const levelKnobRef = useRef<HTMLDivElement>(null);
   const levelBarRef = useRef<HTMLDivElement>(null);
+  const levelPhoneRef = useRef<SVGGElement>(null);
 
   useEffect(() => {
     settingsRef.current = { mode, seconds, target, facing, sound };
@@ -718,7 +726,11 @@ export default function Home() {
       if (phaseRef.current !== "leveling") return;
 
       const now = performance.now();
-      const pitch = e.beta - 90;
+      // pitch = มุมกล้องเทียบเป้าหมาย บวก = กล้องแหงนสูงกว่าเป้าหมาย
+      // กล้องหน้าหันออกทางหน้าจอ กล้องหลังหันออกด้านหลัง ทิศจึงกลับกัน
+      const front = settingsRef.current.facing === "user";
+      const targetBeta = front ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA;
+      const pitch = front ? targetBeta - e.beta : e.beta - targetBeta;
       const roll = e.gamma;
       const g = gyroRef.current;
       if (!g.init) {
@@ -754,15 +766,18 @@ export default function Home() {
       const rollOk = Math.abs(g.r) <= LEVEL_TOL_DEG;
       const allOk = pitchOk && rollOk && still;
 
-      // กล้องแหงนขึ้น ลูกศรเลื่อนลง เหมือนเส้นขอบฟ้าบนภาพ
-      // กล้องหลังหันออกจากหน้าจอ ทิศเอียงจึงกลับกัน
-      const camTilt = g.p * (settingsRef.current.facing === "user" ? 1 : -1);
+      // ปุ่มกลมขยับตามการเอียง: กล้องแหงนสูงกว่าเป้าหมาย ปุ่มเลื่อนขึ้น
       const clamped = Math.max(
         -LEVEL_RANGE_DEG,
-        Math.min(LEVEL_RANGE_DEG, camTilt)
+        Math.min(LEVEL_RANGE_DEG, g.p)
       );
-      if (levelArrowRef.current) {
-        levelArrowRef.current.style.transform = `translateY(${clamped * LEVEL_PX_PER_DEG}px)`;
+      if (levelKnobRef.current) {
+        levelKnobRef.current.style.transform = `translateY(${-clamped * LEVEL_PX_PER_DEG}px)`;
+      }
+      // รูปมือถือด้านข้างหมุนตามมุมจริง lean = มุมเอนหลัง (บวก = หน้าจอเงยขึ้น)
+      if (levelPhoneRef.current) {
+        const lean = 90 - targetBeta + (front ? g.p : -g.p);
+        levelPhoneRef.current.style.transform = `rotate(${lean}deg)`;
       }
       if (levelBarRef.current) {
         const rot = Math.max(-45, Math.min(45, -g.r));
@@ -780,7 +795,7 @@ export default function Home() {
       let hint = "นิ่งดี ค้างไว้";
       if (!pitchOk) {
         hint =
-          camTilt > 0 ? "กล้องแหงนขึ้น ก้มกล้องลงนิด" : "กล้องก้มลง แหงนกล้องขึ้นนิด";
+          g.p > 0 ? "กล้องแหงนสูงไป ก้มกล้องลงนิด" : "กล้องก้มต่ำไป แหงนกล้องขึ้นนิด";
       } else if (!rollOk) {
         hint = "มือถือเอียงซ้ายขวา ตั้งให้ตรง";
       } else if (!still) {
@@ -788,13 +803,15 @@ export default function Home() {
       }
 
       const q = Math.round(hold * 20) / 20;
+      const dir: LevelInfo["dir"] = pitchOk ? "ok" : g.p > 0 ? "down" : "up";
       setLevelInfo((prev) =>
         prev.pitchOk === pitchOk &&
         prev.rollOk === rollOk &&
+        prev.dir === dir &&
         prev.hold === q &&
         prev.hint === hint
           ? prev
-          : { pitchOk, rollOk, hold: q, hint }
+          : { pitchOk, rollOk, dir, hold: q, hint }
       );
 
       if (hold >= 1) {
@@ -1373,7 +1390,7 @@ export default function Home() {
           </ul>
 
           <div className="mt-4 space-y-1 px-2 text-[13px] leading-5 text-[#6E6E73]">
-            <p>วางมือถือแนวตั้ง สูงระดับเอว พิงของให้นิ่ง กดเริ่มแล้วขยับมือถือให้ลูกศรอยู่ในกรอบ จากนั้นยืนให้เห็นตั้งแต่ศีรษะถึงเท้า ไม่ต้องตรงกรอบเป๊ะ</p>
+            <p>วางมือถือแนวตั้ง สูงระดับเอว พิงของให้นิ่ง กดเริ่มแล้วปรับมุมเอียงมือถือตามตัวชี้บนจอ จากนั้นยืนให้เห็นตั้งแต่ศีรษะถึงเท้า ไม่ต้องตรงกรอบเป๊ะ</p>
             <p>เปิดไฟให้สว่าง อย่าให้แสงจ้าอยู่ด้านหลังตัว</p>
             <p>ถือเชือกและกางมือออกด้านข้างเหมือนตอนกระโดด กระโดดเฉยๆ โดยแขนห้อย แอปจะไม่นับ</p>
           </div>
@@ -1510,7 +1527,9 @@ export default function Home() {
   const glass = "bg-black/35 backdrop-blur-xl";
   const isPrep = phase === "positioning" || phase === "countdown";
   const isLevel = phase === "leveling";
-  const arrowColor = levelInfo.pitchOk ? "text-[#30D158]" : "text-white";
+  // มุมเอนหลังของมือถือที่เป็นเป้าหมาย ใช้วาดรูปมือถือเส้นประ
+  const targetLean =
+    90 - (facing === "user" ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA);
   const flip = facing === "user" ? "-scale-x-100" : "";
   // จอสูงกว่าภาพ (มือถือแนวตั้ง) ให้ภาพเต็มจอ จอกว้างกว่าภาพ (แท็บเล็ต เดสก์ท็อป) ให้เห็นภาพครบ
   // FORCE_CONTAIN = true แสดงภาพเต็มเฟรมไม่ครอปข้าง (จอยาวๆ จะมีแถบดำบนล่าง)
@@ -1576,86 +1595,144 @@ export default function Home() {
         </div>
       )}
 
-      {/* ตั้งมือถือ: ลูกศรขยับตามไจโร ขยับให้ลูกศรอยู่ในกรอบแล้วค้างไว้ให้นิ่ง */}
+      {/* ตั้งมือถือ: วัดมุมเอียงด้วยไจโร ขยับมือถือให้ปุ่มกลมตรงวงเป้าหมาย แล้วค้างไว้ให้นิ่ง */}
       {isLevel && (
-        <div className="absolute inset-0 bg-black/45">
-          <div className="absolute inset-x-0 top-[max(1rem,env(safe-area-inset-top))] flex flex-col items-center gap-2 px-6 text-center">
+        <div className="absolute inset-0 flex flex-col items-center bg-[#F5F5F7] px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] text-[#1D1D1F]">
+          <h2 className="text-[22px] font-semibold">ปรับมุมเอียงมือถือ</h2>
+          <p className="mt-2 min-h-[24px] text-center text-[17px] font-medium">
+            {levelInfo.hint}
+          </p>
+          <div
+            className="mt-3 h-1.5 w-44 overflow-hidden rounded-full bg-[#7676801F]"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(levelInfo.hold * 100)}
+          >
             <div
-              className={`${glass} rounded-2xl px-4 py-2 text-[17px] font-semibold`}
-            >
-              {levelInfo.hint}
-            </div>
-            <div
-              className="h-1.5 w-40 overflow-hidden rounded-full bg-white/25"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(levelInfo.hold * 100)}
-            >
-              <div
-                className="h-full rounded-full bg-[#30D158] transition-[width] duration-150"
-                style={{ width: `${levelInfo.hold * 100}%` }}
-              />
-            </div>
-            <p className="text-[13px] leading-5 text-white/85 drop-shadow">
-              พิงมือถือให้ตั้งตรง แล้วขยับจนลูกศรอยู่ในกรอบ ค้างไว้ให้นิ่ง
-            </p>
-            {landscape && (
-              <p className="text-[12px] text-white/85 drop-shadow">
-                หมุนมือถือเป็นแนวตั้งจะใช้งานง่ายกว่า
-              </p>
-            )}
+              className="h-full rounded-full bg-[#30D158] transition-[width] duration-150"
+              style={{ width: `${levelInfo.hold * 100}%` }}
+            />
           </div>
+          <p className="mt-3 text-center text-[13px] leading-5 text-[#6E6E73]">
+            พิงมือถือให้เอนหลังตามรูปเส้นประ แล้วค้างไว้ให้นิ่ง
+          </p>
+          {landscape && (
+            <p className="mt-1 text-center text-[12px] text-[#FF3B30]">
+              หมุนมือถือเป็นแนวตั้งจะใช้งานง่ายกว่า
+            </p>
+          )}
 
-          <div className="absolute left-1/2 top-1/2 w-[240px] -translate-x-1/2">
-            {/* เส้นระดับซ้ายขวา เอียงตามมือถือ */}
-            <div className="absolute inset-x-0 top-[-120px] flex justify-center">
-              <div
-                ref={levelBarRef}
-                className={`h-1 w-[200px] rounded-full transition-colors ${
-                  levelInfo.rollOk ? "bg-[#30D158]" : "bg-white"
-                }`}
-              />
-            </div>
-            {/* กรอบเป้าหมาย อยู่กับที่ */}
+          {/* เส้นระดับซ้ายขวา เอียงตามมือถือ */}
+          <div className="mt-4 flex h-3 w-40 items-center justify-center">
             <div
-              className={`absolute inset-x-0 top-0 h-12 -translate-y-1/2 rounded-xl border-2 transition-colors ${
-                levelInfo.pitchOk
-                  ? "border-[#30D158] bg-[#30D158]/15"
-                  : "border-white/80 bg-white/5"
+              ref={levelBarRef}
+              className={`h-1 w-full rounded-full transition-colors ${
+                levelInfo.rollOk ? "bg-[#30D158]" : "bg-[#8E8E93]"
               }`}
             />
-            {/* ลูกศรสองข้าง ขยับขึ้นลงตามการเอียงของมือถือ */}
-            <div className="absolute inset-x-[-52px] top-0 -translate-y-1/2">
+          </div>
+
+          {/* รูปมือถือด้านข้าง: เส้นประคือมุมเป้าหมาย ตัวทึบคือมุมจริงตอนนี้ */}
+          <svg
+            viewBox="0 0 240 150"
+            className="mt-2 h-[130px] w-[208px] shrink-0"
+            aria-hidden
+          >
+            <line
+              x1="20"
+              y1="130"
+              x2="220"
+              y2="130"
+              stroke="#C7C7CC"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+            <line
+              x1="178"
+              y1="20"
+              x2="178"
+              y2="130"
+              stroke="#C7C7CC"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+            <g transform={`rotate(${targetLean} 110 130)`}>
+              <rect
+                x="95"
+                y="50"
+                width="30"
+                height="80"
+                rx="6"
+                fill="none"
+                stroke="#30D158"
+                strokeWidth="2.5"
+                strokeDasharray="5 4"
+              />
+            </g>
+            <g ref={levelPhoneRef} style={{ transformOrigin: "110px 130px" }}>
+              <rect x="95" y="50" width="30" height="80" rx="6" fill="#636366" />
+              <rect x="103" y="55" width="14" height="4" rx="2" fill="#1D1D1F" />
+            </g>
+          </svg>
+
+          {/* แถบวัดมุม: วงเส้นประคือเป้าหมาย ปุ่มกลมขยับขึ้นลงตามการเอียงของมือถือ */}
+          <div className="relative mt-4 h-[260px] w-[84px] shrink-0 rounded-full bg-[#7676801F]">
+            <div
+              className={`absolute left-1/2 top-1/2 h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-dashed transition-colors ${
+                levelInfo.pitchOk ? "border-[#30D158]" : "border-[#8E8E93]"
+              }`}
+            />
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
               <div
-                ref={levelArrowRef}
-                className={`flex items-center justify-between ${arrowColor}`}
+                ref={levelKnobRef}
+                className={`flex h-[72px] w-[72px] items-center justify-center rounded-full shadow-md transition-colors ${
+                  levelInfo.pitchOk
+                    ? "bg-[#30D158] text-white"
+                    : "bg-white text-[#1D1D1F]"
+                }`}
                 style={{ willChange: "transform" }}
               >
-                <svg width="44" height="44" viewBox="0 0 24 24" aria-hidden>
-                  <path d="M7 4l12 8-12 8z" fill="currentColor" />
-                </svg>
-                <svg
-                  width="44"
-                  height="44"
-                  viewBox="0 0 24 24"
-                  className="rotate-180"
-                  aria-hidden
-                >
-                  <path d="M7 4l12 8-12 8z" fill="currentColor" />
-                </svg>
+                {levelInfo.dir === "ok" ? (
+                  <svg
+                    width="36"
+                    height="36"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M5 13l4 4 10-10" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="36"
+                    height="36"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={levelInfo.dir === "up" ? "rotate-180" : ""}
+                    aria-hidden
+                  >
+                    <path d="M12 4v15M6 13l6 6 6-6" />
+                  </svg>
+                )}
               </div>
             </div>
           </div>
 
-          <div className="absolute inset-x-0 bottom-0 flex justify-center pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-            <button
-              onClick={skipLeveling}
-              className={`${glass} h-10 rounded-full px-6 text-[15px] font-medium text-white/90 active:bg-black/50`}
-            >
-              ข้าม
-            </button>
-          </div>
+          <button
+            onClick={skipLeveling}
+            className="mt-auto h-12 px-6 text-[17px] font-medium text-[#007AFF]"
+          >
+            ข้าม
+          </button>
         </div>
       )}
 
