@@ -34,6 +34,7 @@ const COUNT_PRESETS = [50, 100, 200, 500];
 type Phase =
   | "setup"
   | "loading"
+  | "leveling"
   | "positioning"
   | "countdown"
   | "running"
@@ -63,17 +64,29 @@ const HOLD_MS = 1500;
 const GUIDE_TOP = 0.05;
 const GUIDE_H = 0.9;
 
-// ความสูงจากจมูกถึงข้อเท้า เทียบกับความสูงของภาพ
-// ในกรอบ จมูกอยู่ราว 0.068 ข้อเท้าอยู่ราว 0.94 ของความสูงกรอบ => ราว 0.785 ของภาพ
-const MIN_BODY_H = 0.69;
-const MAX_BODY_H = 0.88;
-// ต้องเหลือที่ว่างเหนือศีรษะและใต้เท้า เพื่อให้กระโดดได้
-const MIN_TOP = 0.04;
-const MAX_BOTTOM = 0.98;
+// เงื่อนไขการยืนตอนสแกนตัว ผ่อนให้ง่าย ไม่ต้องตรงกรอบเป๊ะ
+// ที่สำคัญคือเห็นศีรษะและเห็นเท้าครบ ไม่ถูกขอบภาพตัด
+// ความสูงจากจมูกถึงข้อเท้า เทียบกับความสูงของภาพ (ช่วงกว้าง)
+const MIN_BODY_H = 0.5;
+const MAX_BODY_H = 0.92;
+// จมูกต้องอยู่ต่ำกว่าขอบบนเท่านี้ (ศีรษะไม่ถูกตัด)
+const MIN_TOP = 0.03;
+// ข้อเท้าต้องอยู่เหนือขอบล่างเท่านี้ (เหลือที่ให้ฝ่าเท้า)
+const MAX_BOTTOM = 0.97;
 // ยอมให้สะโพกเยื้องจากกึ่งกลางภาพได้เท่านี้
-const CENTER_TOL = 0.1;
-// ยอมให้แนวไหล่ถึงข้อเท้าเอียงจากแนวตั้งได้กี่องศา
-const TILT_MAX_DEG = 8;
+const CENTER_TOL = 0.25;
+
+// ขั้นตอนตั้งมือถือด้วยไจโร (หน่วยเป็นองศา)
+// เอียงขึ้นลงและซ้ายขวาได้ไม่เกินเท่านี้ ถึงนับว่าตั้งตรง
+const LEVEL_TOL_DEG = 4;
+// ช่วงแกว่งสูงสุดภายในช่วงเวลา LEVEL_WINDOW_MS ที่ยังนับว่านิ่ง
+const LEVEL_JITTER_DEG = 1.2;
+const LEVEL_WINDOW_MS = 500;
+// ต้องตั้งตรงและนิ่งต่อเนื่องเท่านี้ ถึงไปขั้นสแกนตัว
+const LEVEL_HOLD_MS = 1500;
+// ลูกศรขยับกี่พิกเซลต่อ 1 องศา และขยับได้สูงสุดกี่องศา
+const LEVEL_PX_PER_DEG = 6;
+const LEVEL_RANGE_DEG = 25;
 
 // ท่าจับเชือก (ปรับได้)
 // มือแต่ละข้างต้องห่างจากแนวกลางลำตัวอย่างน้อยกี่เท่าของความกว้างไหล่
@@ -91,23 +104,37 @@ const SHOW_SKELETON = false;
 const FORCE_CONTAIN = false;
 
 type Placement = {
-  visible: boolean;
+  head: boolean;
+  feet: boolean;
   distance: boolean;
   centered: boolean;
-  upright: boolean;
   hands: boolean;
   ok: boolean;
   hint: string;
 };
 
 const EMPTY_PLACEMENT: Placement = {
-  visible: false,
+  head: false,
+  feet: false,
   distance: false,
   centered: false,
-  upright: false,
   hands: false,
   ok: false,
   hint: "ยืนให้กล้องเห็นตัว",
+};
+
+type LevelInfo = {
+  pitchOk: boolean;
+  rollOk: boolean;
+  hold: number;
+  hint: string;
+};
+
+const EMPTY_LEVEL: LevelInfo = {
+  pitchOk: false,
+  rollOk: false,
+  hold: 0,
+  hint: "ตั้งมือถือให้ตรง",
 };
 
 // ท่าจับเชือก: มือสองข้างกางออกด้านข้างลำตัว คนละข้างของลำตัว ไม่สนความสูงของมือ
@@ -140,19 +167,23 @@ function evaluatePlacement(
 ): Placement {
   if (!lm) return EMPTY_PLACEMENT;
 
-  const need = [0, 11, 12, 23, 24, 27, 28];
-  const visible = need.every((i) => (lm[i]?.visibility ?? 0) > 0.5);
-  if (!visible) {
-    return {
-      ...EMPTY_PLACEMENT,
-      hint: "ให้กล้องเห็นตั้งแต่ศีรษะถึงข้อเท้า",
-    };
+  const vis = (i: number) => (lm[i]?.visibility ?? 0) > 0.5;
+
+  // เงื่อนไขหลัก: เห็นศีรษะและเห็นเท้าครบ ไม่ถูกขอบภาพตัด
+  const head = vis(0) && lm[0].y >= MIN_TOP;
+  const feet =
+    vis(27) && vis(28) && Math.max(lm[27].y, lm[28].y) <= MAX_BOTTOM;
+  const torsoSeen = [11, 12, 23, 24].every(vis);
+  if (!head || !feet || !torsoSeen) {
+    let hint = "ให้กล้องเห็นลำตัวครบ";
+    if (!head && !feet) hint = "ถอยหลังจนเห็นตั้งแต่ศีรษะถึงเท้า";
+    else if (!head) hint = "ให้เห็นศีรษะครบ ถอยหลังอีกนิด";
+    else if (!feet) hint = "ให้เห็นเท้าครบ ถอยหลังอีกนิด";
+    return { ...EMPTY_PLACEMENT, head, feet, hint };
   }
 
-  const top = lm[0].y;
-  const bottom = Math.max(lm[27].y, lm[28].y);
-  const bodyH = bottom - top;
-  const tooBig = bodyH > MAX_BODY_H || top < MIN_TOP || bottom > MAX_BOTTOM;
+  const bodyH = Math.max(lm[27].y, lm[28].y) - lm[0].y;
+  const tooBig = bodyH > MAX_BODY_H;
   const tooSmall = bodyH < MIN_BODY_H;
   const distance = !tooBig && !tooSmall;
 
@@ -161,15 +192,6 @@ function evaluatePlacement(
   const shownX = mirrored ? 1 - hipX : hipX;
   const centered = Math.abs(shownX - 0.5) <= CENTER_TOL;
 
-  // มุมเอียงของแนวไหล่ถึงข้อเท้า ใช้ตรวจว่ากล้องตั้งตรงและผู้เล่นยืนตรง
-  const sx = (lm[11].x + lm[12].x) / 2;
-  const sy = (lm[11].y + lm[12].y) / 2;
-  const ax = (lm[27].x + lm[28].x) / 2;
-  const ay = (lm[27].y + lm[28].y) / 2;
-  const tilt =
-    (Math.abs(Math.atan2((sx - ax) * aspect, ay - sy)) * 180) / Math.PI;
-  const upright = tilt <= TILT_MAX_DEG;
-
   const hands = isHoldingRope(lm, aspect);
 
   let hint = "พร้อมแล้ว ยืนนิ่งๆ";
@@ -177,19 +199,17 @@ function evaluatePlacement(
   else if (tooSmall) hint = "เข้ามาใกล้อีกนิด";
   else if (!centered) {
     hint = shownX > 0.5 ? "ขยับไปทางซ้ายของจอ" : "ขยับไปทางขวาของจอ";
-  } else if (!upright) {
-    hint = "ตั้งมือถือให้ตรง ไม่เอียง";
   } else if (!hands) {
     hint = "กางมือออกด้านข้างเหมือนจับเชือก";
   }
 
   return {
-    visible,
+    head,
+    feet,
     distance,
     centered,
-    upright,
     hands,
-    ok: distance && centered && upright && hands,
+    ok: distance && centered && hands,
     hint,
   };
 }
@@ -328,7 +348,7 @@ function buildGuide(w: number, h: number): GuideCache {
   const compose = (color: string) => {
     const out = make();
     const c = out.getContext("2d")!;
-    c.fillStyle = "rgba(18,18,20,0.55)";
+    c.fillStyle = "rgba(18,18,20,0.4)";
     c.fillRect(0, 0, w, h);
 
     // ขยายขอบรูปคนออกรอบทิศ ได้วงแหวนเส้นเดียวที่ต่อเนื่อง
@@ -536,6 +556,24 @@ function beep(ctx: AudioContext | null, freq = 880, dur = 0.12) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ขออนุญาตใช้เซนเซอร์เอียงของมือถือ iPhone ต้องเรียกจากการกดปุ่มของผู้ใช้
+// Android และเบราว์เซอร์อื่นไม่ต้องขอ คืนค่า false ถ้าไม่ได้รับอนุญาตหรือไม่มีเซนเซอร์
+async function requestGyro(): Promise<boolean> {
+  try {
+    if (typeof window === "undefined" || !("DeviceOrientationEvent" in window))
+      return false;
+    const DOE = window.DeviceOrientationEvent as unknown as {
+      requestPermission?: () => Promise<"granted" | "denied">;
+    };
+    if (typeof DOE.requestPermission === "function") {
+      return (await DOE.requestPermission()) === "granted";
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* หน้าหลัก                                                              */
 /* ------------------------------------------------------------------ */
@@ -559,6 +597,7 @@ export default function Home() {
   const [handsOk, setHandsOk] = useState(false);
   const [vp, setVp] = useState({ w: 0, h: 0 });
   const [vdim, setVdim] = useState({ w: 9, h: 16 });
+  const [levelInfo, setLevelInfo] = useState<LevelInfo>(EMPTY_LEVEL);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -587,6 +626,17 @@ export default function Home() {
   const holdRef = useRef(0);
   const abortCountdownRef = useRef(false);
   const readyResolveRef = useRef<(() => void) | null>(null);
+  const levelResolveRef = useRef<(() => void) | null>(null);
+  const levelOkSinceRef = useRef<number | null>(null);
+  const gotGyroRef = useRef(false);
+  const gyroRef = useRef<{
+    init: boolean;
+    p: number;
+    r: number;
+    buf: { t: number; p: number; r: number }[];
+  }>({ init: false, p: 0, r: 0, buf: [] });
+  const levelArrowRef = useRef<HTMLDivElement>(null);
+  const levelBarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     settingsRef.current = { mode, seconds, target, facing, sound };
@@ -659,6 +709,105 @@ export default function Home() {
     phaseRef.current = phase;
   }, [phase]);
 
+  // ไจโรของมือถือ ใช้ในขั้นตอนตั้งมือถือ ลูกศรขยับตามการเอียงขึ้นลง
+  // pitch = 0 เมื่อมือถือตั้งตรง roll = 0 เมื่อไม่เอียงซ้ายขวา
+  useEffect(() => {
+    const onOrient = (e: DeviceOrientationEvent) => {
+      if (e.beta === null || e.gamma === null) return;
+      gotGyroRef.current = true;
+      if (phaseRef.current !== "leveling") return;
+
+      const now = performance.now();
+      const pitch = e.beta - 90;
+      const roll = e.gamma;
+      const g = gyroRef.current;
+      if (!g.init) {
+        g.init = true;
+        g.p = pitch;
+        g.r = roll;
+      } else {
+        g.p += (pitch - g.p) * 0.3;
+        g.r += (roll - g.r) * 0.3;
+      }
+
+      // ตรวจว่านิ่งหรือไม่ จากช่วงแกว่งของค่าในช่วงเวลาล่าสุด
+      g.buf.push({ t: now, p: pitch, r: roll });
+      while (g.buf.length > 0 && now - g.buf[0].t > LEVEL_WINDOW_MS) {
+        g.buf.shift();
+      }
+      let still = false;
+      if (g.buf.length > 5 && now - g.buf[0].t >= LEVEL_WINDOW_MS * 0.8) {
+        let pMin = Infinity;
+        let pMax = -Infinity;
+        let rMin = Infinity;
+        let rMax = -Infinity;
+        for (const s of g.buf) {
+          if (s.p < pMin) pMin = s.p;
+          if (s.p > pMax) pMax = s.p;
+          if (s.r < rMin) rMin = s.r;
+          if (s.r > rMax) rMax = s.r;
+        }
+        still = pMax - pMin <= LEVEL_JITTER_DEG && rMax - rMin <= LEVEL_JITTER_DEG;
+      }
+
+      const pitchOk = Math.abs(g.p) <= LEVEL_TOL_DEG;
+      const rollOk = Math.abs(g.r) <= LEVEL_TOL_DEG;
+      const allOk = pitchOk && rollOk && still;
+
+      // กล้องแหงนขึ้น ลูกศรเลื่อนลง เหมือนเส้นขอบฟ้าบนภาพ
+      // กล้องหลังหันออกจากหน้าจอ ทิศเอียงจึงกลับกัน
+      const camTilt = g.p * (settingsRef.current.facing === "user" ? 1 : -1);
+      const clamped = Math.max(
+        -LEVEL_RANGE_DEG,
+        Math.min(LEVEL_RANGE_DEG, camTilt)
+      );
+      if (levelArrowRef.current) {
+        levelArrowRef.current.style.transform = `translateY(${clamped * LEVEL_PX_PER_DEG}px)`;
+      }
+      if (levelBarRef.current) {
+        const rot = Math.max(-45, Math.min(45, -g.r));
+        levelBarRef.current.style.transform = `rotate(${rot}deg)`;
+      }
+
+      let hold = 0;
+      if (allOk) {
+        if (levelOkSinceRef.current === null) levelOkSinceRef.current = now;
+        hold = Math.min(1, (now - levelOkSinceRef.current) / LEVEL_HOLD_MS);
+      } else {
+        levelOkSinceRef.current = null;
+      }
+
+      let hint = "นิ่งดี ค้างไว้";
+      if (!pitchOk) {
+        hint =
+          camTilt > 0 ? "กล้องแหงนขึ้น ก้มกล้องลงนิด" : "กล้องก้มลง แหงนกล้องขึ้นนิด";
+      } else if (!rollOk) {
+        hint = "มือถือเอียงซ้ายขวา ตั้งให้ตรง";
+      } else if (!still) {
+        hint = "ขยับให้นิ่งๆ";
+      }
+
+      const q = Math.round(hold * 20) / 20;
+      setLevelInfo((prev) =>
+        prev.pitchOk === pitchOk &&
+        prev.rollOk === rollOk &&
+        prev.hold === q &&
+        prev.hint === hint
+          ? prev
+          : { pitchOk, rollOk, hold: q, hint }
+      );
+
+      if (hold >= 1) {
+        levelOkSinceRef.current = null;
+        const done = levelResolveRef.current;
+        levelResolveRef.current = null;
+        done?.();
+      }
+    };
+    window.addEventListener("deviceorientation", onOrient);
+    return () => window.removeEventListener("deviceorientation", onOrient);
+  }, []);
+
   const stopCamera = useCallback(() => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
@@ -724,7 +873,7 @@ export default function Home() {
         );
         if (ctx) drawGuide(ctx, w, h, pl.ok);
 
-        const key = `${+pl.visible}${+pl.distance}${+pl.centered}${+pl.upright}${+pl.hands}${pl.hint}`;
+        const key = `${+pl.head}${+pl.feet}${+pl.distance}${+pl.centered}${+pl.hands}${pl.hint}`;
         if (key !== placementKeyRef.current) {
           placementKeyRef.current = key;
           setPlacement(pl);
@@ -858,6 +1007,9 @@ export default function Home() {
     const pending = readyResolveRef.current;
     readyResolveRef.current = null;
     pending?.();
+    const levelPending = levelResolveRef.current;
+    levelResolveRef.current = null;
+    levelPending?.();
     stopCamera();
   }, [stopCamera]);
 
@@ -866,6 +1018,9 @@ export default function Home() {
   const startSession = useCallback(async () => {
     const sid = ++sessionRef.current;
     const cancelled = () => sessionRef.current !== sid;
+
+    // ขอสิทธิ์เซนเซอร์เอียง ต้องเรียกก่อน await ใดๆ ไม่งั้น iPhone ไม่ยอมให้ขอ
+    const gyroPromise = requestGyro();
 
     // ขอเต็มจอและล็อกแนวตั้ง ต้องเรียกตอนผู้ใช้กดปุ่ม
     // Android และเดสก์ท็อปใช้ได้ iPhone ไม่รองรับ จะข้ามไปเอง
@@ -988,6 +1143,31 @@ export default function Home() {
 
       rafRef.current = requestAnimationFrame(loop);
 
+      // ขั้นตอนตั้งมือถือ: ใช้ไจโรช่วยให้วางมือถือตั้งตรงและนิ่งก่อนสแกนตัว
+      // ไม่มีเซนเซอร์หรือไม่ได้รับอนุญาต จะข้ามไปสแกนตัวเลย
+      let hasGyro = false;
+      if (await gyroPromise) {
+        const until = performance.now() + 1000;
+        while (!gotGyroRef.current && performance.now() < until) {
+          if (cancelled()) return;
+          await sleep(50);
+        }
+        hasGyro = gotGyroRef.current;
+      }
+      if (cancelled()) return;
+      if (hasGyro) {
+        gyroRef.current = { init: false, p: 0, r: 0, buf: [] };
+        levelOkSinceRef.current = null;
+        setLevelInfo(EMPTY_LEVEL);
+        phaseRef.current = "leveling";
+        setPhase("leveling");
+        await new Promise<void>((resolve) => {
+          levelResolveRef.current = resolve;
+        });
+        if (cancelled()) return;
+        if (settingsRef.current.sound) beep(audioRef.current, 800, 0.08);
+      }
+
       // รอให้ผู้เล่นยืนตรงกรอบจนผ่าน แล้วนับ 3-2-1
       // ถ้าขยับออกนอกตำแหน่งระหว่างนับ จะกลับไปจัดตำแหน่งใหม่
       const waitUnlessAborted = async (ms: number) => {
@@ -1051,10 +1231,11 @@ export default function Home() {
     }
   }, [loop, stopAll, facing]);
 
-  const cancelSession = () => {
-    stopAll();
-    setCountdown(null);
-    setPhase("setup");
+  // ข้ามขั้นตอนตั้งมือถือ ไปสแกนตัวเลย
+  const skipLeveling = () => {
+    const done = levelResolveRef.current;
+    levelResolveRef.current = null;
+    done?.();
   };
 
   const stopEarly = () => {
@@ -1192,7 +1373,7 @@ export default function Home() {
           </ul>
 
           <div className="mt-4 space-y-1 px-2 text-[13px] leading-5 text-[#6E6E73]">
-            <p>วางมือถือแนวตั้ง สูงระดับเอว พิงของให้นิ่งและไม่เอียง ยืนห่างจนตัวเต็มรูปคนบนจอ</p>
+            <p>วางมือถือแนวตั้ง สูงระดับเอว พิงของให้นิ่ง กดเริ่มแล้วขยับมือถือให้ลูกศรอยู่ในกรอบ จากนั้นยืนให้เห็นตั้งแต่ศีรษะถึงเท้า ไม่ต้องตรงกรอบเป๊ะ</p>
             <p>เปิดไฟให้สว่าง อย่าให้แสงจ้าอยู่ด้านหลังตัว</p>
             <p>ถือเชือกและกางมือออกด้านข้างเหมือนตอนกระโดด กระโดดเฉยๆ โดยแขนห้อย แอปจะไม่นับ</p>
           </div>
@@ -1328,6 +1509,8 @@ export default function Home() {
 
   const glass = "bg-black/35 backdrop-blur-xl";
   const isPrep = phase === "positioning" || phase === "countdown";
+  const isLevel = phase === "leveling";
+  const arrowColor = levelInfo.pitchOk ? "text-[#30D158]" : "text-white";
   const flip = facing === "user" ? "-scale-x-100" : "";
   // จอสูงกว่าภาพ (มือถือแนวตั้ง) ให้ภาพเต็มจอ จอกว้างกว่าภาพ (แท็บเล็ต เดสก์ท็อป) ให้เห็นภาพครบ
   // FORCE_CONTAIN = true แสดงภาพเต็มเฟรมไม่ครอปข้าง (จอยาวๆ จะมีแถบดำบนล่าง)
@@ -1337,10 +1520,10 @@ export default function Home() {
       : "object-cover";
 
   const checks: [string, boolean][] = [
-    ["เห็นทั้งตัว", placement.visible],
+    ["เห็นศีรษะ", placement.head],
+    ["เห็นเท้า", placement.feet],
     ["ระยะพอดี", placement.distance],
-    ["อยู่กลางกรอบ", placement.centered],
-    ["กล้องตั้งตรง", placement.upright],
+    ["อยู่ในจอ", placement.centered],
     ["ท่าจับเชือก", placement.hands],
   ];
 
@@ -1389,6 +1572,89 @@ export default function Home() {
                 transition: "width 150ms linear",
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* ตั้งมือถือ: ลูกศรขยับตามไจโร ขยับให้ลูกศรอยู่ในกรอบแล้วค้างไว้ให้นิ่ง */}
+      {isLevel && (
+        <div className="absolute inset-0 bg-black/45">
+          <div className="absolute inset-x-0 top-[max(1rem,env(safe-area-inset-top))] flex flex-col items-center gap-2 px-6 text-center">
+            <div
+              className={`${glass} rounded-2xl px-4 py-2 text-[17px] font-semibold`}
+            >
+              {levelInfo.hint}
+            </div>
+            <div
+              className="h-1.5 w-40 overflow-hidden rounded-full bg-white/25"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(levelInfo.hold * 100)}
+            >
+              <div
+                className="h-full rounded-full bg-[#30D158] transition-[width] duration-150"
+                style={{ width: `${levelInfo.hold * 100}%` }}
+              />
+            </div>
+            <p className="text-[13px] leading-5 text-white/85 drop-shadow">
+              พิงมือถือให้ตั้งตรง แล้วขยับจนลูกศรอยู่ในกรอบ ค้างไว้ให้นิ่ง
+            </p>
+            {landscape && (
+              <p className="text-[12px] text-white/85 drop-shadow">
+                หมุนมือถือเป็นแนวตั้งจะใช้งานง่ายกว่า
+              </p>
+            )}
+          </div>
+
+          <div className="absolute left-1/2 top-1/2 w-[240px] -translate-x-1/2">
+            {/* เส้นระดับซ้ายขวา เอียงตามมือถือ */}
+            <div className="absolute inset-x-0 top-[-120px] flex justify-center">
+              <div
+                ref={levelBarRef}
+                className={`h-1 w-[200px] rounded-full transition-colors ${
+                  levelInfo.rollOk ? "bg-[#30D158]" : "bg-white"
+                }`}
+              />
+            </div>
+            {/* กรอบเป้าหมาย อยู่กับที่ */}
+            <div
+              className={`absolute inset-x-0 top-0 h-12 -translate-y-1/2 rounded-xl border-2 transition-colors ${
+                levelInfo.pitchOk
+                  ? "border-[#30D158] bg-[#30D158]/15"
+                  : "border-white/80 bg-white/5"
+              }`}
+            />
+            {/* ลูกศรสองข้าง ขยับขึ้นลงตามการเอียงของมือถือ */}
+            <div className="absolute inset-x-[-52px] top-0 -translate-y-1/2">
+              <div
+                ref={levelArrowRef}
+                className={`flex items-center justify-between ${arrowColor}`}
+                style={{ willChange: "transform" }}
+              >
+                <svg width="44" height="44" viewBox="0 0 24 24" aria-hidden>
+                  <path d="M7 4l12 8-12 8z" fill="currentColor" />
+                </svg>
+                <svg
+                  width="44"
+                  height="44"
+                  viewBox="0 0 24 24"
+                  className="rotate-180"
+                  aria-hidden
+                >
+                  <path d="M7 4l12 8-12 8z" fill="currentColor" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div className="absolute inset-x-0 bottom-0 flex justify-center pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <button
+              onClick={skipLeveling}
+              className={`${glass} h-10 rounded-full px-6 text-[15px] font-medium text-white/90 active:bg-black/50`}
+            >
+              ข้าม
+            </button>
           </div>
         </div>
       )}
