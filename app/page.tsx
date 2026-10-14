@@ -59,14 +59,14 @@ type Summary = {
 const HOLD_MS = 1500;
 
 // ขนาดและตำแหน่งของกรอบรูปคน เทียบกับความสูงของภาพ
-// กรอบสูง 83.5% ของภาพ เริ่มที่ 8.5% จากขอบบน (เหลือที่ให้ข้อความด้านบนและปุ่มด้านล่าง)
-const GUIDE_TOP = 0.085;
-const GUIDE_H = 0.835;
+// กรอบสูง 90% ของภาพ เริ่มที่ 5% จากขอบบน (ข้อความและสถานะอยู่ด้านข้าง ไม่บังกรอบ)
+const GUIDE_TOP = 0.05;
+const GUIDE_H = 0.9;
 
 // ความสูงจากจมูกถึงข้อเท้า เทียบกับความสูงของภาพ
-// ในกรอบ จมูกอยู่ราว 0.068 ข้อเท้าอยู่ราว 0.94 ของความสูงกรอบ => ราว 0.73 ของภาพ
-const MIN_BODY_H = 0.64;
-const MAX_BODY_H = 0.82;
+// ในกรอบ จมูกอยู่ราว 0.068 ข้อเท้าอยู่ราว 0.94 ของความสูงกรอบ => ราว 0.785 ของภาพ
+const MIN_BODY_H = 0.69;
+const MAX_BODY_H = 0.88;
 // ต้องเหลือที่ว่างเหนือศีรษะและใต้เท้า เพื่อให้กระโดดได้
 const MIN_TOP = 0.04;
 const MAX_BOTTOM = 0.98;
@@ -78,10 +78,8 @@ const TILT_MAX_DEG = 8;
 // ท่าจับเชือก (ปรับได้)
 // มือแต่ละข้างต้องห่างจากแนวกลางลำตัวอย่างน้อยกี่เท่าของความกว้างไหล่
 // แขนห้อยปกติอยู่ราว 0.6 ท่าจับเชือกราว 0.85 ขึ้นไป
+// ไม่ตรวจความสูงของมือ เพราะแต่ละคนจับเชือกสูงต่ำไม่เท่ากัน
 const HAND_MIN_OFFSET = 0.75;
-// ช่วงความสูงของมือ วัดจากไหล่ลงไปเป็นสัดส่วนของความยาวลำตัว (ไหล่ถึงสะโพก)
-const HAND_TOP = 0.45;
-const HAND_BOTTOM = 0.35;
 // มือบนภาพจับยากกว่าลำตัว จึงยอมรับความมั่นใจต่ำกว่า
 const HAND_MIN_VIS = 0.3;
 
@@ -112,7 +110,7 @@ const EMPTY_PLACEMENT: Placement = {
   hint: "ยืนให้กล้องเห็นตัว",
 };
 
-// ท่าจับเชือก: มือสองข้างอยู่ระดับเอว ห่างจากแนวกลางลำตัวออกไปด้านข้าง
+// ท่าจับเชือก: มือสองข้างกางออกด้านข้างลำตัว คนละข้างของลำตัว ไม่สนความสูงของมือ
 // แขนที่ห้อยลงตามธรรมชาติจะอยู่ใกล้ลำตัวกว่านี้ จึงไม่ผ่านเงื่อนไข
 function isHoldingRope(lm: NormalizedLandmark[], aspect: number): boolean {
   const lw = lm[15];
@@ -132,11 +130,7 @@ function isHoldingRope(lm: NormalizedLandmark[], aspect: number): boolean {
   if (dl * dr >= 0) return false; // ต้องอยู่คนละข้างของลำตัว
 
   const minOffset = HAND_MIN_OFFSET * shoulderW;
-  if (Math.abs(dl) < minOffset || Math.abs(dr) < minOffset) return false;
-
-  const yMin = sy + HAND_TOP * torso;
-  const yMax = hy + HAND_BOTTOM * torso;
-  return lw.y >= yMin && lw.y <= yMax && rw.y >= yMin && rw.y <= yMax;
+  return Math.abs(dl) >= minOffset && Math.abs(dr) >= minOffset;
 }
 
 function evaluatePlacement(
@@ -186,7 +180,7 @@ function evaluatePlacement(
   } else if (!upright) {
     hint = "ตั้งมือถือให้ตรง ไม่เอียง";
   } else if (!hands) {
-    hint = "ถือมือเหมือนจับเชือกที่ระดับเอว กางศอกออกเล็กน้อย";
+    hint = "กางมือออกด้านข้างเหมือนจับเชือก";
   }
 
   return {
@@ -258,8 +252,8 @@ function paintSilhouette(
     limb(
       [
         [s * 0.13, 0.21],
-        [s * 0.158, 0.36],
-        [s * 0.225, 0.5],
+        [s * 0.155, 0.36],
+        [s * 0.21, 0.5],
       ],
       0.056
     );
@@ -380,7 +374,7 @@ function drawGuide(
 // หลักการ: ใช้ตำแหน่งแนวตั้งเฉลี่ยของไหล่ สะโพก และข้อเท้า เป็นสัญญาณเดียว
 // แล้วติดตามขอบบน (พื้น) กับขอบล่าง (จุดสูงสุดของการกระโดด) แบบค่อยๆ ลดลง
 // เมื่อสัญญาณข้ามจุดกลางลงมาแล้วกลับขึ้นไป ถือว่ากระโดดครบ 1 ครั้งตอนลงพื้น
-// และนับเฉพาะตอนที่ผู้เล่นอยู่ในท่าจับเชือก (มืออยู่ระดับเอวและกางออกด้านข้าง)
+// และนับเฉพาะตอนที่ผู้เล่นอยู่ในท่าจับเชือก (มือกางออกด้านข้างลำตัว ไม่สนระดับความสูง)
 // กระโดดเฉยๆ โดยแขนห้อยหรือมือไม่อยู่ในท่า จะไม่นับ
 function createJumpDetector() {
   let ready = false;
@@ -1200,7 +1194,7 @@ export default function Home() {
           <div className="mt-4 space-y-1 px-2 text-[13px] leading-5 text-[#6E6E73]">
             <p>วางมือถือแนวตั้ง สูงระดับเอว พิงของให้นิ่งและไม่เอียง ยืนห่างจนตัวเต็มรูปคนบนจอ</p>
             <p>เปิดไฟให้สว่าง อย่าให้แสงจ้าอยู่ด้านหลังตัว</p>
-            <p>ถือเชือกที่ระดับเอวและกางศอกออกเล็กน้อย กระโดดเฉยๆ โดยไม่ถือเชือก แอปจะไม่นับ</p>
+            <p>ถือเชือกและกางมือออกด้านข้างเหมือนตอนกระโดด กระโดดเฉยๆ โดยแขนห้อย แอปจะไม่นับ</p>
           </div>
 
           {error && (
@@ -1399,25 +1393,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* ก่อนเริ่ม: คำแนะนำสั้นๆ อยู่บนสุดบรรทัดเดียว ไม่บังกรอบรูปคน */}
+      {/* ก่อนเริ่ม: เช็กลิสต์อยู่แถบซ้าย ปล่อยกลางจอให้กรอบรูปคนเต็มที่ */}
       {isPrep && (
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-1 px-3 pt-[max(0.5rem,env(safe-area-inset-top))]">
-          <div
-            className={`${glass} max-w-full rounded-full px-3.5 py-1 text-center text-[14px] font-semibold leading-5`}
-          >
-            {placement.hint}
-          </div>
-          {landscape && (
-            <p className="text-center text-[11px] text-white/85 drop-shadow">
-              หมุนมือถือเป็นแนวตั้งจะใช้งานง่ายกว่า
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* ก่อนเริ่ม: สถานะทั้งหมดอยู่แถบด้านซ้าย ปล่อยกลางจอให้กรอบรูปคนเต็มที่ */}
-      {isPrep && (
-        <div className="pointer-events-none absolute left-2 top-[max(3.25rem,calc(env(safe-area-inset-top)+2.75rem))] flex w-[104px] flex-col items-start gap-1.5">
+        <div className="pointer-events-none absolute left-2 top-[max(0.75rem,env(safe-area-inset-top))] flex w-[96px] flex-col items-start gap-1.5">
           {checks.map(([label, passed]) => (
             <div
               key={label}
@@ -1436,9 +1414,20 @@ export default function Home() {
               <span className="whitespace-nowrap">{label}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ก่อนเริ่ม: คำแนะนำและแถบนับค้างอยู่แถบขวา */}
+      {isPrep && (
+        <div className="pointer-events-none absolute right-2 top-[max(0.75rem,env(safe-area-inset-top))] flex w-[112px] flex-col items-end gap-2">
+          <div
+            className={`${glass} rounded-2xl px-3 py-1.5 text-right text-[13px] font-semibold leading-[18px]`}
+          >
+            {placement.hint}
+          </div>
           {phase === "positioning" && (
             <div
-              className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-white/25"
+              className="h-1.5 w-full overflow-hidden rounded-full bg-white/25"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
@@ -1449,6 +1438,11 @@ export default function Home() {
                 style={{ width: `${hold * 100}%` }}
               />
             </div>
+          )}
+          {landscape && (
+            <p className="text-right text-[11px] leading-4 text-white/85 drop-shadow">
+              หมุนมือถือเป็นแนวตั้งจะใช้งานง่ายกว่า
+            </p>
           )}
         </div>
       )}
@@ -1461,7 +1455,7 @@ export default function Home() {
         >
           {!bodyOk
             ? "ถอยให้เห็นทั้งตัว ตั้งแต่ศีรษะถึงข้อเท้า"
-            : "ถือมือเหมือนจับเชือกที่ระดับเอว ถึงจะนับ"}
+            : "กางมือออกด้านข้างเหมือนจับเชือก ถึงจะนับ"}
         </div>
       )}
 
@@ -1483,24 +1477,17 @@ export default function Home() {
         </div>
       )}
 
-      {/* ปุ่มล่าง เล็กลงเพื่อไม่บังเท้า */}
-      <div className="absolute inset-x-0 bottom-0 flex justify-center px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {phase === "running" ? (
+      {/* ปุ่มสิ้นสุด แสดงเฉพาะตอนกระโดด หน้าสแกนตัวไม่มีปุ่ม */}
+      {phase === "running" && (
+        <div className="absolute inset-x-0 bottom-0 flex justify-center px-5 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <button
             onClick={stopEarly}
             className={`${glass} h-12 w-full max-w-xs rounded-full text-[17px] font-semibold text-[#FF453A] active:bg-black/50`}
           >
             สิ้นสุด
           </button>
-        ) : (
-          <button
-            onClick={cancelSession}
-            className={`${glass} h-10 w-36 rounded-full text-[16px] font-semibold active:bg-black/50`}
-          >
-            ยกเลิก
-          </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
