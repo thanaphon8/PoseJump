@@ -57,9 +57,16 @@ type Summary = {
 
 // ผู้เล่นต้องยืนนิ่งในตำแหน่งที่ถูกต้องต่อเนื่องเท่านี้ ถึงจะเริ่มนับถอยหลัง
 const HOLD_MS = 1500;
+
+// ขนาดและตำแหน่งของกรอบรูปคน เทียบกับความสูงของภาพ
+// กรอบสูง 83.5% ของภาพ เริ่มที่ 8.5% จากขอบบน (เหลือที่ให้ข้อความด้านบนและปุ่มด้านล่าง)
+const GUIDE_TOP = 0.085;
+const GUIDE_H = 0.835;
+
 // ความสูงจากจมูกถึงข้อเท้า เทียบกับความสูงของภาพ
-const MIN_BODY_H = 0.62;
-const MAX_BODY_H = 0.84;
+// ในกรอบ จมูกอยู่ราว 0.068 ข้อเท้าอยู่ราว 0.94 ของความสูงกรอบ => ราว 0.73 ของภาพ
+const MIN_BODY_H = 0.64;
+const MAX_BODY_H = 0.82;
 // ต้องเหลือที่ว่างเหนือศีรษะและใต้เท้า เพื่อให้กระโดดได้
 const MIN_TOP = 0.04;
 const MAX_BOTTOM = 0.98;
@@ -189,14 +196,18 @@ function evaluatePlacement(
   };
 }
 
-// วาดรูปคนสมส่วน (ประมาณ 7.5 หัว) ท่ายืนถือเชือกที่ระดับเอว
-// grow > 0 ใช้ขยายขอบออกไปเพื่อทำเส้นกรอบ
+/* ------------------------------------------------------------------ */
+/* กรอบรูปคน                                                            */
+/* ------------------------------------------------------------------ */
+
+// วาดชิ้นส่วนของรูปคนสมส่วน (ประมาณ 7.5 หัว) ท่ายืนถือเชือกที่ระดับเอว
+// ทุกชิ้นวาดด้วยสีดำทึบ แล้วให้ buildGuide เบลอรวมกันเป็นรูปเดียวที่ขอบเรียบต่อเนื่อง
+// dx ใช้เลื่อนไปวาดนอกจอ เพราะเราต้องการแค่เงาเบลอของมัน
 function paintSilhouette(
   ctx: CanvasRenderingContext2D,
   cx: number,
   top: number,
-  ht: number,
-  grow: number
+  ht: number
 ) {
   const X = (x: number) => cx + x * ht;
   const Y = (y: number) => top + y * ht;
@@ -205,21 +216,21 @@ function paintSilhouette(
 
   // ศีรษะและคอ
   ctx.beginPath();
-  ctx.ellipse(X(0), Y(0.068), 0.052 * ht + grow, 0.066 * ht + grow, 0, 0, Math.PI * 2);
+  ctx.ellipse(X(0), Y(0.068), 0.054 * ht, 0.068 * ht, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillRect(X(-0.024) - grow, Y(0.12), 0.048 * ht + 2 * grow, 0.07 * ht);
+  ctx.fillRect(X(-0.026), Y(0.12), 0.052 * ht, 0.075 * ht);
 
   // ลำตัว
   const torso: [number, number][] = [
     [-0.12, 0.178],
-    [-0.135, 0.205],
+    [-0.138, 0.205],
     [-0.1, 0.33],
     [-0.088, 0.43],
     [-0.098, 0.52],
     [0.098, 0.52],
     [0.088, 0.43],
     [0.1, 0.33],
-    [0.135, 0.205],
+    [0.138, 0.205],
     [0.12, 0.178],
   ];
   ctx.beginPath();
@@ -228,17 +239,13 @@ function paintSilhouette(
   );
   ctx.closePath();
   ctx.fill();
-  if (grow > 0) {
-    ctx.lineWidth = 2 * grow;
-    ctx.stroke();
-  }
 
   const limb = (pts: [number, number][], width: number) => {
     ctx.beginPath();
     pts.forEach(([x, y], i) =>
       i === 0 ? ctx.moveTo(X(x), Y(y)) : ctx.lineTo(X(x), Y(y))
     );
-    ctx.lineWidth = width * ht + 2 * grow;
+    ctx.lineWidth = width * ht;
     ctx.stroke();
   };
 
@@ -247,37 +254,106 @@ function paintSilhouette(
     limb(
       [
         [s * 0.13, 0.21],
-        [s * 0.155, 0.36],
-      ],
-      0.054
-    );
-    limb(
-      [
-        [s * 0.155, 0.36],
+        [s * 0.158, 0.36],
         [s * 0.225, 0.5],
       ],
-      0.044
+      0.056
     );
     // ขา
     limb(
       [
         [s * 0.05, 0.52],
         [s * 0.062, 0.735],
-      ],
-      0.095
-    );
-    limb(
-      [
-        [s * 0.062, 0.735],
         [s * 0.06, 0.94],
       ],
-      0.07
+      0.092
     );
     // เท้า
     ctx.beginPath();
-    ctx.ellipse(X(s * 0.07), Y(0.965), 0.055 * ht + grow, 0.022 * ht + grow, 0, 0, Math.PI * 2);
+    ctx.ellipse(X(s * 0.07), Y(0.965), 0.056 * ht, 0.024 * ht, 0, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+type GuideCache = {
+  w: number;
+  h: number;
+  ok: HTMLCanvasElement;
+  idle: HTMLCanvasElement;
+};
+let guideCache: GuideCache | null = null;
+
+// สร้างภาพกรอบครั้งเดียวต่อขนาดภาพ แล้วเก็บไว้ใช้ซ้ำทุกเฟรม
+// ขั้นตอน: วาดชิ้นส่วนเป็นเงาเบลอ -> ตัดที่ระดับครึ่งหนึ่งได้รูปคนขอบมน ข้อต่อเนียน
+// -> ขยายขอบออกเป็นเส้นกรอบเส้นเดียวต่อเนื่อง -> เจาะรูปคนให้เห็นภาพกล้อง
+function buildGuide(w: number, h: number): GuideCache {
+  const make = () => {
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    return c;
+  };
+
+  const ht = GUIDE_H * h;
+  const top = GUIDE_TOP * h;
+  const cx = w / 2;
+  const blur = Math.max(10, h * 0.022);
+  const border = Math.max(4, h / 200);
+
+  // 1) เงาเบลอของรูปคน (วาดตัวจริงไว้นอกจอ เหลือแต่เงาในจอ)
+  const shadow = make();
+  const sctx = shadow.getContext("2d")!;
+  const OFF = w * 2;
+  sctx.shadowColor = "#000";
+  sctx.shadowBlur = blur;
+  sctx.shadowOffsetX = OFF;
+  sctx.shadowOffsetY = 0;
+  sctx.fillStyle = "#000";
+  sctx.strokeStyle = "#000";
+  paintSilhouette(sctx, cx - OFF, top, ht);
+
+  // 2) ตัดที่ระดับครึ่งหนึ่งของความเข้มเงา ได้รูปคนที่ขอบเรียบ (ขอบนุ่มเล็กน้อยกันแตก)
+  const img = sctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3];
+    const v = Math.max(0, Math.min(1, (a - 100) / 56));
+    d[i] = 0;
+    d[i + 1] = 0;
+    d[i + 2] = 0;
+    d[i + 3] = Math.round(v * 255);
+  }
+  const mask = make();
+  mask.getContext("2d")!.putImageData(img, 0, 0);
+
+  // 3) ประกอบภาพกรอบตามสี
+  const compose = (color: string) => {
+    const out = make();
+    const c = out.getContext("2d")!;
+    c.fillStyle = "rgba(18,18,20,0.55)";
+    c.fillRect(0, 0, w, h);
+
+    // ขยายขอบรูปคนออกรอบทิศ ได้วงแหวนเส้นเดียวที่ต่อเนื่อง
+    const ring = make();
+    const rc = ring.getContext("2d")!;
+    const steps = 32;
+    for (let k = 0; k < steps; k++) {
+      const a = (k / steps) * Math.PI * 2;
+      rc.drawImage(mask, Math.cos(a) * border, Math.sin(a) * border);
+    }
+    rc.drawImage(mask, 0, 0);
+    rc.globalCompositeOperation = "source-in";
+    rc.fillStyle = color;
+    rc.fillRect(0, 0, w, h);
+
+    c.drawImage(ring, 0, 0);
+    // เจาะรูปคนให้เห็นภาพกล้องชัดเต็มๆ
+    c.globalCompositeOperation = "destination-out";
+    c.drawImage(mask, 0, 0);
+    return out;
+  };
+
+  return { w, h, ok: compose("#30D158"), idle: compose("#FFFFFF") };
 }
 
 // พื้นที่นอกรูปคนเป็นสีเทาดำโปร่ง ส่วนในรูปคนเห็นภาพกล้องชัดเต็มๆ
@@ -287,28 +363,10 @@ function drawGuide(
   h: number,
   ok: boolean
 ) {
-  const ht = 0.84 * h;
-  const top = 0.08 * h;
-  const cx = w / 2;
-  const color = ok ? "#30D158" : "#FFFFFF";
-  const border = Math.max(3, h / 260);
-
-  ctx.save();
-  ctx.globalCompositeOperation = "source-over";
-  ctx.fillStyle = "rgba(18,18,20,0.55)";
-  ctx.fillRect(0, 0, w, h);
-
-  // เส้นกรอบรอบรูปคน
-  ctx.fillStyle = color;
-  ctx.strokeStyle = color;
-  paintSilhouette(ctx, cx, top, ht, border);
-
-  // เจาะรูปคนให้เห็นภาพกล้อง
-  ctx.globalCompositeOperation = "destination-out";
-  ctx.fillStyle = "#000";
-  ctx.strokeStyle = "#000";
-  paintSilhouette(ctx, cx, top, ht, 0);
-  ctx.restore();
+  if (!guideCache || guideCache.w !== w || guideCache.h !== h) {
+    guideCache = buildGuide(w, h);
+  }
+  ctx.drawImage(ok ? guideCache.ok : guideCache.idle, 0, 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -501,6 +559,8 @@ export default function Home() {
   const [sound, setSound] = useState(true);
   const [landscape, setLandscape] = useState(false);
   const [handsOk, setHandsOk] = useState(false);
+  const [vp, setVp] = useState({ w: 0, h: 0 });
+  const [vdim, setVdim] = useState({ w: 9, h: 16 });
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -571,6 +631,14 @@ export default function Home() {
     return () => mq.removeEventListener("change", update);
   }, []);
 
+  // ขนาดหน้าจอ ใช้เลือกว่าจะให้ภาพเต็มจอหรือเห็นครบ
+  useEffect(() => {
+    const update = () => setVp({ w: window.innerWidth, h: window.innerHeight });
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
   // สลับแอปแล้วกลับมา ต้องขอล็อกหน้าจอใหม่ ไม่งั้นจอดับระหว่างเล่น
   useEffect(() => {
     const onVisible = () => {
@@ -601,6 +669,12 @@ export default function Home() {
     if (videoRef.current) videoRef.current.srcObject = null;
     wakeLockRef.current?.release().catch(() => {});
     wakeLockRef.current = null;
+    try {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      screen.orientation?.unlock?.();
+    } catch {
+      // ออกจากเต็มจอไม่ได้ก็ข้าม
+    }
   }, []);
 
   const finish = useCallback(
@@ -795,6 +869,24 @@ export default function Home() {
     const sid = ++sessionRef.current;
     const cancelled = () => sessionRef.current !== sid;
 
+    // ขอเต็มจอและล็อกแนวตั้ง ต้องเรียกตอนผู้ใช้กดปุ่ม
+    // Android และเดสก์ท็อปใช้ได้ iPhone ไม่รองรับ จะข้ามไปเอง
+    try {
+      const el = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) {
+        el.requestFullscreen()
+          .then(() => {
+            const o = screen.orientation as unknown as {
+              lock?: (type: string) => Promise<void>;
+            };
+            return o.lock?.("portrait");
+          })
+          .catch(() => {});
+      }
+    } catch {
+      // ขอเต็มจอไม่ได้ก็ใช้งานต่อได้
+    }
+
     setError(null);
     setCount(0);
     setElapsed(0);
@@ -853,9 +945,10 @@ export default function Home() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: facing },
-          // ความละเอียดต่ำพอให้เครื่องเก่าจับท่าได้ลื่น โมเดลใช้ภาพย่อเล็กอยู่แล้ว
-          width: { ideal: 480 },
-          height: { ideal: 640 },
+          // ภาพแนวตั้ง 9:16 เต็มจอมือถือ ความละเอียดพอให้เครื่องเก่าจับท่าได้ลื่น
+          width: { ideal: 540 },
+          height: { ideal: 960 },
+          aspectRatio: { ideal: 9 / 16 },
           frameRate: { ideal: 30, max: 30 },
         },
         audio: false,
@@ -870,6 +963,7 @@ export default function Home() {
       if (!video) throw new Error("ไม่พบ video element");
       video.srcObject = stream;
       await video.play();
+      setVdim({ w: video.videoWidth || 9, h: video.videoHeight || 16 });
 
       if ("wakeLock" in navigator) {
         navigator.wakeLock
@@ -1221,6 +1315,11 @@ export default function Home() {
   const glass = "bg-black/35 backdrop-blur-xl";
   const isPrep = phase === "positioning" || phase === "countdown";
   const flip = facing === "user" ? "-scale-x-100" : "";
+  // จอสูงกว่าภาพ (มือถือแนวตั้ง) ให้ภาพเต็มจอ จอกว้างกว่าภาพ (แท็บเล็ต เดสก์ท็อป) ให้เห็นภาพครบ
+  const fit =
+    vp.w > 0 && vp.w / vp.h > vdim.w / vdim.h
+      ? "object-contain"
+      : "object-cover";
 
   const checks: [string, boolean][] = [
     ["เห็นทั้งตัว", placement.visible],
@@ -1239,28 +1338,35 @@ export default function Home() {
         ref={videoRef}
         playsInline
         muted
-        className={`absolute inset-0 h-full w-full object-contain ${flip}`}
+        className={`absolute inset-0 h-full w-full ${fit} ${flip}`}
       />
       <canvas
         ref={canvasRef}
-        className={`absolute inset-0 h-full w-full object-contain ${flip}`}
+        className={`absolute inset-0 h-full w-full ${fit} ${flip}`}
       />
 
-      {/* ตัวนับ เวลา และความคืบหน้า อยู่ด้านบน ไม่บังเท้าของผู้เล่น */}
+      {/* ตอนกระโดด: เวลาซ้าย ตัวนับขวา เว้นกลางจอไว้ให้เห็นผู้เล่น */}
       {phase === "running" && (
-        <div className="absolute inset-x-0 top-0 flex flex-col items-center bg-gradient-to-b from-black/70 via-black/40 to-transparent px-5 pb-10 pt-[max(0.75rem,env(safe-area-inset-top))]">
-          <div
-            className={`${glass} rounded-full px-4 py-1.5 text-[22px] font-semibold tabular-nums`}
-          >
-            {timerText}
+        <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/65 via-black/30 to-transparent px-4 pb-10 pt-[max(0.75rem,env(safe-area-inset-top))]">
+          <div className="flex items-start justify-between">
+            <div
+              className={`${glass} rounded-full px-4 py-1.5 text-[22px] font-semibold tabular-nums`}
+            >
+              {timerText}
+            </div>
+            <div className="text-right">
+              <div
+                className="font-semibold leading-none tabular-nums tracking-tight drop-shadow-lg"
+                style={{ fontSize: "clamp(64px, 11dvh, 104px)" }}
+              >
+                {count}
+              </div>
+              <div className="mt-1 text-[13px] text-white/80 drop-shadow">
+                {mode === "count" ? `จาก ${target} ครั้ง` : "ครั้ง"}
+              </div>
+            </div>
           </div>
-          <div
-            className="mt-1 font-semibold leading-none tabular-nums tracking-tight drop-shadow-lg"
-            style={{ fontSize: "clamp(72px, 15dvh, 132px)" }}
-          >
-            {count}
-          </div>
-          <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/25">
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/25">
             <div
               className="h-full rounded-full bg-[#30D158]"
               style={{
@@ -1269,47 +1375,59 @@ export default function Home() {
               }}
             />
           </div>
-          <div className="mt-1.5 text-[13px] text-white/75">
-            {mode === "count" ? `จาก ${target} ครั้ง` : "ครั้ง"}
-          </div>
         </div>
       )}
 
-      {/* เช็คลิสต์ตำแหน่ง (ก่อนเริ่ม) */}
+      {/* ก่อนเริ่ม: คำแนะนำสั้นๆ อยู่บนสุดบรรทัดเดียว ไม่บังกรอบรูปคน */}
       {isPrep && (
-        <div className="absolute inset-x-0 top-0 flex flex-col items-center gap-2 bg-gradient-to-b from-black/60 to-transparent px-4 pb-8 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-1 px-3 pt-[max(0.5rem,env(safe-area-inset-top))]">
           <div
-            className={`${glass} rounded-full px-5 py-2 text-[17px] font-semibold`}
+            className={`${glass} max-w-full rounded-full px-3.5 py-1 text-center text-[14px] font-semibold leading-5`}
           >
-            {placement.ok ? "พร้อมแล้ว" : "ยืนให้ตรงกรอบ"}
-          </div>
-          <div className="flex flex-wrap justify-center gap-1.5">
-            {checks.map(([label, passed]) => (
-              <div
-                key={label}
-                className={`${glass} flex items-center gap-1.5 rounded-full py-1.5 pl-2 pr-3 text-[13px] font-medium`}
-              >
-                <span
-                  aria-hidden
-                  className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] leading-none ${
-                    passed
-                      ? "bg-[#30D158] text-black"
-                      : "border border-white/60 text-transparent"
-                  }`}
-                >
-                  ✓
-                </span>
-                {label}
-              </div>
-            ))}
-          </div>
-          <p className="text-center text-[16px] font-semibold drop-shadow-md">
             {placement.hint}
-          </p>
+          </div>
           {landscape && (
-            <p className="text-center text-[13px] text-white/80 drop-shadow-md">
+            <p className="text-center text-[11px] text-white/85 drop-shadow">
               หมุนมือถือเป็นแนวตั้งจะใช้งานง่ายกว่า
             </p>
+          )}
+        </div>
+      )}
+
+      {/* ก่อนเริ่ม: สถานะทั้งหมดอยู่แถบด้านซ้าย ปล่อยกลางจอให้กรอบรูปคนเต็มที่ */}
+      {isPrep && (
+        <div className="pointer-events-none absolute left-2 top-[max(3.25rem,calc(env(safe-area-inset-top)+2.75rem))] flex w-[104px] flex-col items-start gap-1.5">
+          {checks.map(([label, passed]) => (
+            <div
+              key={label}
+              className={`${glass} flex items-center gap-1 rounded-full py-[3px] pl-1 pr-2 text-[11px] font-medium leading-4`}
+            >
+              <span
+                aria-hidden
+                className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[9px] leading-none ${
+                  passed
+                    ? "bg-[#30D158] text-black"
+                    : "border border-white/60 text-transparent"
+                }`}
+              >
+                ✓
+              </span>
+              <span className="whitespace-nowrap">{label}</span>
+            </div>
+          ))}
+          {phase === "positioning" && (
+            <div
+              className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-white/25"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(hold * 100)}
+            >
+              <div
+                className="h-full rounded-full bg-[#30D158] transition-[width] duration-150"
+                style={{ width: `${hold * 100}%` }}
+              />
+            </div>
           )}
         </div>
       )}
@@ -1318,7 +1436,7 @@ export default function Home() {
       {phase === "running" && (!bodyOk || !handsOk) && (
         <div
           role="status"
-          className={`${glass} absolute inset-x-6 bottom-[max(6.5rem,calc(env(safe-area-inset-bottom)+5.5rem))] rounded-2xl px-4 py-3 text-center text-[15px] font-medium`}
+          className={`${glass} absolute inset-x-6 bottom-[max(5rem,calc(env(safe-area-inset-bottom)+4rem))] rounded-2xl px-4 py-3 text-center text-[15px] font-medium`}
         >
           {!bodyOk
             ? "ถอยให้เห็นทั้งตัว ตั้งแต่ศีรษะถึงข้อเท้า"
@@ -1344,33 +1462,19 @@ export default function Home() {
         </div>
       )}
 
-      {/* ส่วนล่าง */}
-      <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        {phase === "positioning" && (
-          <div
-            className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/25"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(hold * 100)}
-          >
-            <div
-              className="h-full rounded-full bg-[#30D158] transition-[width] duration-150"
-              style={{ width: `${hold * 100}%` }}
-            />
-          </div>
-        )}
+      {/* ปุ่มล่าง เล็กลงเพื่อไม่บังเท้า */}
+      <div className="absolute inset-x-0 bottom-0 flex justify-center px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {phase === "running" ? (
           <button
             onClick={stopEarly}
-            className={`${glass} h-14 w-full max-w-xs rounded-full text-[17px] font-semibold text-[#FF453A] active:bg-black/50`}
+            className={`${glass} h-12 w-full max-w-xs rounded-full text-[17px] font-semibold text-[#FF453A] active:bg-black/50`}
           >
             สิ้นสุด
           </button>
         ) : (
           <button
             onClick={cancelSession}
-            className={`${glass} h-14 w-full max-w-xs rounded-full text-[17px] font-semibold active:bg-black/50`}
+            className={`${glass} h-10 w-36 rounded-full text-[16px] font-semibold active:bg-black/50`}
           >
             ยกเลิก
           </button>
