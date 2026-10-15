@@ -146,8 +146,8 @@ const LEVEL_JITTER_DEG = 2;
 const LEVEL_WINDOW_MS = 500;
 const LEVEL_HOLD_MS = 1500;
 const LEVEL_RANGE_DEG = 22;
-// ราง 300px ลูกบอล 72px → วิ่งได้ ±114px พอดีขอบรางเมื่อเอียงถึง LEVEL_RANGE_DEG
-const LEVEL_PX_PER_DEG = 114 / LEVEL_RANGE_DEG;
+// ราง 300px ลูกบอล 72px → ขอบสุด ±114px เว้นไว้ ±100px ไม่ให้ชนขอบตอนเอียงถึง LEVEL_RANGE_DEG
+const LEVEL_PX_PER_DEG = 100 / LEVEL_RANGE_DEG;
 
 // ท่าจับเชือก
 const HAND_MIN_OFFSET = 0.75;
@@ -2224,7 +2224,8 @@ export default function Home() {
     const cancelled = () => sessionRef.current !== sid;
 
     // ขอสิทธิ์เซนเซอร์เอียง ต้องเรียกก่อน await ใดๆ
-    const gyroPromise = requestGyro();
+    // กล้องหลังไม่ต้องตั้งมือถือ จึงไม่ขอสิทธิ์ไจโร
+    const gyroPromise = facing === "user" ? requestGyro() : Promise.resolve(false);
 
     // เต็มจอ + ล็อกแนวตั้งเฉพาะมือถือ (หน้าจอแคบ) เดสก์ท็อปไม่ต้อง
     try {
