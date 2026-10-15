@@ -1693,7 +1693,6 @@ export default function Home() {
   }>({ init: false, p: 0, r: 0, buf: [] });
   const levelKnobRef = useRef<HTMLDivElement>(null);
   const levelBarRef = useRef<HTMLDivElement>(null);
-  const levelPhoneRef = useRef<SVGGElement>(null);
 
   // ซิงก์กับ MongoDB (ใช้เมื่อล็อกอินแล้วเท่านั้น)
   const [remoteReady, setRemoteReady] = useState(false);
@@ -1909,10 +1908,6 @@ export default function Home() {
       );
       if (levelKnobRef.current) {
         levelKnobRef.current.style.transform = `translateY(${-clamped * LEVEL_PX_PER_DEG}px)`;
-      }
-      if (levelPhoneRef.current) {
-        const lean = 90 - targetBeta + (front ? g.p : -g.p);
-        levelPhoneRef.current.style.transform = `rotate(${lean}deg)`;
       }
       if (levelBarRef.current) {
         const rot = Math.max(-45, Math.min(45, -g.r));
@@ -3280,14 +3275,6 @@ export default function Home() {
   // มุมหงายหลังเป้าหมาย (องศา) = 90 - beta เป้าหมาย → 20° (กล้องหน้า)
   const targetLean =
     90 - (facing === "user" ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA);
-  // จุดหมุนของมือถือ = มุมล่างขวา (พิงลัง) ที่ x=125, พื้น y=130
-  const PIVOT_X = 125;
-  const ARC_R = 60;
-  const leanRad = (targetLean * Math.PI) / 180;
-  const arcEnd = {
-    x: PIVOT_X + ARC_R * Math.sin(leanRad),
-    y: 130 - ARC_R * Math.cos(leanRad),
-  };
   const flip = facing === "user" ? "-scale-x-100" : "";
   const fit =
     FORCE_CONTAIN || (vp.w > 0 && vp.w / vp.h > vdim.w / vdim.h)
@@ -3390,7 +3377,7 @@ export default function Home() {
               />
             </div>
             <p className="mt-3 text-center text-[13px] leading-5 text-[#6B7A6E]">
-              พิงมือถือกับลังหรือผนังให้หงายขึ้นประมาณ {Math.abs(targetLean)}° ตามเงาเส้นประ แล้วค้างไว้ให้นิ่ง
+              พิงมือถือกับลังหรือผนังให้หงายขึ้นประมาณ {Math.abs(targetLean)}° ตามลูกศร แล้วค้างไว้ให้นิ่ง
             </p>
             {landscape && (
               <p className="mt-1 text-center text-[12px] text-[#D92D20]">
@@ -3407,107 +3394,7 @@ export default function Home() {
               />
             </div>
 
-            <svg
-              viewBox="0 0 240 150"
-              className="mt-2 h-[140px] w-[224px] shrink-0"
-              aria-hidden
-            >
-              {/* พื้น */}
-              <rect x="6" y="130" width="230" height="10" rx="5" fill="#D5DCC8" />
-
-              {/* ลัง: หน้าลัง + ฝาบน + ข้าง (ผิวหน้าลังที่ x=152 แตะมุมบนมือถือที่เอน 20°) */}
-              <rect x="152" y="38" width="76" height="92" fill="#E3EAD6" />
-              <polygon points="152,38 164,26 238,26 228,38" fill="#EEF2E4" />
-              <polygon points="228,38 238,26 238,116 228,130" fill="#D5DCC8" />
-              <path
-                d="M152 130V38h76v92zM152 38l12-12h74M228 38l10-12"
-                fill="none"
-                stroke="#C5CFB5"
-                strokeWidth="2"
-                strokeLinejoin="round"
-              />
-
-              {/* เส้นแนวตั้งอ้างอิง + มุมเอน */}
-              <line
-                x1={PIVOT_X}
-                y1="130"
-                x2={PIVOT_X}
-                y2={130 - ARC_R}
-                stroke="#C5CFB5"
-                strokeWidth="2"
-                strokeDasharray="3 5"
-                strokeLinecap="round"
-              />
-              <path
-                d={`M ${PIVOT_X} ${130 - ARC_R} A ${ARC_R} ${ARC_R} 0 0 ${
-                  targetLean >= 0 ? 1 : 0
-                } ${arcEnd.x} ${arcEnd.y}`}
-                fill="none"
-                stroke="#3F5E1F"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-              <text
-                x={arcEnd.x + (targetLean >= 0 ? 6 : -6)}
-                y={arcEnd.y - 4}
-                fontSize="12"
-                fontWeight="600"
-                fill="#3F5E1F"
-                textAnchor={targetLean >= 0 ? "start" : "end"}
-              >
-                {Math.abs(targetLean)}°
-              </text>
-
-              {/* เงาใต้มือถือ */}
-              <ellipse cx="112" cy="132" rx="26" ry="3.5" fill="#1B2A21" opacity="0.14" />
-
-              {/* มือถือจริง (หมุนตามไจโร รอบมุมล่างขวา พิงลัง) */}
-              <g
-                ref={levelPhoneRef}
-                style={{ transformOrigin: `${PIVOT_X}px 130px` }}
-              >
-                <rect
-                  x="95"
-                  y="50"
-                  width="30"
-                  height="80"
-                  rx="8"
-                  fill="#1B2A21"
-                  stroke={levelInfo.pitchOk ? LIME : "none"}
-                  strokeWidth="2.5"
-                />
-                <rect x="98.5" y="58" width="23" height="66" rx="4" fill="#26382C" />
-                <circle cx="110" cy="54.5" r="1.6" fill={LIME} />
-                <circle cx="110" cy="80" r="3.2" fill={LIME} />
-                <path
-                  d="M110 85v12M110 89l-7 5M110 89l7 5M110 97l-5 9M110 97l5 9"
-                  fill="none"
-                  stroke={LIME}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </g>
-
-              {/* เงาเป้าหมาย: ยังไม่ตรงจะกะพริบ ตรงแล้วเป็นเส้นทึบสีมะนาว */}
-              <g
-                transform={`rotate(${targetLean} ${PIVOT_X} 130)`}
-                className={levelInfo.pitchOk ? "" : "pj-pulse"}
-              >
-                <rect
-                  x="95"
-                  y="50"
-                  width="30"
-                  height="80"
-                  rx="8"
-                  fill="none"
-                  stroke={levelInfo.pitchOk ? LIME : "#8FB54A"}
-                  strokeWidth="2.5"
-                  strokeDasharray={levelInfo.pitchOk ? undefined : "5 4"}
-                />
-              </g>
-            </svg>
-
-            <div className="relative mt-4 h-[260px] w-[84px] shrink-0 rounded-full bg-[#E3EAD6]">
+            <div className="relative mt-6 h-[300px] w-[84px] shrink-0 rounded-full bg-[#E3EAD6]">
               <div
                 className={`absolute left-1/2 top-1/2 h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-dashed transition-colors ${
                   levelInfo.pitchOk ? "border-[#3F5E1F]" : "border-[#A9B79A]"
