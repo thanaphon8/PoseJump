@@ -145,8 +145,9 @@ const LEVEL_TOL_DEG = 7;
 const LEVEL_JITTER_DEG = 2;
 const LEVEL_WINDOW_MS = 500;
 const LEVEL_HOLD_MS = 1500;
-const LEVEL_PX_PER_DEG = 4;
 const LEVEL_RANGE_DEG = 22;
+// ราง 300px ลูกบอล 72px → วิ่งได้ ±114px พอดีขอบรางเมื่อเอียงถึง LEVEL_RANGE_DEG
+const LEVEL_PX_PER_DEG = 114 / LEVEL_RANGE_DEG;
 
 // ท่าจับเชือก
 const HAND_MIN_OFFSET = 0.75;
