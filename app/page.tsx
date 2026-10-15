@@ -139,8 +139,8 @@ const MAX_BOTTOM = 0.97;
 const CENTER_TOL = 0.25;
 
 // ตั้งมือถือด้วยไจโร (องศา) 90 = ตั้งตรง น้อยกว่า = เอนหลัง กล้องหลังใช้ 180 - ค่านี้
-// ตั้งค่าให้วางง่าย: ตั้งตรงขึ้นเล็กน้อย (เอนแค่ 6 องศา) ยอมคลาดเคลื่อนได้ ±7 องศา
-const LEVEL_TARGET_BETA = 84;
+// ตั้งค่า: พิงมือถือกับลัง/ผนังให้หงายหลัง 20 องศา (กล้องหน้าแหงนขึ้น ไม่ก้มลง) ยอมคลาดเคลื่อนได้ ±7 องศา
+const LEVEL_TARGET_BETA = 70;
 const LEVEL_TOL_DEG = 7;
 const LEVEL_JITTER_DEG = 2;
 const LEVEL_WINDOW_MS = 500;
@@ -2681,7 +2681,7 @@ export default function Home() {
               เริ่มกระโดด
             </button>
             <p className="text-center text-[12px] text-[#6B7A6E]">
-              วางมือถือตั้งตรง สูงระดับเอว ยืนให้เห็นศีรษะถึงเท้า แล้วกางมือเหมือนจับเชือก
+              พิงมือถือกับลังหรือผนังให้หงายขึ้นเล็กน้อย สูงระดับเอว ยืนให้เห็นศีรษะถึงเท้า แล้วกางมือเหมือนจับเชือก
             </p>
           </div>
 
@@ -3277,12 +3277,15 @@ export default function Home() {
   const glass = "bg-black/45 backdrop-blur-xl";
   const isPrep = phase === "positioning" || phase === "countdown";
   const isLevel = phase === "leveling";
+  // มุมหงายหลังเป้าหมาย (องศา) = 90 - beta เป้าหมาย → 20° (กล้องหน้า)
   const targetLean =
     90 - (facing === "user" ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA);
-  const ARC_R = 92;
+  // จุดหมุนของมือถือ = มุมล่างขวา (พิงลัง) ที่ x=125, พื้น y=130
+  const PIVOT_X = 125;
+  const ARC_R = 60;
   const leanRad = (targetLean * Math.PI) / 180;
   const arcEnd = {
-    x: 110 + ARC_R * Math.sin(leanRad),
+    x: PIVOT_X + ARC_R * Math.sin(leanRad),
     y: 130 - ARC_R * Math.cos(leanRad),
   };
   const flip = facing === "user" ? "-scale-x-100" : "";
@@ -3387,7 +3390,7 @@ export default function Home() {
               />
             </div>
             <p className="mt-3 text-center text-[13px] leading-5 text-[#6B7A6E]">
-              พิงมือถือกับผนังให้เอนเล็กน้อยตามเงาเส้นประ แล้วค้างไว้ให้นิ่ง
+              พิงมือถือกับลังหรือผนังให้หงายขึ้นประมาณ {Math.abs(targetLean)}° ตามเงาเส้นประ แล้วค้างไว้ให้นิ่ง
             </p>
             {landscape && (
               <p className="mt-1 text-center text-[12px] text-[#D92D20]">
@@ -3409,24 +3412,26 @@ export default function Home() {
               className="mt-2 h-[140px] w-[224px] shrink-0"
               aria-hidden
             >
-              {/* ผนัง + พื้น */}
-              <rect x="142" y="6" width="94" height="126" rx="10" fill="#E3EAD6" />
-              <line
-                x1="142"
-                y1="14"
-                x2="142"
-                y2="130"
+              {/* พื้น */}
+              <rect x="6" y="130" width="230" height="10" rx="5" fill="#D5DCC8" />
+
+              {/* ลัง: หน้าลัง + ฝาบน + ข้าง (ผิวหน้าลังที่ x=152 แตะมุมบนมือถือที่เอน 20°) */}
+              <rect x="152" y="38" width="76" height="92" fill="#E3EAD6" />
+              <polygon points="152,38 164,26 238,26 228,38" fill="#EEF2E4" />
+              <polygon points="228,38 238,26 238,116 228,130" fill="#D5DCC8" />
+              <path
+                d="M152 130V38h76v92zM152 38l12-12h74M228 38l10-12"
+                fill="none"
                 stroke="#C5CFB5"
                 strokeWidth="2"
-                strokeLinecap="round"
+                strokeLinejoin="round"
               />
-              <rect x="6" y="130" width="230" height="10" rx="5" fill="#D5DCC8" />
 
               {/* เส้นแนวตั้งอ้างอิง + มุมเอน */}
               <line
-                x1="110"
+                x1={PIVOT_X}
                 y1="130"
-                x2="110"
+                x2={PIVOT_X}
                 y2={130 - ARC_R}
                 stroke="#C5CFB5"
                 strokeWidth="2"
@@ -3434,7 +3439,7 @@ export default function Home() {
                 strokeLinecap="round"
               />
               <path
-                d={`M 110 ${130 - ARC_R} A ${ARC_R} ${ARC_R} 0 0 ${
+                d={`M ${PIVOT_X} ${130 - ARC_R} A ${ARC_R} ${ARC_R} 0 0 ${
                   targetLean >= 0 ? 1 : 0
                 } ${arcEnd.x} ${arcEnd.y}`}
                 fill="none"
@@ -3443,8 +3448,8 @@ export default function Home() {
                 strokeLinecap="round"
               />
               <text
-                x={arcEnd.x + (targetLean >= 0 ? 8 : -8)}
-                y={arcEnd.y - 3}
+                x={arcEnd.x + (targetLean >= 0 ? 6 : -6)}
+                y={arcEnd.y - 4}
                 fontSize="12"
                 fontWeight="600"
                 fill="#3F5E1F"
@@ -3454,10 +3459,13 @@ export default function Home() {
               </text>
 
               {/* เงาใต้มือถือ */}
-              <ellipse cx="110" cy="132" rx="24" ry="3.5" fill="#1B2A21" opacity="0.14" />
+              <ellipse cx="112" cy="132" rx="26" ry="3.5" fill="#1B2A21" opacity="0.14" />
 
-              {/* มือถือจริง (หมุนตามไจโร) */}
-              <g ref={levelPhoneRef} style={{ transformOrigin: "110px 130px" }}>
+              {/* มือถือจริง (หมุนตามไจโร รอบมุมล่างขวา พิงลัง) */}
+              <g
+                ref={levelPhoneRef}
+                style={{ transformOrigin: `${PIVOT_X}px 130px` }}
+              >
                 <rect
                   x="95"
                   y="50"
@@ -3482,7 +3490,7 @@ export default function Home() {
 
               {/* เงาเป้าหมาย: ยังไม่ตรงจะกะพริบ ตรงแล้วเป็นเส้นทึบสีมะนาว */}
               <g
-                transform={`rotate(${targetLean} 110 130)`}
+                transform={`rotate(${targetLean} ${PIVOT_X} 130)`}
                 className={levelInfo.pitchOk ? "" : "pj-pulse"}
               >
                 <rect
