@@ -59,7 +59,7 @@ type Phase =
   | "summary";
 type Mode = "time" | "count";
 type EndReason = "time" | "count" | "manual";
-type Tab = "home" | "history" | "settings";
+type Tab = "home" | "today" | "history" | "settings";
 
 type Summary = {
   total: number;
@@ -95,6 +95,22 @@ type Settings = {
   dailyGoal: number;
   facing: "user" | "environment";
   sound: boolean;
+};
+
+// อันดับวันนี้ (มาจาก /api/leaderboard)
+type BoardEntry = {
+  rank: number;
+  name: string;
+  total: number;
+  rounds: number;
+  me: boolean;
+};
+
+type Board = {
+  entries: BoardEntry[];
+  me: { rank: number; total: number; gap: number } | null;
+  count: number;
+  resetAt: number;
 };
 
 // ใช้เทียบว่าค่าตั้งค่าเปลี่ยนจากที่ซิงก์ไว้ล่าสุดไหม
@@ -651,6 +667,8 @@ const ICONS = {
   down: "M12 4v15M6 13l6 6 6-6",
   left: "M15 6l-6 6 6 6",
   right: "M9 6l6 6-6 6",
+  trophy:
+    "M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22M18 2H6v7a6 6 0 0 0 12 0V2z",
   user: "M20 21a8 8 0 0 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
   logout:
     "M9 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4M16 17l5-5-5-5M21 12H9",
@@ -1430,6 +1448,7 @@ function Shell({
 }) {
   const items: [Tab, string, string][] = [
     ["home", "หน้าหลัก", ICONS.home],
+    ["today", "วันนี้", ICONS.trophy],
     ["history", "ประวัติ", ICONS.chart],
     ["settings", "ตั้งค่า", ICONS.gear],
   ];
@@ -1524,6 +1543,9 @@ export default function Home() {
   const [levelInfo, setLevelInfo] = useState<LevelInfo>(EMPTY_LEVEL);
   const [user, setUser] = useState<User | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
+  const [board, setBoard] = useState<Board | null>(null);
+  const [boardErr, setBoardErr] = useState(false);
+  const [boardNow, setBoardNow] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -2073,6 +2095,26 @@ export default function Home() {
 
   useEffect(() => stopAll, [stopAll]);
 
+  // อันดับวันนี้: โหลดตอนเปิดแท็บ และรีเฟรชทุก 30 วินาที
+  const loadBoard = useCallback(async () => {
+    try {
+      const r = await fetch("/api/leaderboard", { cache: "no-store" });
+      if (!r.ok) throw new Error("load failed");
+      setBoard((await r.json()) as Board);
+      setBoardErr(false);
+    } catch {
+      setBoardErr(true);
+    }
+    setBoardNow(Date.now());
+  }, []);
+
+  useEffect(() => {
+    if (phase !== "setup" || tab !== "today") return;
+    loadBoard();
+    const t = setInterval(loadBoard, 30000);
+    return () => clearInterval(t);
+  }, [phase, tab, user, loadBoard]);
+
   const startSession = useCallback(async () => {
     const sid = ++sessionRef.current;
     const cancelled = () => sessionRef.current !== sid;
@@ -2296,6 +2338,12 @@ export default function Home() {
   const goHome = () => {
     setTab("home");
     setPhase("setup");
+  };
+
+  // ยกเลิกตอนสแกนตัว: ปิดกล้อง ยกเลิกรอบที่ค้าง แล้วกลับหน้าหลัก
+  const cancelScan = () => {
+    stopAll();
+    goHome();
   };
 
   const login = (u: User) => {
@@ -2577,6 +2625,195 @@ export default function Home() {
       </>
     );
 
+    const leader = board?.entries[0];
+    const leaderTotal = Math.max(1, leader?.total ?? 1);
+    const leftMs = Math.max(0, (board?.resetAt ?? 0) - boardNow);
+    const resetText = `${Math.floor(leftMs / 3600000)} ชม. ${Math.floor(
+      (leftMs % 3600000) / 60000
+    )} นาที`;
+    const rankBadge = (rank: number) =>
+      rank === 1
+        ? "bg-[#C9F25B] text-[#1B2A21]"
+        : rank === 2
+          ? "bg-[#1B2A21] text-[#C9F25B]"
+          : rank === 3
+            ? "bg-[#3F5E1F] text-white"
+            : "text-[#6B7A6E]";
+
+    const todayView = (
+      <>
+        <header className="mb-5">
+          <p className="min-h-[18px] text-[13px] text-[#6B7A6E]">
+            {board ? `รีเซ็ตใน ${resetText}` : ""}
+          </p>
+          <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
+            อันดับวันนี้
+          </h1>
+        </header>
+
+        {!board && !boardErr && (
+          <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
+            กำลังโหลดอันดับ
+          </p>
+        )}
+
+        {!board && boardErr && (
+          <div className={`${card} px-4 py-6 text-center`}>
+            <p className="text-[14px] text-[#D92D20]">
+              โหลดอันดับไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วลองใหม่
+            </p>
+            <button
+              onClick={loadBoard}
+              className="mt-3 h-10 rounded-full bg-[#C9F25B] px-6 text-[14px] font-semibold text-[#1B2A21] transition-transform active:scale-95"
+            >
+              ลองใหม่
+            </button>
+          </div>
+        )}
+
+        {board && (
+          <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
+            <div className="space-y-4">
+              <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-[15px] font-semibold">ผู้นำวันนี้</span>
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-medium text-[#C9F25B]">
+                    {board.count} คนลงสนาม
+                  </span>
+                </div>
+                {leader ? (
+                  <div className="mt-4 flex items-center gap-4">
+                    <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
+                      <Icon d={ICONS.trophy} size={32} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-[24px] font-semibold">
+                        {leader.name}
+                      </div>
+                      <div className="mt-1 flex items-baseline gap-2">
+                        <span className="text-[40px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
+                          {fmtNum(leader.total)}
+                        </span>
+                        <span className="text-[14px] text-white/60">ครั้ง</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-[16px] text-white/80">
+                    ยังไม่มีใครกระโดดวันนี้ ลงสนามเป็นคนแรกเลย
+                  </p>
+                )}
+              </section>
+
+              <section className="rounded-3xl bg-[#E8F5C1] p-5">
+                <h2 className="text-[16px] font-semibold">อันดับของคุณ</h2>
+                {!user ? (
+                  <>
+                    <p className="mt-2 text-[14px] text-[#4B5E3A]">
+                      เข้าสู่ระบบเพื่อให้คะแนนของคุณติดอันดับ
+                    </p>
+                    <button
+                      onClick={() => setAuthOpen(true)}
+                      className="mt-4 flex h-12 w-full items-center justify-center rounded-full bg-[#1B2A21] text-[15px] font-semibold text-[#C9F25B] transition-transform active:scale-[0.98]"
+                    >
+                      เข้าสู่ระบบ
+                    </button>
+                  </>
+                ) : board.me ? (
+                  <div className="mt-3 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight">
+                        #{board.me.rank}
+                      </div>
+                      <div className="mt-2 text-[14px] text-[#4B5E3A]">
+                        {fmtNum(board.me.total)} ครั้งวันนี้
+                      </div>
+                    </div>
+                    <div className="max-w-[160px] text-right text-[13px] font-medium text-[#3F5E1F]">
+                      {board.me.rank === 1
+                        ? "คุณนำอยู่!"
+                        : `อีก ${fmtNum(board.me.gap)} ครั้งจะแซงอันดับ ${board.me.rank - 1}`}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="mt-2 text-[14px] text-[#4B5E3A]">
+                      วันนี้คุณยังไม่ได้กระโดด โดดเลยเพื่อติดอันดับ
+                    </p>
+                    <button onClick={startSession} className={`${limeBtn} mt-4`}>
+                      <Icon d={ICONS.play} size={20} fill />
+                      เริ่มกระโดด
+                    </button>
+                  </>
+                )}
+              </section>
+            </div>
+
+            <section>
+              <h2 className="mb-2 px-1 text-[16px] font-semibold">ตารางอันดับ</h2>
+              {board.entries.length === 0 ? (
+                <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
+                  ยังไม่มีอันดับ
+                </p>
+              ) : (
+                <ul className={`${card} divide-y divide-[#EEF2E4] overflow-hidden`}>
+                  {board.entries.map((e) => (
+                    <li
+                      key={e.rank}
+                      className={`flex items-center gap-3 px-4 py-3 ${
+                        e.me ? "bg-[#E8F5C1]" : ""
+                      }`}
+                    >
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums ${rankBadge(
+                          e.rank
+                        )}`}
+                      >
+                        {e.rank}
+                      </span>
+                      <Avatar name={e.name} size={40} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-[16px] font-semibold">
+                            {e.name}
+                          </span>
+                          {e.me && (
+                            <span className="shrink-0 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
+                              คุณ
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]">
+                          <div
+                            className="h-full rounded-full transition-[width] duration-500"
+                            style={{
+                              width: `${(e.total / leaderTotal) * 100}%`,
+                              background: e.rank === 1 ? "#1B2A21" : "#A9B79A",
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[18px] font-semibold tabular-nums">
+                          {fmtNum(e.total)}
+                        </div>
+                        <div className="text-[11px] text-[#6B7A6E]">
+                          {e.rounds} รอบ
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
+                นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุกเที่ยงคืนเวลาไทย
+              </p>
+            </section>
+          </div>
+        )}
+      </>
+    );
+
     const historyView = (
       <>
         <h1 className="text-[30px] font-bold tracking-tight lg:text-[36px]">
@@ -2751,6 +2988,7 @@ export default function Home() {
           }
         >
           {tab === "home" && homeView}
+          {tab === "today" && todayView}
           {tab === "history" && historyView}
           {tab === "settings" && settingsView}
         </Shell>
@@ -3201,6 +3439,20 @@ export default function Home() {
               {countdown}
             </span>
           </div>
+        )}
+
+        {/* ปุ่มย้อนกลับ ตอนสแกนตัว */}
+        {isPrep && (
+          <button
+            onClick={cancelScan}
+            aria-label="ย้อนกลับ"
+            className="pj-in absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 z-10 flex h-12 items-center gap-2 rounded-full bg-white/90 py-1 pl-1 pr-5 text-[16px] font-semibold text-[#1B2A21] backdrop-blur transition-transform active:scale-95 lg:bottom-5 lg:left-5"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#C9F25B]">
+              <Icon d={ICONS.left} size={20} />
+            </span>
+            ย้อนกลับ
+          </button>
         )}
 
         {/* ปุ่มจบ (มือถือ) */}
