@@ -1646,6 +1646,8 @@ export default function Home() {
   const [summary, setSummary] = useState<Summary | null>(null);
   // ภาพยืนยันของวันนี้ (เก็บใน localStorage ของเครื่องนี้ ไม่อัปโหลด)
   const [shots, setShots] = useState<DayShots>(EMPTY_SHOTS);
+  // true = หน้าสรุปผลกำลังแสดง "ผลวันนี้" รวมทุกรอบ (เปิดจากหน้าประวัติ)
+  const [dayMode, setDayMode] = useState(false);
   const [placement, setPlacement] = useState<Placement>(EMPTY_PLACEMENT);
   const [hold, setHold] = useState(0);
   const [facing, setFacing] = useState<"user" | "environment">("user");
@@ -2347,6 +2349,7 @@ export default function Home() {
     }
 
     setError(null);
+    setDayMode(false);
     setCount(0);
     setElapsed(0);
     setBodyOk(false);
@@ -2635,6 +2638,30 @@ export default function Home() {
   const periodGoal = dailyGoal * span;
   const periodPct = Math.min(1, periodTotal / Math.max(1, periodGoal));
 
+  // เปิดหน้าสรุปผลของวันนี้ รวมทุกรอบ (ใช้หน้าเดียวกับตอนโดดจบ)
+  const openToday = () => {
+    if (todayList.length === 0) return;
+    const rounds = [...todayList].sort((a, b) => a.ts - b.ts);
+    setSummary({
+      total: todayTotal,
+      durationMs: Math.max(1000, todayMs),
+      perMin: todayMs > 0 ? Math.round((todayTotal / todayMs) * 60000) : 0,
+      bestTenSec: Math.max(0, ...rounds.map((r) => r.best)),
+      consistency: 0,
+      buckets: rounds.map((r) => r.total),
+      reason: "manual",
+      record: false,
+    });
+    setDayMode(true);
+    setPhase("summary");
+  };
+
+  const closeSummary = () => {
+    setTab(dayMode ? "today" : "home");
+    setDayMode(false);
+    setPhase("setup");
+  };
+
   /* ---------------------------- ตั้งค่ารอบ ---------------------------- */
 
   const presets = mode === "time" ? TIME_PRESETS : COUNT_PRESETS;
@@ -2877,13 +2904,23 @@ export default function Home() {
 
     const todayView = (
       <>
-        <header className="mb-5">
-          <p className="min-h-[18px] text-[13px] text-[#6B7A6E]">
-            {board ? `รีเซ็ตใน ${resetText}` : ""}
-          </p>
-          <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
-            อันดับวันนี้
-          </h1>
+        <header className="mb-5 flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="min-h-[18px] text-[13px] text-[#6B7A6E]">
+              {board ? `รีเซ็ตใน ${resetText}` : ""}
+            </p>
+            <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
+              อันดับวันนี้
+            </h1>
+          </div>
+          <button
+            onClick={openToday}
+            disabled={todayList.length === 0}
+            className="mb-1 flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#C9F25B] px-5 text-[15px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-95 active:bg-[#B8E348] disabled:opacity-40"
+          >
+            <Icon d={ICONS.trophy} size={18} />
+            ผลวันนี้
+          </button>
         </header>
 
         {!board && !boardErr && (
@@ -3223,22 +3260,31 @@ export default function Home() {
 
   if (phase === "summary" && summary) {
     const reached = todayTotal >= dailyGoal;
-    const title = summary.record
-      ? "สถิติใหม่!"
-      : reached
-        ? "เก่งมาก! ถึงเป้าแล้ว"
-        : summary.reason === "manual"
-          ? "จบการกระโดด"
-          : "ทำได้ดีมาก!";
-    const sub =
-      summary.reason === "time"
+    const title = dayMode
+      ? reached
+        ? "ถึงเป้าวันนี้แล้ว เก่งมาก!"
+        : "ผลวันนี้"
+      : summary.record
+        ? "สถิติใหม่!"
+        : reached
+          ? "เก่งมาก! ถึงเป้าแล้ว"
+          : summary.reason === "manual"
+            ? "จบการกระโดด"
+            : "ทำได้ดีมาก!";
+    const sub = dayMode
+      ? `${new Date(now0 ?? Date.now()).toLocaleDateString("th-TH", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })} · ${todayList.length} รอบ`
+      : summary.reason === "time"
         ? "ครบเวลา"
         : summary.reason === "count"
           ? "ครบจำนวนครั้ง"
           : "หยุดเอง";
-    const kcal = Math.round(summary.total * KCAL_PER_JUMP);
+    const kcal = dayMode ? todayKcal : Math.round(summary.total * KCAL_PER_JUMP);
     const bars = summary.buckets.map((n, i) => ({
-      label: `${i * 10}`,
+      label: dayMode ? `${i + 1}` : `${i * 10}`,
       value: n,
     }));
     const peak = bars.reduce(
@@ -3261,7 +3307,7 @@ export default function Home() {
         <main className="pj-fade mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] lg:max-w-5xl lg:py-10">
           <header className="flex items-start gap-3">
             <button
-              onClick={goHome}
+              onClick={closeSummary}
               aria-label="ปิด"
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white transition-transform active:scale-90"
             >
@@ -3269,7 +3315,7 @@ export default function Home() {
             </button>
             <div>
               <h1 className="text-[22px] font-bold leading-tight">
-                {APP_NAME} · สรุปผล
+                {dayMode ? "ผลวันนี้" : `${APP_NAME} · สรุปผล`}
               </h1>
               <p className="text-[13px] text-[#6B7A6E]">{sub}</p>
             </div>
@@ -3285,10 +3331,10 @@ export default function Home() {
           <div className="mt-4 space-y-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0">
           <div className="space-y-3">
           <section className="relative overflow-hidden rounded-3xl bg-[#1B2A21] px-5 py-8 text-center text-white lg:py-12">
-            {summary.total > 0 && (
+            {!dayMode && summary.total > 0 && (
               <Confetti count={summary.record ? 110 : 70} />
             )}
-            <div className="text-[13px] text-white/60">จำนวนครั้งทั้งหมด</div>
+            <div className="text-[13px] text-white/60">{dayMode ? "ครั้งรวมวันนี้" : "จำนวนครั้งทั้งหมด"}</div>
             <div className="mt-1 flex items-baseline justify-center gap-2">
               <span className="pj-pop text-[88px] font-semibold leading-none tabular-nums tracking-tight">
                 {fmtNum(summary.total)}
@@ -3319,9 +3365,11 @@ export default function Home() {
           <div className="space-y-3">
           <section className={`${card} p-4 lg:p-5`}>
             <div className="flex items-center justify-between">
-              <h2 className="text-[15px] font-semibold">จังหวะการกระโดด</h2>
+              <h2 className="text-[15px] font-semibold">
+                {dayMode ? "ยอดแต่ละรอบ" : "จังหวะการกระโดด"}
+              </h2>
               <span className="text-[12px] text-[#6B7A6E]">
-                ครั้ง / 10 วินาที
+                {dayMode ? "ครั้ง / รอบ" : "ครั้ง / 10 วินาที"}
               </span>
             </div>
             <div className="mt-4">
@@ -3329,7 +3377,9 @@ export default function Home() {
             </div>
             <p className="mt-3 text-[12px] text-[#6B7A6E]">
               10 วินาทีที่เร็วสุด {summary.bestTenSec} ครั้ง
-              {summary.total >= 5 && ` · จังหวะสม่ำเสมอ ${summary.consistency}%`}
+              {!dayMode &&
+                summary.total >= 5 &&
+                ` · จังหวะสม่ำเสมอ ${summary.consistency}%`}
             </p>
           </section>
 
@@ -3394,14 +3444,14 @@ export default function Home() {
 
           <div className="mt-auto flex flex-col gap-2 pt-6 lg:flex-row lg:gap-4 lg:pt-8">
             <button onClick={startSession} className={limeBtn}>
-              เริ่มอีกรอบ
+              {dayMode ? "เริ่มกระโดด" : "เริ่มอีกรอบ"}
             </button>
             <button
-              onClick={goHome}
+              onClick={closeSummary}
               className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-white text-[17px] font-semibold transition-all active:scale-[0.98]"
             >
               <Icon d={ICONS.home} size={20} />
-              กลับหน้าหลัก
+              {dayMode ? "กลับหน้าวันนี้" : "กลับหน้าหลัก"}
             </button>
           </div>
         </main>
