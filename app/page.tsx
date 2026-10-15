@@ -1,13 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { Prompt } from "next/font/google";
 import type {
   NormalizedLandmark,
   PoseLandmarker,
 } from "@mediapipe/tasks-vision";
 
-const FONT =
-  '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "Noto Sans Thai", Sarabun, sans-serif';
+const APP_NAME = "Pose Jump";
+
+// Prompt: ฟอนต์ไทย+อังกฤษทรงเรขาคณิตมน ดูสปอร์ตและสดใส เข้ากับโทนเขียวมะนาว
+const prompt = Prompt({
+  subsets: ["thai", "latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
+});
+
+const FONT = `${prompt.style.fontFamily}, -apple-system, BlinkMacSystemFont, "Noto Sans Thai", Sarabun, sans-serif`;
 
 /* ------------------------------------------------------------------ */
 /* ค่าคงที่                                                             */
@@ -22,14 +32,22 @@ const MODEL_URL =
 // จุดที่ต้องมองเห็นครบ: ไหล่ L/R, สะโพก L/R, ข้อเท้า L/R
 const REQUIRED_LANDMARKS = [11, 12, 23, 24, 27, 28];
 
-// ปรับความไวตรงนี้ ยิ่งน้อยยิ่งไว (แต่เสี่ยงนับเกินตอนยืนนิ่ง)
-// ค่าเป็นสัดส่วนของความยาวลำตัว (ไหล่ถึงสะโพก)
+// ความไวการนับ ยิ่งน้อยยิ่งไว (เสี่ยงนับเกินตอนยืนนิ่ง) เป็นสัดส่วนของความยาวลำตัว
 const MIN_AMPLITUDE = 0.035;
-// ห่างขั้นต่ำระหว่างการนับสองครั้ง (มิลลิวินาที) กันนับซ้ำจากสัญญาณสั่น
 const MIN_JUMP_INTERVAL_MS = 220;
 
 const TIME_PRESETS = [30, 60, 120, 180];
 const COUNT_PRESETS = [50, 100, 200, 500];
+
+const STORAGE_KEY = "pose-jump-settings";
+const HISTORY_KEY = "pose-jump-history";
+// แคลอรี่โดยประมาณต่อการกระโดด 1 ครั้ง
+const KCAL_PER_JUMP = 0.1;
+const DAY = 864e5;
+const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+
+// สี
+const LIME = "#C9F25B";
 
 type Phase =
   | "setup"
@@ -41,6 +59,7 @@ type Phase =
   | "summary";
 type Mode = "time" | "count";
 type EndReason = "time" | "count" | "manual";
+type Tab = "home" | "history" | "settings";
 
 type Summary = {
   total: number;
@@ -50,61 +69,48 @@ type Summary = {
   consistency: number;
   buckets: number[];
   reason: EndReason;
+  record: boolean;
+};
+
+type Session = {
+  id: number;
+  ts: number;
+  total: number;
+  durationMs: number;
+  perMin: number;
+  best: number;
+  mode: Mode;
+  kcal: number;
 };
 
 /* ------------------------------------------------------------------ */
 /* ตรวจตำแหน่งผู้เล่นก่อนเริ่ม                                             */
 /* ------------------------------------------------------------------ */
 
-// ผู้เล่นต้องยืนนิ่งในตำแหน่งที่ถูกต้องต่อเนื่องเท่านี้ ถึงจะเริ่มนับถอยหลัง
 const HOLD_MS = 1500;
-
-// ขนาดและตำแหน่งของกรอบรูปคน เทียบกับความสูงของภาพ
-// กรอบสูง 90% ของภาพ เริ่มที่ 5% จากขอบบน (ข้อความและสถานะอยู่ด้านข้าง ไม่บังกรอบ)
 const GUIDE_TOP = 0.05;
 const GUIDE_H = 0.9;
 
-// เงื่อนไขการยืนตอนสแกนตัว ผ่อนให้ง่าย ไม่ต้องตรงกรอบเป๊ะ
-// ที่สำคัญคือเห็นศีรษะและเห็นเท้าครบ ไม่ถูกขอบภาพตัด
-// ความสูงจากจมูกถึงข้อเท้า เทียบกับความสูงของภาพ (ช่วงกว้าง)
 const MIN_BODY_H = 0.5;
 const MAX_BODY_H = 0.92;
-// จมูกต้องอยู่ต่ำกว่าขอบบนเท่านี้ (ศีรษะไม่ถูกตัด)
 const MIN_TOP = 0.03;
-// ข้อเท้าต้องอยู่เหนือขอบล่างเท่านี้ (เหลือที่ให้ฝ่าเท้า)
 const MAX_BOTTOM = 0.97;
-// ยอมให้สะโพกเยื้องจากกึ่งกลางภาพได้เท่านี้
 const CENTER_TOL = 0.25;
 
-// ขั้นตอนตั้งมือถือด้วยไจโร (หน่วยเป็นองศา)
-// มุมเป้าหมายของมือถือ (ค่า beta ของไจโร) 90 = ตั้งตรง น้อยกว่า 90 = เอนหลังหน้าจอเงยขึ้น
-// 80 = เอนหลังราว 10 องศา เหมือนพิงกำแพง กล้องเงยขึ้นนิดเดียวให้เห็นตั้งแต่ศีรษะถึงเท้า
-// กล้องหลังใช้มุมกลับด้าน (180 - ค่านี้) เพราะกล้องหันออกด้านตรงข้ามหน้าจอ
+// ตั้งมือถือด้วยไจโร (องศา) 90 = ตั้งตรง น้อยกว่า = เอนหลัง กล้องหลังใช้ 180 - ค่านี้
 const LEVEL_TARGET_BETA = 80;
-// คลาดจากมุมเป้าหมายและเอียงซ้ายขวาได้ไม่เกินเท่านี้ ถึงนับว่าได้มุม
 const LEVEL_TOL_DEG = 4;
-// ช่วงแกว่งสูงสุดภายในช่วงเวลา LEVEL_WINDOW_MS ที่ยังนับว่านิ่ง
 const LEVEL_JITTER_DEG = 1.2;
 const LEVEL_WINDOW_MS = 500;
-// ต้องตั้งตรงและนิ่งต่อเนื่องเท่านี้ ถึงไปขั้นสแกนตัว
 const LEVEL_HOLD_MS = 1500;
-// ปุ่มกลมขยับกี่พิกเซลต่อ 1 องศา และขยับได้สูงสุดกี่องศา
 const LEVEL_PX_PER_DEG = 4;
 const LEVEL_RANGE_DEG = 22;
 
-// ท่าจับเชือก (ปรับได้)
-// มือแต่ละข้างต้องห่างจากแนวกลางลำตัวอย่างน้อยกี่เท่าของความกว้างไหล่
-// แขนห้อยปกติอยู่ราว 0.6 ท่าจับเชือกราว 0.85 ขึ้นไป
-// ไม่ตรวจความสูงของมือ เพราะแต่ละคนจับเชือกสูงต่ำไม่เท่ากัน
+// ท่าจับเชือก
 const HAND_MIN_OFFSET = 0.75;
-// มือบนภาพจับยากกว่าลำตัว จึงยอมรับความมั่นใจต่ำกว่า
 const HAND_MIN_VIS = 0.3;
 
-// เปิดเป็น true ถ้าต้องการดูเส้นโครงร่างตอนจูนระบบ
 const SHOW_SKELETON = false;
-
-// false = ภาพเต็มจอ ไม่มีแถบดำ (ตัดเฉพาะขอบซ้ายขวาที่เกินจอ ความสูงภาพไม่ถูกตัด จึงไม่ซูมแนวตั้ง)
-// true = แสดงภาพเต็มเฟรมทั้งภาพ แต่จะมีแถบดำบนล่าง
 const FORCE_CONTAIN = false;
 
 type Placement = {
@@ -130,7 +136,6 @@ const EMPTY_PLACEMENT: Placement = {
 type LevelInfo = {
   pitchOk: boolean;
   rollOk: boolean;
-  // ทิศของลูกศรในปุ่มกลม: down = ปุ่มอยู่สูงกว่าเป้าหมาย up = ต่ำกว่า ok = ได้มุมแล้ว
   dir: "up" | "down" | "ok";
   hold: number;
   hint: string;
@@ -144,8 +149,6 @@ const EMPTY_LEVEL: LevelInfo = {
   hint: "ปรับมุมเอียงมือถือ",
 };
 
-// ท่าจับเชือก: มือสองข้างกางออกด้านข้างลำตัว คนละข้างของลำตัว ไม่สนความสูงของมือ
-// แขนที่ห้อยลงตามธรรมชาติจะอยู่ใกล้ลำตัวกว่านี้ จึงไม่ผ่านเงื่อนไข
 function isHoldingRope(lm: NormalizedLandmark[], aspect: number): boolean {
   const lw = lm[15];
   const rw = lm[16];
@@ -161,7 +164,7 @@ function isHoldingRope(lm: NormalizedLandmark[], aspect: number): boolean {
   const midX = (lm[11].x + lm[12].x) / 2;
   const dl = (lw.x - midX) * aspect;
   const dr = (rw.x - midX) * aspect;
-  if (dl * dr >= 0) return false; // ต้องอยู่คนละข้างของลำตัว
+  if (dl * dr >= 0) return false;
 
   const minOffset = HAND_MIN_OFFSET * shoulderW;
   return Math.abs(dl) >= minOffset && Math.abs(dr) >= minOffset;
@@ -176,7 +179,6 @@ function evaluatePlacement(
 
   const vis = (i: number) => (lm[i]?.visibility ?? 0) > 0.5;
 
-  // เงื่อนไขหลัก: เห็นศีรษะและเห็นเท้าครบ ไม่ถูกขอบภาพตัด
   const head = vis(0) && lm[0].y >= MIN_TOP;
   const feet =
     vis(27) && vis(28) && Math.max(lm[27].y, lm[28].y) <= MAX_BOTTOM;
@@ -194,7 +196,6 @@ function evaluatePlacement(
   const tooSmall = bodyH < MIN_BODY_H;
   const distance = !tooBig && !tooSmall;
 
-  // กล้องหน้าแสดงภาพกลับซ้ายขวาเหมือนส่องกระจก กล้องหลังไม่กลับ
   const hipX = (lm[23].x + lm[24].x) / 2;
   const shownX = mirrored ? 1 - hipX : hipX;
   const centered = Math.abs(shownX - 0.5) <= CENTER_TOL;
@@ -225,9 +226,6 @@ function evaluatePlacement(
 /* กรอบรูปคน                                                            */
 /* ------------------------------------------------------------------ */
 
-// วาดชิ้นส่วนของรูปคนสมส่วน (ประมาณ 7.5 หัว) ท่ายืนถือเชือกที่ระดับเอว
-// ทุกชิ้นวาดด้วยสีดำทึบ แล้วให้ buildGuide เบลอรวมกันเป็นรูปเดียวที่ขอบเรียบต่อเนื่อง
-// dx ใช้เลื่อนไปวาดนอกจอ เพราะเราต้องการแค่เงาเบลอของมัน
 function paintSilhouette(
   ctx: CanvasRenderingContext2D,
   cx: number,
@@ -239,13 +237,11 @@ function paintSilhouette(
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  // ศีรษะและคอ
   ctx.beginPath();
   ctx.ellipse(X(0), Y(0.068), 0.054 * ht, 0.068 * ht, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillRect(X(-0.026), Y(0.12), 0.052 * ht, 0.075 * ht);
 
-  // ลำตัว
   const torso: [number, number][] = [
     [-0.12, 0.178],
     [-0.138, 0.205],
@@ -275,7 +271,6 @@ function paintSilhouette(
   };
 
   for (const s of [-1, 1]) {
-    // แขน: ศอกชิดลำตัว มือยื่นออกด้านข้างที่ระดับเอวเหมือนจับเชือก
     limb(
       [
         [s * 0.13, 0.21],
@@ -284,7 +279,6 @@ function paintSilhouette(
       ],
       0.056
     );
-    // ขา
     limb(
       [
         [s * 0.05, 0.52],
@@ -293,7 +287,6 @@ function paintSilhouette(
       ],
       0.092
     );
-    // เท้า
     ctx.beginPath();
     ctx.ellipse(X(s * 0.07), Y(0.965), 0.056 * ht, 0.024 * ht, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -308,9 +301,6 @@ type GuideCache = {
 };
 let guideCache: GuideCache | null = null;
 
-// สร้างภาพกรอบครั้งเดียวต่อขนาดภาพ แล้วเก็บไว้ใช้ซ้ำทุกเฟรม
-// ขั้นตอน: วาดชิ้นส่วนเป็นเงาเบลอ -> ตัดที่ระดับครึ่งหนึ่งได้รูปคนขอบมน ข้อต่อเนียน
-// -> ขยายขอบออกเป็นเส้นกรอบเส้นเดียวต่อเนื่อง -> เจาะรูปคนให้เห็นภาพกล้อง
 function buildGuide(w: number, h: number): GuideCache {
   const make = () => {
     const c = document.createElement("canvas");
@@ -325,7 +315,6 @@ function buildGuide(w: number, h: number): GuideCache {
   const blur = Math.max(10, h * 0.022);
   const border = Math.max(4, h / 200);
 
-  // 1) เงาเบลอของรูปคน (วาดตัวจริงไว้นอกจอ เหลือแต่เงาในจอ)
   const shadow = make();
   const sctx = shadow.getContext("2d")!;
   const OFF = w * 2;
@@ -337,7 +326,6 @@ function buildGuide(w: number, h: number): GuideCache {
   sctx.strokeStyle = "#000";
   paintSilhouette(sctx, cx - OFF, top, ht);
 
-  // 2) ตัดที่ระดับครึ่งหนึ่งของความเข้มเงา ได้รูปคนที่ขอบเรียบ (ขอบนุ่มเล็กน้อยกันแตก)
   const img = sctx.getImageData(0, 0, w, h);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
@@ -351,14 +339,12 @@ function buildGuide(w: number, h: number): GuideCache {
   const mask = make();
   mask.getContext("2d")!.putImageData(img, 0, 0);
 
-  // 3) ประกอบภาพกรอบตามสี
   const compose = (color: string) => {
     const out = make();
     const c = out.getContext("2d")!;
-    c.fillStyle = "rgba(18,18,20,0.4)";
+    c.fillStyle = "rgba(10,18,13,0.5)";
     c.fillRect(0, 0, w, h);
 
-    // ขยายขอบรูปคนออกรอบทิศ ได้วงแหวนเส้นเดียวที่ต่อเนื่อง
     const ring = make();
     const rc = ring.getContext("2d")!;
     const steps = 32;
@@ -372,16 +358,14 @@ function buildGuide(w: number, h: number): GuideCache {
     rc.fillRect(0, 0, w, h);
 
     c.drawImage(ring, 0, 0);
-    // เจาะรูปคนให้เห็นภาพกล้องชัดเต็มๆ
     c.globalCompositeOperation = "destination-out";
     c.drawImage(mask, 0, 0);
     return out;
   };
 
-  return { w, h, ok: compose("#30D158"), idle: compose("#FFFFFF") };
+  return { w, h, ok: compose(LIME), idle: compose("#FFFFFF") };
 }
 
-// พื้นที่นอกรูปคนเป็นสีเทาดำโปร่ง ส่วนในรูปคนเห็นภาพกล้องชัดเต็มๆ
 function drawGuide(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -398,20 +382,17 @@ function drawGuide(
 /* ตัวตรวจจับการกระโดด                                                    */
 /* ------------------------------------------------------------------ */
 
-// หลักการ: ใช้ตำแหน่งแนวตั้งเฉลี่ยของไหล่ สะโพก และข้อเท้า เป็นสัญญาณเดียว
-// แล้วติดตามขอบบน (พื้น) กับขอบล่าง (จุดสูงสุดของการกระโดด) แบบค่อยๆ ลดลง
-// เมื่อสัญญาณข้ามจุดกลางลงมาแล้วกลับขึ้นไป ถือว่ากระโดดครบ 1 ครั้งตอนลงพื้น
-// และนับเฉพาะตอนที่ผู้เล่นอยู่ในท่าจับเชือก (มือกางออกด้านข้างลำตัว ไม่สนระดับความสูง)
-// กระโดดเฉยๆ โดยแขนห้อยหรือมือไม่อยู่ในท่า จะไม่นับ
+// ใช้ตำแหน่งแนวตั้งเฉลี่ยของไหล่ สะโพก ข้อเท้า ติดตามพื้นกับจุดสูงสุด
+// นับ 1 ครั้งเมื่อลงพื้น และนับเฉพาะตอนอยู่ในท่าจับเชือก
 function createJumpDetector() {
   let ready = false;
   let lastT = 0;
   let ema = 0;
-  let hi = 0; // ตำแหน่งต่ำสุดในภาพ (y มาก) = พื้น
-  let lo = 0; // ตำแหน่งสูงสุดในภาพ (y น้อย) = ลอยสูงสุด
+  let hi = 0;
+  let lo = 0;
   let air = false;
   let lastCount = -1e9;
-  let handsScore = 0; // 0-1 ความมั่นใจว่ากำลังอยู่ในท่าจับเชือก
+  let handsScore = 0;
 
   const reset = () => {
     ready = false;
@@ -433,7 +414,6 @@ function createJumpDetector() {
     const ankleY = (lm[27].y + lm[28].y) / 2;
     const torso = hipY - shoulderY;
     if (torso < 0.06) {
-      // ไกลเกินไป หรือท่าทางผิดปกติ
       reset();
       return { bodyOk: false, counted: false, air: false, handsOk: false };
     }
@@ -522,7 +502,6 @@ function summarize(
     bestTenSec = Math.max(bestTenSec, i - j + 1);
   }
 
-  // ความสม่ำเสมอของจังหวะ: 100 - สัมประสิทธิ์การกระจายของช่วงเวลาระหว่างกระโดด
   let consistency = 0;
   if (ts.length >= 5) {
     const gaps: number[] = [];
@@ -542,6 +521,7 @@ function summarize(
     consistency,
     buckets,
     reason,
+    record: false,
   };
 }
 
@@ -563,8 +543,6 @@ function beep(ctx: AudioContext | null, freq = 880, dur = 0.12) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// ขออนุญาตใช้เซนเซอร์เอียงของมือถือ iPhone ต้องเรียกจากการกดปุ่มของผู้ใช้
-// Android และเบราว์เซอร์อื่นไม่ต้องขอ คืนค่า false ถ้าไม่ได้รับอนุญาตหรือไม่มีเซนเซอร์
 async function requestGyro(): Promise<boolean> {
   try {
     if (typeof window === "undefined" || !("DeviceOrientationEvent" in window))
@@ -581,15 +559,334 @@ async function requestGyro(): Promise<boolean> {
   }
 }
 
+const dayKey = (t: number) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+};
+const startOfDay = (t: number) => new Date(t).setHours(0, 0, 0, 0);
+const fmtDate = (t: number) =>
+  new Date(t).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+const fmtClock = (t: number) =>
+  new Date(t).toLocaleTimeString("th-TH", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+const fmtNum = (n: number) => n.toLocaleString("en-US");
+
+/* ------------------------------------------------------------------ */
+/* ส่วนประกอบ UI                                                         */
+/* ------------------------------------------------------------------ */
+
+const STYLES = `
+@keyframes pj-fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes pj-pop { 0% { transform: scale(1.18); } 100% { transform: scale(1); } }
+@keyframes pj-in { from { opacity: 0; } to { opacity: 1; } }
+.pj-fade { animation: pj-fade .35s cubic-bezier(.2,.8,.2,1) both; }
+.pj-pop { animation: pj-pop .18s ease-out; }
+.pj-in { animation: pj-in .25s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-pop, .pj-in { animation: none; } }
+`;
+
+function Icon({
+  d,
+  size = 22,
+  fill,
+}: {
+  d: string;
+  size?: number;
+  fill?: boolean;
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={fill ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d={d} />
+    </svg>
+  );
+}
+
+const ICONS = {
+  home: "M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
+  chart: "M5 20V11M12 20V4M19 20v-6",
+  gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12h2M3 12h2M12 3v2M12 19v2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4",
+  play: "M7 4l13 8-13 8z",
+  close: "M6 6l12 12M18 6L6 18",
+  check: "M5 13l4 4 10-10",
+  flame: "M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-6 1-9z",
+  clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  bolt: "M13 2L4 14h7l-1 8 9-12h-7z",
+  down: "M12 4v15M6 13l6 6 6-6",
+};
+
+function Ring({
+  value,
+  size,
+  stroke,
+  track,
+  color,
+  children,
+}: {
+  value: number;
+  size: number;
+  stroke: number;
+  track: string;
+  color: string;
+  children?: ReactNode;
+}) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const v = Math.max(0, Math.min(1, value));
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90" aria-hidden>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={track}
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - v)}
+          style={{ transition: "stroke-dashoffset .4s ease" }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  small,
+}: {
+  value: T;
+  options: readonly (readonly [T, string])[];
+  onChange: (v: T) => void;
+  small?: boolean;
+}) {
+  return (
+    <div
+      className="grid rounded-full bg-[#E3EAD6] p-1"
+      style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}
+    >
+      {options.map(([v, label]) => (
+        <button
+          key={v}
+          onClick={() => onChange(v)}
+          className={`rounded-full font-semibold transition-all duration-200 ${
+            small ? "h-8 text-[14px]" : "h-10 text-[15px]"
+          } ${value === v ? "bg-white text-[#1B2A21] shadow-sm" : "text-[#6B7A6E]"}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Switch({
+  on,
+  onChange,
+  label,
+}: {
+  on: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={() => onChange(!on)}
+      className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors duration-200 ${
+        on ? "bg-[#3F5E1F]" : "bg-[#D5DCC8]"
+      }`}
+    >
+      <span
+        className={`absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow transition-all duration-200 ${
+          on ? "left-[22px]" : "left-[2px]"
+        }`}
+      />
+    </button>
+  );
+}
+
+function Stepper({
+  display,
+  unit,
+  onMinus,
+  onPlus,
+  big,
+}: {
+  display: string;
+  unit: string;
+  onMinus: () => void;
+  onPlus: () => void;
+  big?: boolean;
+}) {
+  const btn =
+    "flex h-12 w-12 items-center justify-center rounded-full bg-white text-3xl font-light text-[#1B2A21] shadow-sm transition-transform active:scale-90";
+  return (
+    <div className="flex items-center justify-between">
+      <button onClick={onMinus} aria-label="ลดลง" className={btn}>
+        −
+      </button>
+      <div className="text-center">
+        <div
+          key={display}
+          className={`pj-pop font-semibold leading-none tabular-nums tracking-tight ${
+            big ? "text-[64px]" : "text-[48px]"
+          }`}
+        >
+          {display}
+        </div>
+        <div className="mt-2 text-[14px] text-[#6B7A6E]">{unit}</div>
+      </div>
+      <button onClick={onPlus} aria-label="เพิ่มขึ้น" className={btn}>
+        +
+      </button>
+    </div>
+  );
+}
+
+function BarChart({
+  bars,
+  highlight,
+  height = 128,
+}: {
+  bars: { label: string; value: number }[];
+  highlight: number;
+  height?: number;
+}) {
+  const max = Math.max(1, ...bars.map((b) => b.value));
+  return (
+    <div className="flex items-end gap-2" style={{ height }}>
+      {bars.map((b, i) => (
+        <div
+          key={i}
+          className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
+        >
+          <span className="text-[11px] tabular-nums text-[#6B7A6E]">
+            {b.value > 0 ? fmtNum(b.value) : ""}
+          </span>
+          <div
+            className="w-full rounded-lg transition-[height] duration-500"
+            style={{
+              height: `${(b.value / max) * 100}%`,
+              minHeight: 6,
+              background: i === highlight ? LIME : "#1B2A21",
+              opacity: b.value > 0 ? 1 : 0.15,
+            }}
+          />
+          <span className="text-[11px] text-[#6B7A6E]">{b.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Shell({
+  tab,
+  onTab,
+  children,
+}: {
+  tab: Tab;
+  onTab: (t: Tab) => void;
+  children: ReactNode;
+}) {
+  const items: [Tab, string, string][] = [
+    ["home", "หน้าหลัก", ICONS.home],
+    ["history", "ประวัติ", ICONS.chart],
+    ["settings", "ตั้งค่า", ICONS.gear],
+  ];
+  return (
+    <div className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] lg:flex">
+      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-1 p-5 lg:flex">
+        <div className="mb-6 flex items-center gap-2 px-3 text-[20px] font-bold tracking-tight">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#1B2A21] text-[#C9F25B]">
+            <Icon d={ICONS.bolt} size={18} />
+          </span>
+          {APP_NAME}
+        </div>
+        {items.map(([t, label, d]) => (
+          <button
+            key={t}
+            onClick={() => onTab(t)}
+            className={`flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold transition-colors ${
+              tab === t
+                ? "bg-[#C9F25B] text-[#1B2A21]"
+                : "text-[#6B7A6E] hover:bg-[#E8EEDD]"
+            }`}
+          >
+            <Icon d={d} size={20} />
+            {label}
+          </button>
+        ))}
+      </aside>
+
+      <main className="pj-fade mx-auto w-full max-w-5xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-10">
+        {children}
+      </main>
+
+      <nav className="fixed inset-x-0 bottom-0 z-10 flex justify-around border-t border-[#E3EAD6] bg-white/90 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl lg:hidden">
+        {items.map(([t, label, d]) => (
+          <button
+            key={t}
+            onClick={() => onTab(t)}
+            className="flex flex-col items-center gap-0.5 text-[11px] font-semibold"
+          >
+            <span
+              className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors ${
+                tab === t ? "bg-[#C9F25B]" : "text-[#6B7A6E]"
+              }`}
+            >
+              <Icon d={d} size={20} />
+            </span>
+            <span className={tab === t ? "" : "text-[#6B7A6E]"}>{label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* หน้าหลัก                                                              */
 /* ------------------------------------------------------------------ */
 
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("setup");
-  const [mode, setMode] = useState<Mode>("time");
+  const [tab, setTab] = useState<Tab>("home");
+  const [hTab, setHTab] = useState<"week" | "month">("week");
+  const [mode, setMode] = useState<Mode>("count");
   const [seconds, setSeconds] = useState(60);
   const [target, setTarget] = useState(100);
+  const [dailyGoal, setDailyGoal] = useState(1500);
+  const [history, setHistory] = useState<Session[]>([]);
+  const [now0, setNow0] = useState<number | null>(null);
   const [count, setCount] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [bodyOk, setBodyOk] = useState(false);
@@ -625,6 +922,7 @@ export default function Home() {
   const bodyOkRef = useRef(false);
   const handsOkRef = useRef(false);
   const settingsRef = useRef({ mode, seconds, target, facing, sound });
+  const historyRef = useRef<Session[]>([]);
   const lastWarnRef = useRef(-1);
   const phaseRef = useRef<Phase>("setup");
   const placementKeyRef = useRef("");
@@ -650,18 +948,30 @@ export default function Home() {
     settingsRef.current = { mode, seconds, target, facing, sound };
   }, [mode, seconds, target, facing, sound]);
 
-  // จำค่าที่ตั้งไว้ครั้งก่อน
   useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+
+  // โหลดค่าที่ตั้งไว้และประวัติ
+  useEffect(() => {
+    setNow0(Date.now());
     try {
-      const raw = localStorage.getItem("jump-rope-settings");
-      if (!raw) return;
-      const v = JSON.parse(raw);
-      if (v.mode === "time" || v.mode === "count") setMode(v.mode);
-      if (typeof v.seconds === "number") setSeconds(v.seconds);
-      if (typeof v.target === "number") setTarget(v.target);
-      if (v.facing === "user" || v.facing === "environment")
-        setFacing(v.facing);
-      if (typeof v.sound === "boolean") setSound(v.sound);
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const v = JSON.parse(raw);
+        if (v.mode === "time" || v.mode === "count") setMode(v.mode);
+        if (typeof v.seconds === "number") setSeconds(v.seconds);
+        if (typeof v.target === "number") setTarget(v.target);
+        if (typeof v.dailyGoal === "number") setDailyGoal(v.dailyGoal);
+        if (v.facing === "user" || v.facing === "environment")
+          setFacing(v.facing);
+        if (typeof v.sound === "boolean") setSound(v.sound);
+      }
+      const h = localStorage.getItem(HISTORY_KEY);
+      if (h) {
+        const arr = JSON.parse(h);
+        if (Array.isArray(arr)) setHistory(arr);
+      }
     } catch {
       // อ่านค่าเดิมไม่ได้ก็ใช้ค่าเริ่มต้น
     }
@@ -670,15 +980,27 @@ export default function Home() {
   useEffect(() => {
     try {
       localStorage.setItem(
-        "jump-rope-settings",
-        JSON.stringify({ mode, seconds, target, facing, sound })
+        STORAGE_KEY,
+        JSON.stringify({ mode, seconds, target, dailyGoal, facing, sound })
       );
     } catch {
       // บันทึกไม่ได้ก็ข้ามไป
     }
-  }, [mode, seconds, target, facing, sound]);
+  }, [mode, seconds, target, dailyGoal, facing, sound]);
 
-  // ตรวจว่ามือถืออยู่แนวนอนหรือไม่
+  useEffect(() => {
+    document.title = APP_NAME;
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "theme-color");
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute("content", "#F3F6EC");
+    document.documentElement.style.backgroundColor = "#F3F6EC";
+    document.documentElement.style.colorScheme = "light";
+  }, []);
+
   useEffect(() => {
     const mq = window.matchMedia("(orientation: landscape)");
     const update = () => setLandscape(mq.matches);
@@ -687,7 +1009,6 @@ export default function Home() {
     return () => mq.removeEventListener("change", update);
   }, []);
 
-  // ขนาดหน้าจอ ใช้เลือกว่าจะให้ภาพเต็มจอหรือเห็นครบ
   useEffect(() => {
     const update = () => setVp({ w: window.innerWidth, h: window.innerHeight });
     update();
@@ -695,7 +1016,6 @@ export default function Home() {
     return () => window.removeEventListener("resize", update);
   }, []);
 
-  // สลับแอปแล้วกลับมา ต้องขอล็อกหน้าจอใหม่ ไม่งั้นจอดับระหว่างเล่น
   useEffect(() => {
     const onVisible = () => {
       if (
@@ -717,8 +1037,7 @@ export default function Home() {
     phaseRef.current = phase;
   }, [phase]);
 
-  // ไจโรของมือถือ ใช้ในขั้นตอนตั้งมือถือ ลูกศรขยับตามการเอียงขึ้นลง
-  // pitch = 0 เมื่อมือถือตั้งตรง roll = 0 เมื่อไม่เอียงซ้ายขวา
+  // ไจโรของมือถือ ใช้ในขั้นตอนตั้งมือถือ
   useEffect(() => {
     const onOrient = (e: DeviceOrientationEvent) => {
       if (e.beta === null || e.gamma === null) return;
@@ -726,8 +1045,6 @@ export default function Home() {
       if (phaseRef.current !== "leveling") return;
 
       const now = performance.now();
-      // pitch = มุมกล้องเทียบเป้าหมาย บวก = กล้องแหงนสูงกว่าเป้าหมาย
-      // กล้องหน้าหันออกทางหน้าจอ กล้องหลังหันออกด้านหลัง ทิศจึงกลับกัน
       const front = settingsRef.current.facing === "user";
       const targetBeta = front ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA;
       const pitch = front ? targetBeta - e.beta : e.beta - targetBeta;
@@ -742,7 +1059,6 @@ export default function Home() {
         g.r += (roll - g.r) * 0.3;
       }
 
-      // ตรวจว่านิ่งหรือไม่ จากช่วงแกว่งของค่าในช่วงเวลาล่าสุด
       g.buf.push({ t: now, p: pitch, r: roll });
       while (g.buf.length > 0 && now - g.buf[0].t > LEVEL_WINDOW_MS) {
         g.buf.shift();
@@ -766,7 +1082,6 @@ export default function Home() {
       const rollOk = Math.abs(g.r) <= LEVEL_TOL_DEG;
       const allOk = pitchOk && rollOk && still;
 
-      // ปุ่มกลมขยับตามการเอียง: กล้องแหงนสูงกว่าเป้าหมาย ปุ่มเลื่อนขึ้น
       const clamped = Math.max(
         -LEVEL_RANGE_DEG,
         Math.min(LEVEL_RANGE_DEG, g.p)
@@ -774,7 +1089,6 @@ export default function Home() {
       if (levelKnobRef.current) {
         levelKnobRef.current.style.transform = `translateY(${-clamped * LEVEL_PX_PER_DEG}px)`;
       }
-      // รูปมือถือด้านข้างหมุนตามมุมจริง lean = มุมเอนหลัง (บวก = หน้าจอเงยขึ้น)
       if (levelPhoneRef.current) {
         const lean = 90 - targetBeta + (front ? g.p : -g.p);
         levelPhoneRef.current.style.transform = `rotate(${lean}deg)`;
@@ -846,6 +1160,38 @@ export default function Home() {
       if (!runningRef.current) return;
       runningRef.current = false;
       const result = summarize(jumpsRef.current, durationMs, reason);
+
+      // สถิติใหม่ = มากกว่าทุกรอบก่อนหน้า (ต้องมีประวัติเดิมอยู่แล้ว)
+      const prev = historyRef.current;
+      result.record =
+        result.total > 0 &&
+        prev.length > 0 &&
+        result.total > Math.max(...prev.map((s) => s.total));
+
+      if (result.total > 0) {
+        const ts = Date.now();
+        const entry: Session = {
+          id: ts,
+          ts,
+          total: result.total,
+          durationMs: result.durationMs,
+          perMin: result.perMin,
+          best: result.bestTenSec,
+          mode: settingsRef.current.mode,
+          kcal: Math.round(result.total * KCAL_PER_JUMP),
+        };
+        setNow0(ts);
+        setHistory((p) => {
+          const next = [entry, ...p].slice(0, 300);
+          try {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+          } catch {
+            // บันทึกไม่ได้ก็ข้ามไป
+          }
+          return next;
+        });
+      }
+
       if (settingsRef.current.sound) beep(audioRef.current, 660, 0.5);
       stopCamera();
       setSummary(result);
@@ -880,7 +1226,6 @@ export default function Home() {
       const ctx = canvas.getContext("2d");
       ctx?.clearRect(0, 0, w, h);
 
-      // ขั้นตอนจัดตำแหน่งและนับถอยหลัง: วาดกรอบ ตรวจตำแหน่ง ตัดสินว่าพร้อมหรือไม่
       const ph = phaseRef.current;
       if (ph === "positioning" || ph === "countdown") {
         const pl = evaluatePlacement(
@@ -900,7 +1245,6 @@ export default function Home() {
           if (pl.ok) {
             if (okSinceRef.current === null) {
               okSinceRef.current = now;
-              // เสียงบอกว่ายืนถูกตำแหน่งแล้ว เผื่อผู้เล่นยืนไกลจนอ่านจอไม่ทัน
               if (settingsRef.current.sound) beep(audioRef.current, 800, 0.08);
             }
             const hold = Math.min(1, (now - okSinceRef.current) / HOLD_MS);
@@ -929,7 +1273,6 @@ export default function Home() {
         } else if (lostSinceRef.current === null) {
           lostSinceRef.current = now;
         } else if (now - lostSinceRef.current > 800) {
-          // ออกนอกตำแหน่งระหว่างนับถอยหลัง ให้กลับไปจัดตำแหน่งใหม่
           abortCountdownRef.current = true;
         }
       }
@@ -949,9 +1292,9 @@ export default function Home() {
         if (SHOW_SKELETON && ctx) {
           ctx.lineWidth = Math.max(3, w / 160);
           ctx.lineCap = "round";
-          ctx.strokeStyle = r.air ? "#30D158" : "#FFFFFF";
+          ctx.strokeStyle = r.air ? LIME : "#FFFFFF";
           for (const { start, end } of connectionsRef.current) {
-            if (start < 11 || end < 11) continue; // ไม่วาดใบหน้า
+            if (start < 11 || end < 11) continue;
             const a = pts[start];
             const b = pts[end];
             if ((a.visibility ?? 1) < 0.5 || (b.visibility ?? 1) < 0.5)
@@ -969,7 +1312,6 @@ export default function Home() {
           setCount(n);
           if (navigator.vibrate) navigator.vibrate(12);
           if (settingsRef.current.sound) {
-            // ติ๊กเบาๆ ทุกครั้ง และเสียงสูงยาวขึ้นทุก 10 ครั้ง
             if (n % 10 === 0) beep(audioRef.current, 1320, 0.15);
             else beep(audioRef.current, 1000, 0.04);
           }
@@ -996,7 +1338,6 @@ export default function Home() {
       }
       const s = settingsRef.current;
       if (s.mode === "time" && s.sound) {
-        // เตือน 3 วินาทีสุดท้าย
         const left = Math.ceil((s.seconds * 1000 - el) / 1000);
         if (left >= 1 && left <= 3 && left !== lastWarnRef.current) {
           lastWarnRef.current = left;
@@ -1020,7 +1361,6 @@ export default function Home() {
   const stopAll = useCallback(() => {
     sessionRef.current++;
     runningRef.current = false;
-    // ปลดการรอจัดตำแหน่งที่ค้างอยู่ (ถ้ามี)
     const pending = readyResolveRef.current;
     readyResolveRef.current = null;
     pending?.();
@@ -1036,14 +1376,14 @@ export default function Home() {
     const sid = ++sessionRef.current;
     const cancelled = () => sessionRef.current !== sid;
 
-    // ขอสิทธิ์เซนเซอร์เอียง ต้องเรียกก่อน await ใดๆ ไม่งั้น iPhone ไม่ยอมให้ขอ
+    // ขอสิทธิ์เซนเซอร์เอียง ต้องเรียกก่อน await ใดๆ
     const gyroPromise = requestGyro();
 
-    // ขอเต็มจอและล็อกแนวตั้ง ต้องเรียกตอนผู้ใช้กดปุ่ม
-    // Android และเดสก์ท็อปใช้ได้ iPhone ไม่รองรับ จะข้ามไปเอง
+    // เต็มจอ + ล็อกแนวตั้งเฉพาะมือถือ (หน้าจอแคบ) เดสก์ท็อปไม่ต้อง
     try {
       const el = document.documentElement;
-      if (!document.fullscreenElement && el.requestFullscreen) {
+      const isPhone = window.innerWidth < 1024;
+      if (isPhone && !document.fullscreenElement && el.requestFullscreen) {
         el.requestFullscreen()
           .then(() => {
             const o = screen.orientation as unknown as {
@@ -1073,7 +1413,6 @@ export default function Home() {
     setHold(0);
     setPhase("loading");
 
-    // AudioContext ต้องสร้างจากการกดปุ่มของผู้ใช้ มือถือถึงจะยอมให้เล่นเสียง
     if (!audioRef.current) {
       const Ctor =
         window.AudioContext ||
@@ -1083,7 +1422,7 @@ export default function Home() {
     }
     audioRef.current?.resume().catch(() => {});
 
-    await sleep(50); // รอให้ <video> ถูก mount
+    await sleep(50);
 
     try {
       if (!landmarkerRef.current) {
@@ -1115,8 +1454,6 @@ export default function Home() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: facing },
-          // ภาพแนวตั้ง 3:4 ตามสัดส่วนเซนเซอร์จริงของมือถือ ได้มุมกว้างเต็ม ไม่ถูกครอปจนดูซูม
-          // (เดิมขอ 9:16 ทำให้เบราว์เซอร์ตัดบนล่างของภาพทิ้งไปราว 25%)
           width: { ideal: 600 },
           height: { ideal: 800 },
           aspectRatio: { ideal: 3 / 4 },
@@ -1130,7 +1467,6 @@ export default function Home() {
       }
       streamRef.current = stream;
 
-      // ถ้ากล้องรองรับซูม ให้ตั้งไว้ที่ต่ำสุด (บางเครื่องคือมุมกว้างพิเศษ) ไม่รองรับก็ข้าม
       try {
         const track = stream.getVideoTracks()[0];
         const caps = track.getCapabilities?.() as
@@ -1160,8 +1496,7 @@ export default function Home() {
 
       rafRef.current = requestAnimationFrame(loop);
 
-      // ขั้นตอนตั้งมือถือ: ใช้ไจโรช่วยให้วางมือถือตั้งตรงและนิ่งก่อนสแกนตัว
-      // ไม่มีเซนเซอร์หรือไม่ได้รับอนุญาต จะข้ามไปสแกนตัวเลย
+      // ขั้นตอนตั้งมือถือ ไม่มีเซนเซอร์หรือไม่ได้รับอนุญาตจะข้ามไปสแกนตัวเลย
       let hasGyro = false;
       if (await gyroPromise) {
         const until = performance.now() + 1000;
@@ -1185,8 +1520,6 @@ export default function Home() {
         if (settingsRef.current.sound) beep(audioRef.current, 800, 0.08);
       }
 
-      // รอให้ผู้เล่นยืนตรงกรอบจนผ่าน แล้วนับ 3-2-1
-      // ถ้าขยับออกนอกตำแหน่งระหว่างนับ จะกลับไปจัดตำแหน่งใหม่
       const waitUnlessAborted = async (ms: number) => {
         const end = performance.now() + ms;
         while (performance.now() < end) {
@@ -1244,11 +1577,11 @@ export default function Home() {
             ? "ไม่พบกล้องในอุปกรณ์นี้"
             : "เริ่มไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตและสิทธิ์กล้อง แล้วลองใหม่"
       );
+      setTab("home");
       setPhase("setup");
     }
   }, [loop, stopAll, facing]);
 
-  // ข้ามขั้นตอนตั้งมือถือ ไปสแกนตัวเลย
   const skipLeveling = () => {
     const done = levelResolveRef.current;
     levelResolveRef.current = null;
@@ -1259,7 +1592,62 @@ export default function Home() {
     finish("manual", performance.now() - startRef.current);
   };
 
-  /* ---------------------------- หน้าตั้งค่า ---------------------------- */
+  const goHome = () => {
+    setTab("home");
+    setPhase("setup");
+  };
+
+  /* ---------------------- ข้อมูลสรุปจากประวัติ ---------------------- */
+
+  const sod = now0 ? startOfDay(now0) : 0;
+  const todayList = now0
+    ? history.filter((s) => dayKey(s.ts) === dayKey(now0))
+    : [];
+  const todayTotal = todayList.reduce((a, s) => a + s.total, 0);
+  const todayMs = todayList.reduce((a, s) => a + s.durationMs, 0);
+  const todayKcal = todayList.reduce((a, s) => a + s.kcal, 0);
+  const goalPct = Math.min(1, todayTotal / Math.max(1, dailyGoal));
+
+  let streak = 0;
+  if (now0) {
+    const days = new Set(history.map((s) => dayKey(s.ts)));
+    let t = now0;
+    if (!days.has(dayKey(t))) t -= DAY;
+    while (days.has(dayKey(t))) {
+      streak++;
+      t -= DAY;
+    }
+  }
+
+  const sumRange = (from: number, to: number) =>
+    history.reduce((a, s) => (s.ts >= from && s.ts < to ? a + s.total : a), 0);
+  const span = hTab === "week" ? 7 : 28;
+  const histBars =
+    hTab === "week"
+      ? Array.from({ length: 7 }, (_, i) => {
+          const from = sod - (6 - i) * DAY;
+          return {
+            label: DAY_NAMES[new Date(from).getDay()],
+            value: sumRange(from, from + DAY),
+          };
+        })
+      : Array.from({ length: 4 }, (_, i) => {
+          const to = sod + DAY - (3 - i) * 7 * DAY;
+          return { label: `ส.${i + 1}`, value: sumRange(to - 7 * DAY, to) };
+        });
+  const periodStart = sod + DAY - span * DAY;
+  const periodTotal = histBars.reduce((a, b) => a + b.value, 0);
+  const prevTotal = sumRange(periodStart - span * DAY, periodStart);
+  const delta =
+    prevTotal > 0
+      ? Math.round(((periodTotal - prevTotal) / prevTotal) * 100)
+      : null;
+  const periodList = history.filter((s) => s.ts >= periodStart);
+  const periodMs = periodList.reduce((a, s) => a + s.durationMs, 0);
+  const periodGoal = dailyGoal * span;
+  const periodPct = Math.min(1, periodTotal / Math.max(1, periodGoal));
+
+  /* ---------------------------- ตั้งค่ารอบ ---------------------------- */
 
   const presets = mode === "time" ? TIME_PRESETS : COUNT_PRESETS;
   const value = mode === "time" ? seconds : target;
@@ -1271,146 +1659,367 @@ export default function Home() {
   };
 
   const fontStyle = { fontFamily: FONT, touchAction: "manipulation" as const };
+  const card = "rounded-3xl bg-white";
+  const limeBtn =
+    "flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348]";
+
+  const sessionRow = (s: Session) => (
+    <li key={s.id} className="flex items-center gap-3 px-4 py-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E8F5C1] text-[#3F5E1F]">
+        <Icon d={ICONS.bolt} size={18} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[16px] font-semibold tabular-nums">
+          {fmtNum(s.total)} ครั้ง
+        </div>
+        <div className="truncate text-[12px] text-[#6B7A6E]">
+          {fmtDate(s.ts)} · {fmtClock(s.ts)} · {formatTime(s.durationMs)} นาที
+        </div>
+      </div>
+      <div className="text-right text-[12px] tabular-nums text-[#6B7A6E]">
+        {s.kcal} kcal
+        <br />
+        {s.perMin}/นาที
+      </div>
+    </li>
+  );
+
+  /* ------------------------------ หน้าหลัก ----------------------------- */
 
   if (phase === "setup") {
-    return (
-      <div
-        style={fontStyle}
-        className="min-h-dvh select-none bg-[#F5F5F7] text-[#1D1D1F] antialiased"
-      >
-        <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(3.5rem,env(safe-area-inset-top))]">
-          <h1 className="text-[34px] font-bold leading-tight tracking-tight">
-            กระโดดเชือก
-          </h1>
+    const left = Math.max(0, dailyGoal - todayTotal);
 
-          {/* ตัวเลือกโหมดแบบ segmented control ของ iOS */}
-          <div className="mt-6 grid grid-cols-2 rounded-[10px] bg-[#7676801F] p-0.5">
-            {(
-              [
-                ["time", "เวลา"],
-                ["count", "จำนวนครั้ง"],
-              ] as const
-            ).map(([m, label]) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`h-9 rounded-[8px] text-[15px] font-medium transition-all ${
-                  mode === m ? "bg-white shadow-sm" : "text-[#1D1D1F]/70"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+    const homeView = (
+      <>
+        <header className="mb-5">
+          <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1B2A21] text-[#C9F25B]">
+              <Icon d={ICONS.bolt} size={16} />
+            </span>
+            {APP_NAME}
           </div>
+          <p className="mt-3 min-h-[18px] text-[13px] text-[#6B7A6E] lg:mt-0">
+            {now0
+              ? new Date(now0).toLocaleDateString("th-TH", {
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })
+              : ""}
+          </p>
+          <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
+            พร้อมโดดไหม 👋
+          </h1>
+        </header>
 
-          {/* ค่าที่ตั้ง */}
-          <section className="mt-6 rounded-2xl bg-white px-4 py-8">
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setValue(value - step)}
-                aria-label="ลดลง"
-                className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F5F5F7] text-3xl font-light text-[#007AFF] active:bg-[#E8E8ED]"
-              >
-                −
-              </button>
-              <div className="text-center">
-                <div className="text-[64px] font-semibold leading-none tabular-nums tracking-tight">
-                  {mode === "time" ? formatTime(seconds * 1000) : target}
+        <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
+          <div className="space-y-4">
+            <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-[15px] font-semibold">เป้าหมายวันนี้</span>
+                {streak > 0 && (
+                  <span className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-[12px] font-medium text-[#C9F25B]">
+                    <Icon d={ICONS.flame} size={14} />
+                    ต่อเนื่อง {streak} วัน
+                  </span>
+                )}
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight">
+                    {fmtNum(todayTotal)}
+                  </div>
+                  <div className="mt-2 text-[14px] text-white/60">
+                    จาก {fmtNum(dailyGoal)} ครั้ง
+                  </div>
+                  <div className="mt-2 text-[13px] font-medium text-[#C9F25B]">
+                    {left > 0
+                      ? `อีก ${fmtNum(left)} ครั้งก็ถึงเป้า!`
+                      : "ถึงเป้าวันนี้แล้ว เก่งมาก!"}
+                  </div>
                 </div>
-                <div className="mt-2 text-[15px] text-[#6E6E73]">
-                  {mode === "time" ? "นาที : วินาที" : "ครั้ง"}
+                <Ring
+                  value={goalPct}
+                  size={112}
+                  stroke={10}
+                  track="rgba(255,255,255,0.12)"
+                  color={LIME}
+                >
+                  <span className="text-[24px] font-semibold tabular-nums text-[#C9F25B]">
+                    {Math.round(goalPct * 100)}%
+                  </span>
+                  <span className="text-[11px] text-white/60">ทำได้แล้ว</span>
+                </Ring>
+              </div>
+            </section>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className={`${card} flex items-center gap-3 p-4`}>
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F5C1] text-[#3F5E1F]">
+                  <Icon d={ICONS.clock} size={20} />
+                </span>
+                <div>
+                  <div className="text-[20px] font-semibold tabular-nums">
+                    {formatTime(todayMs)}
+                  </div>
+                  <div className="text-[12px] text-[#6B7A6E]">นาทีที่กระโดด</div>
                 </div>
               </div>
-              <button
-                onClick={() => setValue(value + step)}
-                aria-label="เพิ่มขึ้น"
-                className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F5F5F7] text-3xl font-light text-[#007AFF] active:bg-[#E8E8ED]"
+              <div className={`${card} flex items-center gap-3 p-4`}>
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F5C1] text-[#3F5E1F]">
+                  <Icon d={ICONS.flame} size={20} />
+                </span>
+                <div>
+                  <div className="text-[20px] font-semibold tabular-nums">
+                    {todayKcal}
+                  </div>
+                  <div className="text-[12px] text-[#6B7A6E]">กิโลแคลอรี่</div>
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <p
+                role="alert"
+                className="pj-in rounded-2xl bg-white px-4 py-3 text-[14px] text-[#D92D20]"
               >
-                +
-              </button>
-            </div>
+                {error}
+              </p>
+            )}
 
-            <div className="mt-8 flex justify-center gap-2">
-              {presets.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setValue(p)}
-                  className={`h-8 rounded-full px-4 text-[15px] font-medium transition-colors ${
-                    value === p
-                      ? "bg-[#007AFF] text-white"
-                      : "bg-[#F5F5F7] text-[#007AFF]"
-                  }`}
-                >
-                  {mode === "time" ? formatTime(p * 1000) : p}
-                </button>
-              ))}
-            </div>
-          </section>
+            <button onClick={startSession} className={limeBtn}>
+              <Icon d={ICONS.play} size={20} fill />
+              เริ่มกระโดด
+            </button>
+            <p className="text-center text-[12px] text-[#6B7A6E]">
+              วางมือถือตั้งตรง สูงระดับเอว ยืนให้เห็นศีรษะถึงเท้า แล้วกางมือเหมือนจับเชือก
+            </p>
+          </div>
 
-          <ul className="mt-4 divide-y divide-[#3C3C4329] overflow-hidden rounded-2xl bg-white">
-            <li className="flex items-center justify-between gap-3 px-4 py-3">
-              <span className="text-[17px]">กล้อง</span>
-              <div className="grid w-40 grid-cols-2 rounded-[8px] bg-[#7676801F] p-0.5">
-                {(
+          <div className="space-y-4">
+            <section className="rounded-3xl bg-[#E8F5C1] p-5">
+              <h2 className="mb-3 text-[16px] font-semibold">รอบถัดไปของคุณ</h2>
+              <Segmented<Mode>
+                value={mode}
+                onChange={setMode}
+                options={
                   [
-                    ["user", "หน้า"],
-                    ["environment", "หลัง"],
+                    ["count", "จำนวนครั้ง"],
+                    ["time", "เวลา"],
                   ] as const
-                ).map(([f, label]) => (
+                }
+              />
+              <div className="mt-5">
+                <Stepper
+                  big
+                  display={mode === "time" ? formatTime(seconds * 1000) : `${target}`}
+                  unit={mode === "time" ? "นาที : วินาที" : "ครั้ง"}
+                  onMinus={() => setValue(value - step)}
+                  onPlus={() => setValue(value + step)}
+                />
+              </div>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                {presets.map((p) => (
                   <button
-                    key={f}
-                    onClick={() => setFacing(f)}
-                    className={`h-8 rounded-[6px] text-[14px] font-medium transition-all ${
-                      facing === f ? "bg-white shadow-sm" : "text-[#1D1D1F]/70"
+                    key={p}
+                    onClick={() => setValue(p)}
+                    className={`h-8 rounded-full px-4 text-[14px] font-semibold transition-all duration-200 active:scale-95 ${
+                      value === p
+                        ? "bg-[#1B2A21] text-white"
+                        : "bg-white text-[#1B2A21]"
                     }`}
                   >
-                    {label}
+                    {mode === "time" ? formatTime(p * 1000) : p}
                   </button>
                 ))}
               </div>
+            </section>
+
+            <section>
+              <div className="mb-2 flex items-center justify-between px-1">
+                <h2 className="text-[16px] font-semibold">รอบล่าสุด</h2>
+                <button
+                  onClick={() => setTab("history")}
+                  className="text-[13px] font-medium text-[#3F5E1F]"
+                >
+                  ดูทั้งหมด →
+                </button>
+              </div>
+              {history.length === 0 ? (
+                <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
+                  ยังไม่มีประวัติ เริ่มกระโดดรอบแรกได้เลย
+                </p>
+              ) : (
+                <ul className={`${card} divide-y divide-[#EEF2E4]`}>
+                  {history.slice(0, 3).map(sessionRow)}
+                </ul>
+              )}
+            </section>
+          </div>
+        </div>
+      </>
+    );
+
+    const historyView = (
+      <>
+        <h1 className="text-[30px] font-bold tracking-tight lg:text-[36px]">
+          ยิ่งโดด ยิ่งก้าวหน้า
+        </h1>
+        <p className="mt-1 text-[14px] text-[#6B7A6E]">
+          ดูภาพรวมผลของคุณในแต่ละช่วง
+        </p>
+        <div className="mt-5 max-w-xs">
+          <Segmented<"week" | "month">
+            value={hTab}
+            onChange={setHTab}
+            options={
+              [
+                ["week", "สัปดาห์"],
+                ["month", "เดือน"],
+              ] as const
+            }
+          />
+        </div>
+
+        <div className="mt-4 space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
+          <div className="space-y-4">
+            <section className={`${card} p-5`}>
+              <div className="flex items-center justify-between text-[13px] text-[#6B7A6E]">
+                <span>{hTab === "week" ? "7 วันล่าสุด" : "4 สัปดาห์ล่าสุด"}</span>
+                {delta !== null && (
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${
+                      delta >= 0
+                        ? "bg-[#E8F5C1] text-[#3F5E1F]"
+                        : "bg-[#FDE8E6] text-[#D92D20]"
+                    }`}
+                  >
+                    {delta >= 0 ? "↑" : "↓"} {Math.abs(delta)}%
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-[44px] font-semibold leading-none tabular-nums tracking-tight">
+                  {fmtNum(periodTotal)}
+                </span>
+                <span className="text-[14px] text-[#6B7A6E]">ครั้ง</span>
+              </div>
+              <div className="mt-5">
+                <BarChart bars={histBars} highlight={histBars.length - 1} />
+              </div>
+              <p className="mt-3 text-[12px] text-[#6B7A6E]">
+                รวมเวลา {formatTime(periodMs)} นาที · {periodList.length} รอบ
+              </p>
+            </section>
+
+            <section className="rounded-3xl bg-[#E8F5C1] p-5">
+              <div className="flex items-center justify-between text-[14px] font-semibold">
+                <span>
+                  เป้าหมาย {span} วัน · {fmtNum(periodGoal)} ครั้ง
+                </span>
+                <span className="tabular-nums">
+                  {Math.round(periodPct * 100)}%
+                </span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/70">
+                <div
+                  className="h-full rounded-full bg-[#3F5E1F] transition-[width] duration-500"
+                  style={{ width: `${periodPct * 100}%` }}
+                />
+              </div>
+              <p className="mt-2 text-[12px] text-[#4B5E3A]">
+                {periodTotal >= periodGoal
+                  ? "ถึงเป้าแล้ว!"
+                  : `อีก ${fmtNum(periodGoal - periodTotal)} ครั้งก็ถึงเป้า`}
+              </p>
+            </section>
+          </div>
+
+          <section>
+            <h2 className="mb-2 px-1 text-[16px] font-semibold">
+              การกระโดดล่าสุด
+            </h2>
+            {history.length === 0 ? (
+              <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
+                ยังไม่มีประวัติ
+              </p>
+            ) : (
+              <ul className={`${card} divide-y divide-[#EEF2E4]`}>
+                {history.slice(0, 20).map(sessionRow)}
+              </ul>
+            )}
+          </section>
+        </div>
+      </>
+    );
+
+    const settingsView = (
+      <>
+        <h1 className="text-[30px] font-bold tracking-tight lg:text-[36px]">
+          ตั้งค่า
+        </h1>
+        <div className="mt-5 max-w-xl space-y-4">
+          <section className="rounded-3xl bg-[#E8F5C1] p-5">
+            <h2 className="mb-4 text-[16px] font-semibold">เป้าหมายต่อวัน</h2>
+            <Stepper
+              display={fmtNum(dailyGoal)}
+              unit="ครั้งต่อวัน"
+              onMinus={() => setDailyGoal(Math.max(100, dailyGoal - 100))}
+              onPlus={() => setDailyGoal(Math.min(20000, dailyGoal + 100))}
+            />
+          </section>
+
+          <ul className={`${card} divide-y divide-[#EEF2E4]`}>
+            <li className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="text-[16px]">กล้อง</span>
+              <div className="w-40">
+                <Segmented<"user" | "environment">
+                  small
+                  value={facing}
+                  onChange={setFacing}
+                  options={
+                    [
+                      ["user", "หน้า"],
+                      ["environment", "หลัง"],
+                    ] as const
+                  }
+                />
+              </div>
             </li>
             <li className="flex items-center justify-between gap-3 px-4 py-3">
-              <span className="text-[17px]">เสียงนับและเตือน</span>
-              <button
-                role="switch"
-                aria-checked={sound}
-                aria-label="เสียงนับและเตือน"
-                onClick={() => setSound(!sound)}
-                className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors ${
-                  sound ? "bg-[#34C759]" : "bg-[#78788029]"
-                }`}
-              >
-                <span
-                  className={`absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow transition-all ${
-                    sound ? "left-[22px]" : "left-[2px]"
-                  }`}
-                />
-              </button>
+              <span className="text-[16px]">เสียงนับและเตือน</span>
+              <Switch on={sound} onChange={setSound} label="เสียงนับและเตือน" />
             </li>
           </ul>
 
-          <div className="mt-4 space-y-1 px-2 text-[13px] leading-5 text-[#6E6E73]">
-            <p>วางมือถือแนวตั้ง สูงระดับเอว พิงของให้นิ่ง กดเริ่มแล้วปรับมุมเอียงมือถือตามตัวชี้บนจอ จากนั้นยืนให้เห็นตั้งแต่ศีรษะถึงเท้า ไม่ต้องตรงกรอบเป๊ะ</p>
-            <p>เปิดไฟให้สว่าง อย่าให้แสงจ้าอยู่ด้านหลังตัว</p>
-            <p>ถือเชือกและกางมือออกด้านข้างเหมือนตอนกระโดด กระโดดเฉยๆ โดยแขนห้อย แอปจะไม่นับ</p>
-          </div>
-
-          {error && (
-            <p
-              role="alert"
-              className="mt-4 rounded-2xl bg-white px-4 py-3 text-[15px] text-[#FF3B30]"
-            >
-              {error}
-            </p>
-          )}
-
           <button
-            onClick={startSession}
-            className="mt-auto h-14 w-full rounded-full bg-[#007AFF] text-[17px] font-semibold text-white transition-colors active:bg-[#0062CC]"
+            onClick={() => {
+              if (window.confirm("ลบประวัติการกระโดดทั้งหมด?")) {
+                setHistory([]);
+                try {
+                  localStorage.removeItem(HISTORY_KEY);
+                } catch {
+                  // ลบไม่ได้ก็ข้ามไป
+                }
+              }
+            }}
+            className="h-12 w-full rounded-full bg-white text-[15px] font-semibold text-[#D92D20] transition-transform active:scale-[0.98]"
           >
-            เริ่ม
+            ล้างประวัติ
           </button>
-        </main>
+        </div>
+      </>
+    );
+
+    return (
+      <div style={fontStyle} className="select-none antialiased">
+        <style>{STYLES}</style>
+        <Shell tab={tab} onTab={setTab}>
+          {tab === "home" && homeView}
+          {tab === "history" && historyView}
+          {tab === "settings" && settingsView}
+        </Shell>
       </div>
     );
   }
@@ -1418,90 +2027,134 @@ export default function Home() {
   /* ----------------------------- หน้าสรุปผล ---------------------------- */
 
   if (phase === "summary" && summary) {
-    const maxBucket = Math.max(1, ...summary.buckets);
-    const reasonLabel =
+    const reached = todayTotal >= dailyGoal;
+    const title = summary.record
+      ? "สถิติใหม่!"
+      : reached
+        ? "เก่งมาก! ถึงเป้าแล้ว"
+        : summary.reason === "manual"
+          ? "จบการกระโดด"
+          : "ทำได้ดีมาก!";
+    const sub =
       summary.reason === "time"
         ? "ครบเวลา"
         : summary.reason === "count"
           ? "ครบจำนวนครั้ง"
           : "หยุดเอง";
+    const kcal = Math.round(summary.total * KCAL_PER_JUMP);
+    const bars = summary.buckets.map((n, i) => ({
+      label: `${i * 10}`,
+      value: n,
+    }));
+    const peak = bars.reduce(
+      (bi, b, i, arr) => (b.value > arr[bi].value ? i : bi),
+      0
+    );
 
-    const rows: [string, string][] = [
-      ["เวลาที่ใช้", formatTime(summary.durationMs)],
-      ["เฉลี่ยต่อนาที", `${summary.perMin} ครั้ง`],
-      ["10 วินาทีที่เร็วสุด", `${summary.bestTenSec} ครั้ง`],
-      [
-        "จังหวะสม่ำเสมอ",
-        summary.total >= 5 ? `${summary.consistency}%` : "-",
-      ],
+    const tiles: [string, string, string][] = [
+      ["เวลา", formatTime(summary.durationMs), "นาที"],
+      ["พลังงาน", `~${kcal}`, "กิโลแคลอรี่"],
+      ["เฉลี่ย", `${summary.perMin}`, "ครั้ง/นาที"],
     ];
 
     return (
       <div
         style={fontStyle}
-        className="min-h-dvh select-none bg-[#F5F5F7] text-[#1D1D1F] antialiased"
+        className="min-h-dvh select-none bg-[#F3F6EC] text-[#1B2A21] antialiased"
       >
-        <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(3.5rem,env(safe-area-inset-top))]">
-          <h1 className="text-[34px] font-bold leading-tight tracking-tight">
-            สรุปผล
-          </h1>
-          <p className="text-[15px] text-[#6E6E73]">{reasonLabel}</p>
-
-          <div className="mt-6 text-center">
-            <div className="text-[96px] font-semibold leading-none tabular-nums tracking-tight">
-              {summary.total}
+        <style>{STYLES}</style>
+        <main className="pj-fade mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] lg:py-10">
+          <header className="flex items-start gap-3">
+            <button
+              onClick={goHome}
+              aria-label="ปิด"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white transition-transform active:scale-90"
+            >
+              <Icon d={ICONS.close} size={18} />
+            </button>
+            <div>
+              <h1 className="text-[22px] font-bold leading-tight">
+                {APP_NAME} · สรุปผล
+              </h1>
+              <p className="text-[13px] text-[#6B7A6E]">{sub}</p>
             </div>
-            <div className="mt-1 text-[17px] text-[#6E6E73]">ครั้ง</div>
+          </header>
+
+          <div className="mt-5 flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#C9F25B]">
+              <Icon d={ICONS.check} size={18} />
+            </span>
+            <span className="text-[18px] font-semibold">{title}</span>
           </div>
 
-          <ul className="mt-8 divide-y divide-[#3C3C4329] overflow-hidden rounded-2xl bg-white">
-            {rows.map(([label, val]) => (
-              <li
-                key={label}
-                className="flex items-center justify-between px-4 py-3.5 text-[17px]"
-              >
-                <span>{label}</span>
-                <span className="font-medium tabular-nums text-[#6E6E73]">
-                  {val}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <section className="mt-4 rounded-3xl bg-[#1B2A21] px-5 py-8 text-center text-white">
+            <div className="text-[13px] text-white/60">จำนวนครั้งทั้งหมด</div>
+            <div className="mt-1 flex items-baseline justify-center gap-2">
+              <span className="pj-pop text-[88px] font-semibold leading-none tabular-nums tracking-tight">
+                {fmtNum(summary.total)}
+              </span>
+              <span className="text-[18px] text-white/70">ครั้ง</span>
+            </div>
+            {summary.record && (
+              <span className="mt-4 inline-block rounded-full bg-white/10 px-4 py-1.5 text-[13px] font-medium text-[#C9F25B]">
+                🏆 สถิติใหม่ของคุณ
+              </span>
+            )}
+          </section>
 
-          <section className="mt-4 rounded-2xl bg-white px-4 py-4">
-            <h2 className="text-[15px] font-semibold">
-              จำนวนครั้งในแต่ละ 10 วินาที
-            </h2>
-            <div className="mt-4 flex h-32 items-end gap-1.5">
-              {summary.buckets.map((n, i) => (
-                <div
-                  key={i}
-                  className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
-                >
-                  <span className="text-[11px] tabular-nums text-[#6E6E73]">
-                    {n}
-                  </span>
-                  <div
-                    className="w-full rounded-full bg-[#007AFF]"
-                    style={{ height: `${(n / maxBucket) * 100}%`, minHeight: 4 }}
-                  />
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            {tiles.map(([label, v, unit]) => (
+              <div key={label} className="rounded-2xl bg-white p-3 text-center">
+                <div className="text-[12px] text-[#6B7A6E]">{label}</div>
+                <div className="mt-1 text-[22px] font-semibold tabular-nums">
+                  {v}
                 </div>
-              ))}
+                <div className="text-[11px] text-[#6B7A6E]">{unit}</div>
+              </div>
+            ))}
+          </div>
+
+          <section className={`mt-3 ${card} p-4`}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-[15px] font-semibold">จังหวะการกระโดด</h2>
+              <span className="text-[12px] text-[#6B7A6E]">
+                ครั้ง / 10 วินาที
+              </span>
+            </div>
+            <div className="mt-4">
+              <BarChart bars={bars} highlight={peak} height={112} />
+            </div>
+            <p className="mt-3 text-[12px] text-[#6B7A6E]">
+              10 วินาทีที่เร็วสุด {summary.bestTenSec} ครั้ง
+              {summary.total >= 5 && ` · จังหวะสม่ำเสมอ ${summary.consistency}%`}
+            </p>
+          </section>
+
+          <section className="mt-3 rounded-3xl bg-[#E8F5C1] p-4">
+            <div className="flex items-center justify-between text-[14px] font-semibold">
+              <span>
+                วันนี้ {fmtNum(todayTotal)} / {fmtNum(dailyGoal)} ครั้ง
+              </span>
+              <span className="tabular-nums">{Math.round(goalPct * 100)}%</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/70">
+              <div
+                className="h-full rounded-full bg-[#3F5E1F] transition-[width] duration-500"
+                style={{ width: `${goalPct * 100}%` }}
+              />
             </div>
           </section>
 
-          <div className="mt-auto flex flex-col gap-1 pt-8">
-            <button
-              onClick={startSession}
-              className="h-14 w-full rounded-full bg-[#007AFF] text-[17px] font-semibold text-white transition-colors active:bg-[#0062CC]"
-            >
+          <div className="mt-auto flex flex-col gap-2 pt-6">
+            <button onClick={startSession} className={limeBtn}>
               เริ่มอีกรอบ
             </button>
             <button
-              onClick={() => setPhase("setup")}
-              className="h-12 w-full text-[17px] font-medium text-[#007AFF]"
+              onClick={goHome}
+              className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-white text-[17px] font-semibold transition-all active:scale-[0.98]"
             >
-              เปลี่ยนการตั้งค่า
+              <Icon d={ICONS.home} size={20} />
+              กลับหน้าหลัก
             </button>
           </div>
         </main>
@@ -1516,6 +2169,8 @@ export default function Home() {
     mode === "time"
       ? formatTime(Math.ceil(remaining / 1000) * 1000)
       : formatTime(elapsed);
+  const livePerMin =
+    elapsed > 5000 ? Math.round((count / elapsed) * 60000) : 0;
 
   const progress =
     phase !== "running"
@@ -1524,15 +2179,12 @@ export default function Home() {
         ? Math.min(1, elapsed / (seconds * 1000))
         : Math.min(1, count / target);
 
-  const glass = "bg-black/35 backdrop-blur-xl";
+  const glass = "bg-black/45 backdrop-blur-xl";
   const isPrep = phase === "positioning" || phase === "countdown";
   const isLevel = phase === "leveling";
-  // มุมเอนหลังของมือถือที่เป็นเป้าหมาย ใช้วาดรูปมือถือเส้นประ
   const targetLean =
     90 - (facing === "user" ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA);
   const flip = facing === "user" ? "-scale-x-100" : "";
-  // จอสูงกว่าภาพ (มือถือแนวตั้ง) ให้ภาพเต็มจอ จอกว้างกว่าภาพ (แท็บเล็ต เดสก์ท็อป) ให้เห็นภาพครบ
-  // FORCE_CONTAIN = true แสดงภาพเต็มเฟรมไม่ครอปข้าง (จอยาวๆ จะมีแถบดำบนล่าง)
   const fit =
     FORCE_CONTAIN || (vp.w > 0 && vp.w / vp.h > vdim.w / vdim.h)
       ? "object-contain"
@@ -1549,287 +2201,390 @@ export default function Home() {
   return (
     <div
       style={{ ...fontStyle, touchAction: "none", overscrollBehavior: "none" }}
-      className="fixed inset-0 select-none overflow-hidden bg-black text-white antialiased"
+      className="fixed inset-0 select-none overflow-hidden bg-[#F3F6EC] text-white antialiased lg:flex lg:items-center lg:justify-center lg:gap-6 lg:p-6"
     >
-      <video
-        ref={videoRef}
-        playsInline
-        muted
-        className={`absolute inset-0 h-full w-full ${fit} ${flip}`}
-      />
-      <canvas
-        ref={canvasRef}
-        className={`absolute inset-0 h-full w-full ${fit} ${flip}`}
-      />
+      <style>{STYLES}</style>
 
-      {/* ตอนกระโดด: เวลาซ้าย ตัวนับขวา เว้นกลางจอไว้ให้เห็นผู้เล่น */}
-      {phase === "running" && (
-        <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/65 via-black/30 to-transparent px-4 pb-10 pt-[max(0.75rem,env(safe-area-inset-top))]">
-          <div className="flex items-start justify-between">
-            <div
-              className={`${glass} rounded-full px-4 py-1.5 text-[22px] font-semibold tabular-nums`}
-            >
-              {timerText}
-            </div>
-            <div className="text-right">
-              <div
-                className="font-semibold leading-none tabular-nums tracking-tight drop-shadow-lg"
-                style={{ fontSize: "clamp(64px, 11dvh, 104px)" }}
+      {/* เวทีกล้อง: มือถือเต็มจอ เดสก์ท็อปเป็นกรอบมน สัดส่วนเท่าภาพจริง */}
+      <div
+        className="fixed inset-0 h-dvh w-full overflow-hidden bg-black lg:relative lg:inset-auto lg:h-full lg:max-h-[880px] lg:w-auto lg:rounded-[32px] lg:shadow-xl lg:[aspect-ratio:var(--ar)]"
+        style={{ ["--ar" as string]: `${vdim.w} / ${vdim.h}` }}
+      >
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          className={`absolute inset-0 h-full w-full ${fit} ${flip}`}
+        />
+        <canvas
+          ref={canvasRef}
+          className={`absolute inset-0 h-full w-full ${fit} ${flip}`}
+        />
+
+        {/* ระหว่างกระโดด (มือถือ): วงแหวนความคืบหน้า + ตัวนับ */}
+        {phase === "running" && (
+          <div className="pj-in absolute inset-x-0 top-0 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:hidden">
+            <div className={`${glass} flex items-center gap-4 rounded-3xl p-3`}>
+              <Ring
+                value={progress}
+                size={104}
+                stroke={9}
+                track="rgba(255,255,255,0.2)"
+                color={LIME}
               >
-                {count}
-              </div>
-              <div className="mt-1 text-[13px] text-white/80 drop-shadow">
-                {mode === "count" ? `จาก ${target} ครั้ง` : "ครั้ง"}
+                <span
+                  key={count}
+                  className={`text-[38px] font-semibold leading-none tabular-nums ${
+                    count > 0 ? "pj-pop" : ""
+                  }`}
+                >
+                  {count}
+                </span>
+              </Ring>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] text-white/70">
+                  {mode === "count" ? `จาก ${target} ครั้ง` : "จำนวนครั้ง"}
+                </p>
+                <div className="mt-1 grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-[22px] font-semibold tabular-nums">
+                      {timerText}
+                    </div>
+                    <div className="text-[11px] text-white/60">
+                      {mode === "time" ? "เหลือ" : "เวลา"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[22px] font-semibold tabular-nums">
+                      {livePerMin}
+                    </div>
+                    <div className="text-[11px] text-white/60">ครั้ง/นาที</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/25">
-            <div
-              className="h-full rounded-full bg-[#30D158]"
-              style={{
-                width: `${progress * 100}%`,
-                transition: "width 150ms linear",
-              }}
-            />
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* ตั้งมือถือ: วัดมุมเอียงด้วยไจโร ขยับมือถือให้ปุ่มกลมตรงวงเป้าหมาย แล้วค้างไว้ให้นิ่ง */}
-      {isLevel && (
-        <div className="absolute inset-0 flex flex-col items-center bg-[#F5F5F7] px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] text-[#1D1D1F]">
-          <h2 className="text-[22px] font-semibold">ปรับมุมเอียงมือถือ</h2>
-          <p className="mt-2 min-h-[24px] text-center text-[17px] font-medium">
-            {levelInfo.hint}
-          </p>
-          <div
-            className="mt-3 h-1.5 w-44 overflow-hidden rounded-full bg-[#7676801F]"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(levelInfo.hold * 100)}
-          >
-            <div
-              className="h-full rounded-full bg-[#30D158] transition-[width] duration-150"
-              style={{ width: `${levelInfo.hold * 100}%` }}
-            />
-          </div>
-          <p className="mt-3 text-center text-[13px] leading-5 text-[#6E6E73]">
-            พิงมือถือให้เอนหลังตามรูปเส้นประ แล้วค้างไว้ให้นิ่ง
-          </p>
-          {landscape && (
-            <p className="mt-1 text-center text-[12px] text-[#FF3B30]">
-              หมุนมือถือเป็นแนวตั้งจะใช้งานง่ายกว่า
+        {/* ตั้งมือถือ */}
+        {isLevel && (
+          <div className="pj-in absolute inset-0 flex flex-col items-center bg-[#F3F6EC] px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] text-[#1B2A21]">
+            <h2 className="text-[22px] font-semibold">ปรับมุมเอียงมือถือ</h2>
+            <p className="mt-2 min-h-[24px] text-center text-[17px] font-medium">
+              {levelInfo.hint}
             </p>
-          )}
-
-          {/* เส้นระดับซ้ายขวา เอียงตามมือถือ */}
-          <div className="mt-4 flex h-3 w-40 items-center justify-center">
             <div
-              ref={levelBarRef}
-              className={`h-1 w-full rounded-full transition-colors ${
-                levelInfo.rollOk ? "bg-[#30D158]" : "bg-[#8E8E93]"
-              }`}
-            />
-          </div>
-
-          {/* รูปมือถือด้านข้าง: เส้นประคือมุมเป้าหมาย ตัวทึบคือมุมจริงตอนนี้ */}
-          <svg
-            viewBox="0 0 240 150"
-            className="mt-2 h-[130px] w-[208px] shrink-0"
-            aria-hidden
-          >
-            <line
-              x1="20"
-              y1="130"
-              x2="220"
-              y2="130"
-              stroke="#C7C7CC"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-            <line
-              x1="178"
-              y1="20"
-              x2="178"
-              y2="130"
-              stroke="#C7C7CC"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-            <g transform={`rotate(${targetLean} 110 130)`}>
-              <rect
-                x="95"
-                y="50"
-                width="30"
-                height="80"
-                rx="6"
-                fill="none"
-                stroke="#30D158"
-                strokeWidth="2.5"
-                strokeDasharray="5 4"
-              />
-            </g>
-            <g ref={levelPhoneRef} style={{ transformOrigin: "110px 130px" }}>
-              <rect x="95" y="50" width="30" height="80" rx="6" fill="#636366" />
-              <rect x="103" y="55" width="14" height="4" rx="2" fill="#1D1D1F" />
-            </g>
-          </svg>
-
-          {/* แถบวัดมุม: วงเส้นประคือเป้าหมาย ปุ่มกลมขยับขึ้นลงตามการเอียงของมือถือ */}
-          <div className="relative mt-4 h-[260px] w-[84px] shrink-0 rounded-full bg-[#7676801F]">
-            <div
-              className={`absolute left-1/2 top-1/2 h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-dashed transition-colors ${
-                levelInfo.pitchOk ? "border-[#30D158]" : "border-[#8E8E93]"
-              }`}
-            />
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-              <div
-                ref={levelKnobRef}
-                className={`flex h-[72px] w-[72px] items-center justify-center rounded-full shadow-md transition-colors ${
-                  levelInfo.pitchOk
-                    ? "bg-[#30D158] text-white"
-                    : "bg-white text-[#1D1D1F]"
-                }`}
-                style={{ willChange: "transform" }}
-              >
-                {levelInfo.dir === "ok" ? (
-                  <svg
-                    width="36"
-                    height="36"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                  >
-                    <path d="M5 13l4 4 10-10" />
-                  </svg>
-                ) : (
-                  <svg
-                    width="36"
-                    height="36"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className={levelInfo.dir === "up" ? "rotate-180" : ""}
-                    aria-hidden
-                  >
-                    <path d="M12 4v15M6 13l6 6 6-6" />
-                  </svg>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={skipLeveling}
-            className="mt-auto h-12 px-6 text-[17px] font-medium text-[#007AFF]"
-          >
-            ข้าม
-          </button>
-        </div>
-      )}
-
-      {/* ก่อนเริ่ม: เช็กลิสต์อยู่แถบซ้าย ปล่อยกลางจอให้กรอบรูปคนเต็มที่ */}
-      {isPrep && (
-        <div className="pointer-events-none absolute left-2 top-[max(0.75rem,env(safe-area-inset-top))] flex w-[96px] flex-col items-start gap-1.5">
-          {checks.map(([label, passed]) => (
-            <div
-              key={label}
-              className={`${glass} flex items-center gap-1 rounded-full py-[3px] pl-1 pr-2 text-[11px] font-medium leading-4`}
-            >
-              <span
-                aria-hidden
-                className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[9px] leading-none ${
-                  passed
-                    ? "bg-[#30D158] text-black"
-                    : "border border-white/60 text-transparent"
-                }`}
-              >
-                ✓
-              </span>
-              <span className="whitespace-nowrap">{label}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ก่อนเริ่ม: คำแนะนำและแถบนับค้างอยู่แถบขวา */}
-      {isPrep && (
-        <div className="pointer-events-none absolute right-2 top-[max(0.75rem,env(safe-area-inset-top))] flex w-[112px] flex-col items-end gap-2">
-          <div
-            className={`${glass} rounded-2xl px-3 py-1.5 text-right text-[13px] font-semibold leading-[18px]`}
-          >
-            {placement.hint}
-          </div>
-          {phase === "positioning" && (
-            <div
-              className="h-1.5 w-full overflow-hidden rounded-full bg-white/25"
+              className="mt-3 h-1.5 w-44 overflow-hidden rounded-full bg-[#E3EAD6]"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-valuenow={Math.round(hold * 100)}
+              aria-valuenow={Math.round(levelInfo.hold * 100)}
             >
               <div
-                className="h-full rounded-full bg-[#30D158] transition-[width] duration-150"
-                style={{ width: `${hold * 100}%` }}
+                className="h-full rounded-full bg-[#3F5E1F] transition-[width] duration-150"
+                style={{ width: `${levelInfo.hold * 100}%` }}
               />
             </div>
-          )}
-          {landscape && (
-            <p className="text-right text-[11px] leading-4 text-white/85 drop-shadow">
-              หมุนมือถือเป็นแนวตั้งจะใช้งานง่ายกว่า
+            <p className="mt-3 text-center text-[13px] leading-5 text-[#6B7A6E]">
+              พิงมือถือให้เอนหลังตามรูปเส้นประ แล้วค้างไว้ให้นิ่ง
             </p>
+            {landscape && (
+              <p className="mt-1 text-center text-[12px] text-[#D92D20]">
+                หมุนมือถือเป็นแนวตั้งจะใช้งานง่ายกว่า
+              </p>
+            )}
+
+            <div className="mt-4 flex h-3 w-40 items-center justify-center">
+              <div
+                ref={levelBarRef}
+                className={`h-1 w-full rounded-full transition-colors ${
+                  levelInfo.rollOk ? "bg-[#3F5E1F]" : "bg-[#C5CFB5]"
+                }`}
+              />
+            </div>
+
+            <svg
+              viewBox="0 0 240 150"
+              className="mt-2 h-[130px] w-[208px] shrink-0"
+              aria-hidden
+            >
+              <line
+                x1="20"
+                y1="130"
+                x2="220"
+                y2="130"
+                stroke="#C5CFB5"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
+              <line
+                x1="178"
+                y1="20"
+                x2="178"
+                y2="130"
+                stroke="#C5CFB5"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
+              <g transform={`rotate(${targetLean} 110 130)`}>
+                <rect
+                  x="95"
+                  y="50"
+                  width="30"
+                  height="80"
+                  rx="6"
+                  fill="none"
+                  stroke="#3F5E1F"
+                  strokeWidth="2.5"
+                  strokeDasharray="5 4"
+                />
+              </g>
+              <g ref={levelPhoneRef} style={{ transformOrigin: "110px 130px" }}>
+                <rect x="95" y="50" width="30" height="80" rx="6" fill="#1B2A21" />
+                <rect x="103" y="55" width="14" height="4" rx="2" fill="#C9F25B" />
+              </g>
+            </svg>
+
+            <div className="relative mt-4 h-[260px] w-[84px] shrink-0 rounded-full bg-[#E3EAD6]">
+              <div
+                className={`absolute left-1/2 top-1/2 h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-dashed transition-colors ${
+                  levelInfo.pitchOk ? "border-[#3F5E1F]" : "border-[#A9B79A]"
+                }`}
+              />
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                <div
+                  ref={levelKnobRef}
+                  className={`flex h-[72px] w-[72px] items-center justify-center rounded-full shadow-md transition-colors ${
+                    levelInfo.pitchOk
+                      ? "bg-[#C9F25B] text-[#1B2A21]"
+                      : "bg-white text-[#1B2A21]"
+                  }`}
+                  style={{ willChange: "transform" }}
+                >
+                  {levelInfo.dir === "ok" ? (
+                    <Icon d={ICONS.check} size={36} />
+                  ) : (
+                    <span
+                      className={levelInfo.dir === "up" ? "rotate-180" : ""}
+                    >
+                      <Icon d={ICONS.down} size={36} />
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={skipLeveling}
+              className="mt-auto h-12 px-6 text-[17px] font-semibold text-[#3F5E1F] active:opacity-60"
+            >
+              ข้าม
+            </button>
+          </div>
+        )}
+
+        {/* ก่อนเริ่ม (มือถือ): เช็กลิสต์ซ้าย คำแนะนำขวา */}
+        {isPrep && (
+          <div className="pj-in pointer-events-none absolute left-2 top-[max(0.75rem,env(safe-area-inset-top))] flex w-[96px] flex-col items-start gap-1.5 lg:hidden">
+            {checks.map(([label, passed]) => (
+              <div
+                key={label}
+                className={`${glass} flex items-center gap-1 rounded-full py-[3px] pl-1 pr-2 text-[11px] font-medium leading-4`}
+              >
+                <span
+                  aria-hidden
+                  className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[9px] leading-none transition-colors duration-200 ${
+                    passed
+                      ? "bg-[#C9F25B] text-black"
+                      : "border border-white/60 text-transparent"
+                  }`}
+                >
+                  ✓
+                </span>
+                <span className="whitespace-nowrap">{label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isPrep && (
+          <div className="pj-in pointer-events-none absolute right-2 top-[max(0.75rem,env(safe-area-inset-top))] flex w-[112px] flex-col items-end gap-2 lg:hidden">
+            <div
+              className={`${glass} rounded-2xl px-3 py-1.5 text-right text-[13px] font-semibold leading-[18px]`}
+            >
+              {placement.hint}
+            </div>
+            {phase === "positioning" && (
+              <div
+                className="h-1.5 w-full overflow-hidden rounded-full bg-white/25"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(hold * 100)}
+              >
+                <div
+                  className="h-full rounded-full bg-[#C9F25B] transition-[width] duration-150"
+                  style={{ width: `${hold * 100}%` }}
+                />
+              </div>
+            )}
+            {landscape && (
+              <p className="text-right text-[11px] leading-4 text-white/85 drop-shadow">
+                หมุนมือถือเป็นแนวตั้งจะใช้งานง่ายกว่า
+              </p>
+            )}
+          </div>
+        )}
+
+        {phase === "running" && (!bodyOk || !handsOk) && (
+          <div
+            role="status"
+            className={`${glass} pj-in absolute inset-x-6 bottom-[max(5.5rem,calc(env(safe-area-inset-bottom)+4.5rem))] rounded-2xl px-4 py-3 text-center text-[15px] font-medium lg:bottom-6`}
+          >
+            {!bodyOk
+              ? "ถอยให้เห็นทั้งตัว ตั้งแต่ศีรษะถึงข้อเท้า"
+              : "กางมือออกด้านข้างเหมือนจับเชือก ถึงจะนับ"}
+          </div>
+        )}
+
+        {phase === "loading" && (
+          <div className="pj-in absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#F3F6EC] text-[#1B2A21]">
+            <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-[#C9F25B] border-t-[#1B2A21]" />
+            <p className="text-[17px] font-medium">กำลังเตรียมกล้อง</p>
+          </div>
+        )}
+
+        {phase === "countdown" && countdown !== null && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span
+              key={countdown}
+              className="pj-pop font-semibold leading-none text-[#C9F25B] drop-shadow-lg"
+              style={{ fontSize: "clamp(120px, 40vw, 220px)" }}
+            >
+              {countdown}
+            </span>
+          </div>
+        )}
+
+        {/* ปุ่มจบ (มือถือ) */}
+        {phase === "running" && (
+          <div className="pj-in absolute inset-x-0 bottom-0 flex justify-center px-5 pb-[max(1rem,env(safe-area-inset-bottom))] lg:hidden">
+            <button
+              onClick={stopEarly}
+              className="h-12 w-full max-w-xs rounded-full bg-white/90 text-[16px] font-semibold text-[#1B2A21] backdrop-blur transition-transform active:scale-[0.98]"
+            >
+              จบการกระโดด
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* แผงด้านข้าง (เดสก์ท็อป) */}
+      {(isPrep || phase === "running") && (
+        <aside className="pj-in hidden h-full max-h-[880px] w-[360px] shrink-0 flex-col gap-4 text-[#1B2A21] lg:flex">
+          <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#1B2A21] text-[#C9F25B]">
+              <Icon d={ICONS.bolt} size={18} />
+            </span>
+            {APP_NAME}
+          </div>
+
+          {isPrep && (
+            <>
+              <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
+                <p className="text-[13px] text-white/60">เตรียมตัว</p>
+                <p className="mt-1 text-[22px] font-semibold leading-snug">
+                  {placement.hint}
+                </p>
+                {phase === "positioning" && (
+                  <div
+                    className="mt-4 h-2 overflow-hidden rounded-full bg-white/15"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(hold * 100)}
+                  >
+                    <div
+                      className="h-full rounded-full bg-[#C9F25B] transition-[width] duration-150"
+                      style={{ width: `${hold * 100}%` }}
+                    />
+                  </div>
+                )}
+              </section>
+              <ul className="divide-y divide-[#EEF2E4] overflow-hidden rounded-3xl bg-white">
+                {checks.map(([label, passed]) => (
+                  <li
+                    key={label}
+                    className="flex items-center justify-between px-4 py-3 text-[15px]"
+                  >
+                    <span>{label}</span>
+                    <span
+                      className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200 ${
+                        passed
+                          ? "bg-[#C9F25B] text-[#1B2A21]"
+                          : "border border-[#C5CFB5] text-transparent"
+                      }`}
+                    >
+                      <Icon d={ICONS.check} size={14} />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
-        </div>
-      )}
 
-      {/* คำเตือนระหว่างกระโดด อยู่ด้านล่างเหนือปุ่ม */}
-      {phase === "running" && (!bodyOk || !handsOk) && (
-        <div
-          role="status"
-          className={`${glass} absolute inset-x-6 bottom-[max(5rem,calc(env(safe-area-inset-bottom)+4rem))] rounded-2xl px-4 py-3 text-center text-[15px] font-medium`}
-        >
-          {!bodyOk
-            ? "ถอยให้เห็นทั้งตัว ตั้งแต่ศีรษะถึงข้อเท้า"
-            : "กางมือออกด้านข้างเหมือนจับเชือก ถึงจะนับ"}
-        </div>
-      )}
-
-      {phase === "loading" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/60 backdrop-blur-sm">
-          <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-white/30 border-t-white" />
-          <p className="text-[17px]">กำลังเตรียมกล้อง</p>
-        </div>
-      )}
-
-      {phase === "countdown" && countdown !== null && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span
-            className="font-semibold leading-none drop-shadow-lg"
-            style={{ fontSize: "clamp(120px, 40vw, 220px)" }}
-          >
-            {countdown}
-          </span>
-        </div>
-      )}
-
-      {/* ปุ่มสิ้นสุด แสดงเฉพาะตอนกระโดด หน้าสแกนตัวไม่มีปุ่ม */}
-      {phase === "running" && (
-        <div className="absolute inset-x-0 bottom-0 flex justify-center px-5 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <button
-            onClick={stopEarly}
-            className={`${glass} h-12 w-full max-w-xs rounded-full text-[17px] font-semibold text-[#FF453A] active:bg-black/50`}
-          >
-            สิ้นสุด
-          </button>
-        </div>
+          {phase === "running" && (
+            <>
+              <section className="flex flex-col items-center rounded-3xl bg-[#1B2A21] p-6 text-white">
+                <Ring
+                  value={progress}
+                  size={248}
+                  stroke={16}
+                  track="rgba(255,255,255,0.12)"
+                  color={LIME}
+                >
+                  <span className="text-[13px] text-white/60">จำนวนครั้ง</span>
+                  <span
+                    key={count}
+                    className={`text-[84px] font-semibold leading-none tabular-nums tracking-tight ${
+                      count > 0 ? "pj-pop" : ""
+                    }`}
+                  >
+                    {count}
+                  </span>
+                  <span className="mt-1 text-[13px] text-white/60">
+                    {mode === "count" ? `/ ${target} ครั้ง` : "ครั้ง"}
+                  </span>
+                  <span className="mt-2 rounded-full bg-white/10 px-3 py-0.5 text-[12px] font-semibold text-[#C9F25B]">
+                    {Math.round(progress * 100)}%
+                  </span>
+                </Ring>
+              </section>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-white p-4 text-center">
+                  <div className="text-[28px] font-semibold tabular-nums">
+                    {timerText}
+                  </div>
+                  <div className="text-[12px] text-[#6B7A6E]">
+                    {mode === "time" ? "เวลาที่เหลือ" : "เวลาที่ใช้"}
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-white p-4 text-center">
+                  <div className="text-[28px] font-semibold tabular-nums">
+                    {livePerMin}
+                  </div>
+                  <div className="text-[12px] text-[#6B7A6E]">ครั้ง/นาที</div>
+                </div>
+              </div>
+              <button
+                onClick={stopEarly}
+                className="mt-auto h-14 w-full rounded-full bg-white text-[17px] font-semibold transition-all active:scale-[0.98]"
+              >
+                จบการกระโดด
+              </button>
+            </>
+          )}
+        </aside>
       )}
     </div>
   );
