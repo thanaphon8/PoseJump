@@ -146,8 +146,8 @@ const LEVEL_JITTER_DEG = 2;
 const LEVEL_WINDOW_MS = 500;
 const LEVEL_HOLD_MS = 1500;
 const LEVEL_RANGE_DEG = 22;
-// ราง 340px ลูกบอล 72px → ขอบสุด ±134px เว้นไว้ ±120px ไม่ให้ชนขอบตอนเอียงถึง LEVEL_RANGE_DEG
-const LEVEL_PX_PER_DEG = 120 / LEVEL_RANGE_DEG;
+// ราง 300px ลูกบอล 72px → ขอบสุด ±114px เว้นไว้ ±108px (ห่างขอบ 6px) พอดีสวยไม่ชน
+const LEVEL_PX_PER_DEG = 108 / LEVEL_RANGE_DEG;
 
 // ท่าจับเชือก
 const HAND_MIN_OFFSET = 0.75;
@@ -3396,7 +3396,7 @@ export default function Home() {
               />
             </div>
 
-            <div className="relative mt-6 h-[340px] w-[84px] shrink-0 rounded-full bg-[#E3EAD6]">
+            <div className="relative mt-6 h-[300px] w-[84px] shrink-0 rounded-full bg-[#E3EAD6]">
               <div
                 className={`absolute left-1/2 top-1/2 h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-dashed transition-colors ${
                   levelInfo.pitchOk ? "border-[#3F5E1F]" : "border-[#A9B79A]"
