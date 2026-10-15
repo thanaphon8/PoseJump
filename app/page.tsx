@@ -139,9 +139,10 @@ const MAX_BOTTOM = 0.97;
 const CENTER_TOL = 0.25;
 
 // ตั้งมือถือด้วยไจโร (องศา) 90 = ตั้งตรง น้อยกว่า = เอนหลัง กล้องหลังใช้ 180 - ค่านี้
-const LEVEL_TARGET_BETA = 80;
-const LEVEL_TOL_DEG = 4;
-const LEVEL_JITTER_DEG = 1.2;
+// ตั้งค่าให้วางง่าย: ตั้งตรงขึ้นเล็กน้อย (เอนแค่ 6 องศา) ยอมคลาดเคลื่อนได้ ±7 องศา
+const LEVEL_TARGET_BETA = 84;
+const LEVEL_TOL_DEG = 7;
+const LEVEL_JITTER_DEG = 2;
 const LEVEL_WINDOW_MS = 500;
 const LEVEL_HOLD_MS = 1500;
 const LEVEL_PX_PER_DEG = 4;
@@ -625,7 +626,9 @@ const STYLES = `
 .pj-fade { animation: pj-fade .35s cubic-bezier(.2,.8,.2,1) both; }
 .pj-pop { animation: pj-pop .18s ease-out; }
 .pj-in { animation: pj-in .25s ease-out both; }
-@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-pop, .pj-in { animation: none; } }
+@keyframes pj-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+.pj-pulse { animation: pj-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-pop, .pj-in, .pj-pulse { animation: none; } }
 `;
 
 function Icon({
@@ -3276,6 +3279,12 @@ export default function Home() {
   const isLevel = phase === "leveling";
   const targetLean =
     90 - (facing === "user" ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA);
+  const ARC_R = 92;
+  const leanRad = (targetLean * Math.PI) / 180;
+  const arcEnd = {
+    x: 110 + ARC_R * Math.sin(leanRad),
+    y: 130 - ARC_R * Math.cos(leanRad),
+  };
   const flip = facing === "user" ? "-scale-x-100" : "";
   const fit =
     FORCE_CONTAIN || (vp.w > 0 && vp.w / vp.h > vdim.w / vdim.h)
@@ -3378,7 +3387,7 @@ export default function Home() {
               />
             </div>
             <p className="mt-3 text-center text-[13px] leading-5 text-[#6B7A6E]">
-              พิงมือถือให้เอนหลังตามรูปเส้นประ แล้วค้างไว้ให้นิ่ง
+              พิงมือถือกับผนังให้เอนเล็กน้อยตามเงาเส้นประ แล้วค้างไว้ให้นิ่ง
             </p>
             {landscape && (
               <p className="mt-1 text-center text-[12px] text-[#D92D20]">
@@ -3397,43 +3406,96 @@ export default function Home() {
 
             <svg
               viewBox="0 0 240 150"
-              className="mt-2 h-[130px] w-[208px] shrink-0"
+              className="mt-2 h-[140px] w-[224px] shrink-0"
               aria-hidden
             >
+              {/* ผนัง + พื้น */}
+              <rect x="142" y="6" width="94" height="126" rx="10" fill="#E3EAD6" />
               <line
-                x1="20"
+                x1="142"
+                y1="14"
+                x2="142"
+                y2="130"
+                stroke="#C5CFB5"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              <rect x="6" y="130" width="230" height="10" rx="5" fill="#D5DCC8" />
+
+              {/* เส้นแนวตั้งอ้างอิง + มุมเอน */}
+              <line
+                x1="110"
                 y1="130"
-                x2="220"
-                y2="130"
+                x2="110"
+                y2={130 - ARC_R}
                 stroke="#C5CFB5"
-                strokeWidth="3"
+                strokeWidth="2"
+                strokeDasharray="3 5"
                 strokeLinecap="round"
               />
-              <line
-                x1="178"
-                y1="20"
-                x2="178"
-                y2="130"
-                stroke="#C5CFB5"
-                strokeWidth="3"
+              <path
+                d={`M 110 ${130 - ARC_R} A ${ARC_R} ${ARC_R} 0 0 ${
+                  targetLean >= 0 ? 1 : 0
+                } ${arcEnd.x} ${arcEnd.y}`}
+                fill="none"
+                stroke="#3F5E1F"
+                strokeWidth="2.5"
                 strokeLinecap="round"
               />
-              <g transform={`rotate(${targetLean} 110 130)`}>
+              <text
+                x={arcEnd.x + (targetLean >= 0 ? 8 : -8)}
+                y={arcEnd.y - 3}
+                fontSize="12"
+                fontWeight="600"
+                fill="#3F5E1F"
+                textAnchor={targetLean >= 0 ? "start" : "end"}
+              >
+                {Math.abs(targetLean)}°
+              </text>
+
+              {/* เงาใต้มือถือ */}
+              <ellipse cx="110" cy="132" rx="24" ry="3.5" fill="#1B2A21" opacity="0.14" />
+
+              {/* มือถือจริง (หมุนตามไจโร) */}
+              <g ref={levelPhoneRef} style={{ transformOrigin: "110px 130px" }}>
                 <rect
                   x="95"
                   y="50"
                   width="30"
                   height="80"
-                  rx="6"
-                  fill="none"
-                  stroke="#3F5E1F"
+                  rx="8"
+                  fill="#1B2A21"
+                  stroke={levelInfo.pitchOk ? LIME : "none"}
                   strokeWidth="2.5"
-                  strokeDasharray="5 4"
+                />
+                <rect x="98.5" y="58" width="23" height="66" rx="4" fill="#26382C" />
+                <circle cx="110" cy="54.5" r="1.6" fill={LIME} />
+                <circle cx="110" cy="80" r="3.2" fill={LIME} />
+                <path
+                  d="M110 85v12M110 89l-7 5M110 89l7 5M110 97l-5 9M110 97l5 9"
+                  fill="none"
+                  stroke={LIME}
+                  strokeWidth="2"
+                  strokeLinecap="round"
                 />
               </g>
-              <g ref={levelPhoneRef} style={{ transformOrigin: "110px 130px" }}>
-                <rect x="95" y="50" width="30" height="80" rx="6" fill="#1B2A21" />
-                <rect x="103" y="55" width="14" height="4" rx="2" fill="#C9F25B" />
+
+              {/* เงาเป้าหมาย: ยังไม่ตรงจะกะพริบ ตรงแล้วเป็นเส้นทึบสีมะนาว */}
+              <g
+                transform={`rotate(${targetLean} 110 130)`}
+                className={levelInfo.pitchOk ? "" : "pj-pulse"}
+              >
+                <rect
+                  x="95"
+                  y="50"
+                  width="30"
+                  height="80"
+                  rx="8"
+                  fill="none"
+                  stroke={levelInfo.pitchOk ? LIME : "#8FB54A"}
+                  strokeWidth="2.5"
+                  strokeDasharray={levelInfo.pitchOk ? undefined : "5 4"}
+                />
               </g>
             </svg>
 
