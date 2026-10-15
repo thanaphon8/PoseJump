@@ -1003,14 +1003,12 @@ function Avatar({ name, size = 40 }: { name: string; size?: number }) {
   );
 }
 
-// มุมขวาบน: ยังไม่ล็อกอิน = ปุ่มเข้าสู่ระบบ, ล็อกอินแล้ว = รูปโปรไฟล์ + เมนู
+// มุมขวาบน: รูปโปรไฟล์ + เมนูออกจากระบบ (ยังไม่ล็อกอินจะเห็นหน้า login แทน)
 function ProfileMenu({
   user,
-  onOpenAuth,
   onLogout,
 }: {
   user: User | null;
-  onOpenAuth: () => void;
   onLogout: () => void;
 }) {
   const [menu, setMenu] = useState(false);
@@ -1026,7 +1024,7 @@ function ProfileMenu({
 
   return (
     <div className="relative">
-      {user ? (
+      {user && (
         <button
           onClick={() => setMenu((v) => !v)}
           aria-label="เมนูโปรไฟล์"
@@ -1037,14 +1035,6 @@ function ProfileMenu({
           <span className="max-w-[96px] truncate text-[14px] font-semibold">
             {user.name}
           </span>
-        </button>
-      ) : (
-        <button
-          onClick={onOpenAuth}
-          className="flex h-10 items-center gap-2 rounded-full bg-[#C9F25B] px-4 text-[14px] font-semibold text-[#1B2A21] transition-all active:scale-95 active:bg-[#B8E348]"
-        >
-          <Icon d={ICONS.user} size={18} />
-          เข้าสู่ระบบ
         </button>
       )}
 
@@ -1083,6 +1073,137 @@ function ProfileMenu({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// พลุกระดาษมินิมอล: ยิงจากกลางการ์ดตัวเลข สีตามธีม จางหายใน ~2.6 วิ
+// ไม่ยิงถ้าผู้ใช้ตั้งค่าลดการเคลื่อนไหว
+function Confetti({ count = 70 }: { count?: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+
+    const colors = [LIME, "#E8F5C1", "#FFFFFF", "#8FB54A"];
+    const DURATION = 2600;
+    const FADE = 700;
+
+    const pieces = Array.from({ length: count }, () => {
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.5;
+      const speed = 2.5 + Math.random() * 5;
+      return {
+        x: w / 2,
+        y: h * 0.5,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() - 0.5) * 0.3,
+        pw: 5 + Math.random() * 5,
+        ph: 3 + Math.random() * 4,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        round: Math.random() < 0.25,
+      };
+    });
+
+    let raf = 0;
+    let start = 0;
+    let last = 0;
+    const tick = (t: number) => {
+      if (!start) {
+        start = t;
+        last = t;
+      }
+      const dt = Math.min(32, t - last) / 16.67;
+      last = t;
+      const el = t - start;
+      ctx.clearRect(0, 0, w, h);
+      ctx.globalAlpha = el > DURATION - FADE ? Math.max(0, (DURATION - el) / FADE) : 1;
+
+      for (const p of pieces) {
+        p.vx *= Math.pow(0.97, dt);
+        p.vy = p.vy * Math.pow(0.97, dt) + 0.14 * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.rot += p.vr * dt;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        // พลิกแกนให้ดูเป็นกระดาษที่ร่วงหมุน
+        ctx.scale(1, Math.cos(p.rot * 2));
+        ctx.fillStyle = p.color;
+        if (p.round) {
+          ctx.beginPath();
+          ctx.arc(0, 0, p.ph * 0.7, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.fillRect(-p.pw / 2, -p.ph / 2, p.pw, p.ph);
+        }
+        ctx.restore();
+      }
+
+      if (el < DURATION) raf = requestAnimationFrame(tick);
+      else ctx.clearRect(0, 0, w, h);
+    };
+
+    // หน่วงเล็กน้อยให้ตัวเลขเด้งขึ้นก่อน
+    const timer = setTimeout(() => {
+      raf = requestAnimationFrame(tick);
+    }, 180);
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(raf);
+    };
+  }, [count]);
+
+  return (
+    <canvas
+      ref={ref}
+      aria-hidden
+      className="pointer-events-none absolute inset-0 h-full w-full"
+    />
+  );
+}
+
+// แถบผู้ใช้ท้าย sidebar (เดสก์ท็อป)
+function SidebarUser({
+  user,
+  onLogout,
+}: {
+  user: User | null;
+  onLogout: () => void;
+}) {
+  if (!user) return null;
+  return (
+    <div className="flex items-center gap-3 rounded-3xl bg-white p-3 shadow-sm">
+      <Avatar name={user.name} size={44} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[15px] font-semibold">{user.name}</div>
+        {user.username && (
+          <div className="truncate text-[12px] text-[#6B7A6E]">
+            @{user.username}
+          </div>
+        )}
+      </div>
+      <button
+        onClick={onLogout}
+        aria-label="ออกจากระบบ"
+        title="ออกจากระบบ"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#D92D20] transition-colors hover:bg-[#FDE8E6] active:scale-90"
+      >
+        <Icon d={ICONS.logout} size={18} />
+      </button>
     </div>
   );
 }
@@ -1155,13 +1276,7 @@ function Field({
   );
 }
 
-function AuthScreen({
-  onClose,
-  onAuthed,
-}: {
-  onClose: () => void;
-  onAuthed: (u: User) => void;
-}) {
+function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
   type Errors = Partial<
     Record<"nickname" | "username" | "password" | "confirm" | "form", string>
   >;
@@ -1174,14 +1289,6 @@ function AuthScreen({
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
   const isReg = mode === "register";
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const edit =
     (key: keyof Errors, set: (v: string) => void) => (v: string) => {
@@ -1315,13 +1422,6 @@ function AuthScreen({
             </span>
             {APP_NAME}
           </div>
-          <button
-            onClick={onClose}
-            aria-label="ปิด"
-            className="ml-auto flex h-10 w-10 items-center justify-center rounded-full bg-white transition-transform active:scale-90"
-          >
-            <Icon d={ICONS.close} size={18} />
-          </button>
         </div>
 
         <form
@@ -1439,11 +1539,13 @@ function Shell({
   tab,
   onTab,
   profile,
+  footer,
   children,
 }: {
   tab: Tab;
   onTab: (t: Tab) => void;
   profile: ReactNode;
+  footer: ReactNode;
   children: ReactNode;
 }) {
   const items: [Tab, string, string][] = [
@@ -1454,7 +1556,7 @@ function Shell({
   ];
   return (
     <div className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] lg:flex">
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-1 p-5 lg:flex">
+      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-1 p-5 lg:flex">
         <div className="mb-6 flex items-center gap-2 px-3 text-[20px] font-bold tracking-tight">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#1B2A21] text-[#C9F25B]">
             <Icon d={ICONS.bolt} size={18} />
@@ -1475,10 +1577,11 @@ function Shell({
             {label}
           </button>
         ))}
+        <div className="mt-auto">{footer}</div>
       </aside>
 
-      <main className="pj-fade mx-auto w-full max-w-5xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-10">
-        <div className="mb-4 flex h-10 items-center justify-between lg:mb-6 lg:justify-end">
+      <main className="pj-fade mx-auto w-full max-w-6xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12">
+        <div className="mb-4 flex h-10 items-center justify-between lg:hidden">
           <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1B2A21] text-[#C9F25B]">
               <Icon d={ICONS.bolt} size={16} />
@@ -1542,7 +1645,8 @@ export default function Home() {
   const [vdim, setVdim] = useState({ w: 9, h: 16 });
   const [levelInfo, setLevelInfo] = useState<LevelInfo>(EMPTY_LEVEL);
   const [user, setUser] = useState<User | null>(null);
-  const [authOpen, setAuthOpen] = useState(false);
+  // เช็กเซสชันเสร็จแล้วหรือยัง ก่อนเช็กจะไม่แสดงหน้าหลัก กันหน้าวาบ
+  const [authReady, setAuthReady] = useState(false);
   const [board, setBoard] = useState<Board | null>(null);
   const [boardErr, setBoardErr] = useState(false);
   const [boardNow, setBoardNow] = useState(0);
@@ -1661,7 +1765,7 @@ export default function Home() {
       // อ่านค่าเดิมไม่ได้ก็ใช้ค่าเริ่มต้น
     }
 
-    // มีเซสชันค้างอยู่ในคุกกี้ไหม ถ้ามีดึงข้อมูลจาก MongoDB
+    // มีเซสชันค้างอยู่ในคุกกี้ไหม ถ้ามีดึงข้อมูลจาก MongoDB ถ้าไม่มี user เป็น null และหน้า login จะขึ้นเอง
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { user?: User | null } | null) => {
@@ -1670,7 +1774,8 @@ export default function Home() {
           loadRemote();
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setAuthReady(true));
   }, [loadRemote]);
 
   // ผู้เยี่ยมชม: เก็บในเครื่อง / ผู้ใช้ที่ล็อกอิน: ส่งขึ้น MongoDB (หน่วง 0.6 วิ)
@@ -2348,7 +2453,6 @@ export default function Home() {
 
   const login = (u: User) => {
     setUser(u);
-    setAuthOpen(false);
     loadRemote();
   };
 
@@ -2454,6 +2558,12 @@ export default function Home() {
     </li>
   );
 
+  /* ------------------------ รอเช็กเซสชันก่อนแสดงหน้า ------------------------ */
+
+  if (!authReady) {
+    return <div className="min-h-dvh bg-[#F3F6EC]" />;
+  }
+
   /* ------------------------------ หน้าหลัก ----------------------------- */
 
   if (phase === "setup") {
@@ -2491,7 +2601,7 @@ export default function Home() {
               </div>
               <div className="mt-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight">
+                  <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight lg:text-[72px]">
                     {fmtNum(todayTotal)}
                   </div>
                   <div className="mt-2 text-[14px] text-white/60">
@@ -2518,7 +2628,7 @@ export default function Home() {
               </div>
             </section>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
               <div className={`${card} flex items-center gap-3 p-4`}>
                 <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F5C1] text-[#3F5E1F]">
                   <Icon d={ICONS.clock} size={20} />
@@ -2539,6 +2649,17 @@ export default function Home() {
                     {todayKcal}
                   </div>
                   <div className="text-[12px] text-[#6B7A6E]">กิโลแคลอรี่</div>
+                </div>
+              </div>
+              <div className={`${card} hidden items-center gap-3 p-4 lg:flex`}>
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F5C1] text-[#3F5E1F]">
+                  <Icon d={ICONS.bolt} size={20} />
+                </span>
+                <div>
+                  <div className="text-[20px] font-semibold tabular-nums">
+                    {todayList.length}
+                  </div>
+                  <div className="text-[12px] text-[#6B7A6E]">รอบวันนี้</div>
                 </div>
               </div>
             </div>
@@ -2707,19 +2828,7 @@ export default function Home() {
 
               <section className="rounded-3xl bg-[#E8F5C1] p-5">
                 <h2 className="text-[16px] font-semibold">อันดับของคุณ</h2>
-                {!user ? (
-                  <>
-                    <p className="mt-2 text-[14px] text-[#4B5E3A]">
-                      เข้าสู่ระบบเพื่อให้คะแนนของคุณติดอันดับ
-                    </p>
-                    <button
-                      onClick={() => setAuthOpen(true)}
-                      className="mt-4 flex h-12 w-full items-center justify-center rounded-full bg-[#1B2A21] text-[15px] font-semibold text-[#C9F25B] transition-transform active:scale-[0.98]"
-                    >
-                      เข้าสู่ระบบ
-                    </button>
-                  </>
-                ) : board.me ? (
+                {board.me ? (
                   <div className="mt-3 flex items-center justify-between gap-4">
                     <div>
                       <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight">
@@ -2916,7 +3025,7 @@ export default function Home() {
         <h1 className="text-[30px] font-bold tracking-tight lg:text-[36px]">
           ตั้งค่า
         </h1>
-        <div className="mt-5 max-w-xl space-y-4">
+        <div className="mt-5 space-y-4 lg:grid lg:max-w-4xl lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0">
           <section className="rounded-3xl bg-[#E8F5C1] p-5">
             <h2 className="mb-4 text-[16px] font-semibold">เป้าหมายต่อวัน</h2>
             <Stepper
@@ -2927,6 +3036,7 @@ export default function Home() {
             />
           </section>
 
+          <div className="space-y-4">
           <ul className={`${card} divide-y divide-[#EEF2E4]`}>
             <li className="flex items-center justify-between gap-3 px-4 py-3">
               <span className="text-[16px]">กล้อง</span>
@@ -2969,6 +3079,7 @@ export default function Home() {
           >
             ล้างประวัติ
           </button>
+          </div>
         </div>
       </>
     );
@@ -2980,21 +3091,16 @@ export default function Home() {
           tab={tab}
           onTab={setTab}
           profile={
-            <ProfileMenu
-              user={user}
-              onOpenAuth={() => setAuthOpen(true)}
-              onLogout={logout}
-            />
+            <ProfileMenu user={user} onLogout={logout} />
           }
+          footer={<SidebarUser user={user} onLogout={logout} />}
         >
           {tab === "home" && homeView}
           {tab === "today" && todayView}
           {tab === "history" && historyView}
           {tab === "settings" && settingsView}
         </Shell>
-        {authOpen && !user && (
-          <AuthScreen onClose={() => setAuthOpen(false)} onAuthed={login} />
-        )}
+        {!user && <AuthScreen onAuthed={login} />}
       </div>
     );
   }
@@ -3038,7 +3144,7 @@ export default function Home() {
         className="min-h-dvh select-none bg-[#F3F6EC] text-[#1B2A21] antialiased"
       >
         <style>{STYLES}</style>
-        <main className="pj-fade mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] lg:py-10">
+        <main className="pj-fade mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] lg:max-w-5xl lg:py-10">
           <header className="flex items-start gap-3">
             <button
               onClick={goHome}
@@ -3062,7 +3168,12 @@ export default function Home() {
             <span className="text-[18px] font-semibold">{title}</span>
           </div>
 
-          <section className="mt-4 rounded-3xl bg-[#1B2A21] px-5 py-8 text-center text-white">
+          <div className="mt-4 space-y-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0">
+          <div className="space-y-3">
+          <section className="relative overflow-hidden rounded-3xl bg-[#1B2A21] px-5 py-8 text-center text-white lg:py-12">
+            {summary.total > 0 && (
+              <Confetti count={summary.record ? 110 : 70} />
+            )}
             <div className="text-[13px] text-white/60">จำนวนครั้งทั้งหมด</div>
             <div className="mt-1 flex items-baseline justify-center gap-2">
               <span className="pj-pop text-[88px] font-semibold leading-none tabular-nums tracking-tight">
@@ -3077,7 +3188,7 @@ export default function Home() {
             )}
           </section>
 
-          <div className="mt-3 grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             {tiles.map(([label, v, unit]) => (
               <div key={label} className="rounded-2xl bg-white p-3 text-center">
                 <div className="text-[12px] text-[#6B7A6E]">{label}</div>
@@ -3089,7 +3200,10 @@ export default function Home() {
             ))}
           </div>
 
-          <section className={`mt-3 ${card} p-4`}>
+          </div>
+
+          <div className="space-y-3">
+          <section className={`${card} p-4 lg:p-5`}>
             <div className="flex items-center justify-between">
               <h2 className="text-[15px] font-semibold">จังหวะการกระโดด</h2>
               <span className="text-[12px] text-[#6B7A6E]">
@@ -3105,7 +3219,7 @@ export default function Home() {
             </p>
           </section>
 
-          <section className="mt-3 rounded-3xl bg-[#E8F5C1] p-4">
+          <section className="rounded-3xl bg-[#E8F5C1] p-4 lg:p-5">
             <div className="flex items-center justify-between text-[14px] font-semibold">
               <span>
                 วันนี้ {fmtNum(todayTotal)} / {fmtNum(dailyGoal)} ครั้ง
@@ -3120,7 +3234,10 @@ export default function Home() {
             </div>
           </section>
 
-          <div className="mt-auto flex flex-col gap-2 pt-6">
+          </div>
+          </div>
+
+          <div className="mt-auto flex flex-col gap-2 pt-6 lg:flex-row lg:gap-4 lg:pt-8">
             <button onClick={startSession} className={limeBtn}>
               เริ่มอีกรอบ
             </button>
