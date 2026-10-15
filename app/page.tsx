@@ -41,6 +41,7 @@ const COUNT_PRESETS = [50, 100, 200, 500];
 
 const STORAGE_KEY = "pose-jump-settings";
 const HISTORY_KEY = "pose-jump-history";
+const SHOTS_KEY = "pose-jump-shots";
 // แคลอรี่โดยประมาณต่อการกระโดด 1 ครั้ง
 const KCAL_PER_JUMP = 0.1;
 const DAY = 864e5;
@@ -96,6 +97,10 @@ type Settings = {
   facing: "user" | "environment";
   sound: boolean;
 };
+
+// ภาพยืนยันของวันนี้: ภาพแรกของวัน (ครั้งเดียว) + ภาพตอนใกล้ถึงเป้าประจำวัน (ครั้งเดียว)
+type DayShots = { day: string; start: string | null; end: string | null };
+const EMPTY_SHOTS: DayShots = { day: "", start: null, end: null };
 
 // อันดับวันนี้ (มาจาก /api/leaderboard)
 type BoardEntry = {
@@ -1639,11 +1644,8 @@ export default function Home() {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
-  // ภาพยืนยันการกระโดด (เก็บในหน่วยความจำเท่านั้น ไม่อัปโหลด)
-  const [shots, setShots] = useState<{ start: string | null; end: string | null }>({
-    start: null,
-    end: null,
-  });
+  // ภาพยืนยันของวันนี้ (เก็บใน localStorage ของเครื่องนี้ ไม่อัปโหลด)
+  const [shots, setShots] = useState<DayShots>(EMPTY_SHOTS);
   const [placement, setPlacement] = useState<Placement>(EMPTY_PLACEMENT);
   const [hold, setHold] = useState(0);
   const [facing, setFacing] = useState<"user" | "environment">("user");
@@ -1669,8 +1671,9 @@ export default function Home() {
   const audioRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
   const detectorRef = useRef(createJumpDetector());
-  const startShotRef = useRef<string | null>(null);
-  const endShotRef = useRef<string | null>(null);
+  const shotsRef = useRef<DayShots>(EMPTY_SHOTS);
+  // ยอดรวมวันนี้ก่อนเริ่มรอบปัจจุบัน
+  const todayBaseRef = useRef(0);
 
   const sessionRef = useRef(0);
   const runningRef = useRef(false);
@@ -1680,7 +1683,7 @@ export default function Home() {
   const lastTickRef = useRef(-1);
   const bodyOkRef = useRef(false);
   const handsOkRef = useRef(false);
-  const settingsRef = useRef({ mode, seconds, target, facing, sound });
+  const settingsRef = useRef({ mode, seconds, target, dailyGoal, facing, sound });
   const historyRef = useRef<Session[]>([]);
   const lastWarnRef = useRef(-1);
   const phaseRef = useRef<Phase>("setup");
@@ -1744,12 +1747,31 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    settingsRef.current = { mode, seconds, target, facing, sound };
-  }, [mode, seconds, target, facing, sound]);
+    settingsRef.current = { mode, seconds, target, dailyGoal, facing, sound };
+  }, [mode, seconds, target, dailyGoal, facing, sound]);
 
   useEffect(() => {
     historyRef.current = history;
   }, [history]);
+
+  // โหลดภาพยืนยันของวันนี้ (แยกตามผู้ใช้ ข้ามวันแล้วรีเซ็ต)
+  useEffect(() => {
+    if (!authReady) return;
+    let v: DayShots = EMPTY_SHOTS;
+    try {
+      const raw = localStorage.getItem(`${SHOTS_KEY}:${user?.username ?? "guest"}`);
+      if (raw) {
+        const d = JSON.parse(raw) as DayShots;
+        if (d && d.day === dayKey(Date.now())) {
+          v = { day: d.day, start: d.start ?? null, end: d.end ?? null };
+        }
+      }
+    } catch {
+      // อ่านภาพเดิมไม่ได้ก็เริ่มใหม่
+    }
+    shotsRef.current = v;
+    setShots(v);
+  }, [authReady, user]);
 
   // โหลดค่าที่ตั้งไว้และประวัติ
   useEffect(() => {
@@ -2020,12 +2042,31 @@ export default function Home() {
     }
   }, []);
 
+  // บันทึกภาพของวันนี้ลงเครื่อง (ต่อกันได้หลายรอบในวันเดียวกัน)
+  const commitShot = useCallback((kind: "start" | "end", img: string | null) => {
+    if (!img) return;
+    const dk = dayKey(Date.now());
+    const base =
+      shotsRef.current.day === dk
+        ? shotsRef.current
+        : { day: dk, start: null, end: null };
+    const next: DayShots = { ...base, [kind]: img };
+    shotsRef.current = next;
+    setShots(next);
+    try {
+      localStorage.setItem(
+        `${SHOTS_KEY}:${userRef.current?.username ?? "guest"}`,
+        JSON.stringify(next)
+      );
+    } catch {
+      // พื้นที่เต็มก็ข้ามไป ภาพยังอยู่ในหน้านี้
+    }
+  }, []);
+
   const finish = useCallback(
     (reason: EndReason, durationMs: number) => {
       if (!runningRef.current) return;
       runningRef.current = false;
-      // ภาพท้ายรอบ: ถ้ายังไม่ได้ถ่ายตอนใกล้จบ (เช่นหยุดเอง) ถ่ายตอนนี้ ก่อนปิดกล้อง
-      const endShot = endShotRef.current ?? captureShot();
       const result = summarize(jumpsRef.current, durationMs, reason);
 
       // สถิติใหม่ = มากกว่าทุกรอบก่อนหน้า (ต้องมีประวัติเดิมอยู่แล้ว)
@@ -2071,11 +2112,10 @@ export default function Home() {
 
       if (settingsRef.current.sound) beep(audioRef.current, 660, 0.5);
       stopCamera();
-      setShots({ start: startShotRef.current, end: endShot });
       setSummary(result);
       setPhase("summary");
     },
-    [stopCamera, captureShot]
+    [stopCamera]
   );
 
   const loop = useCallback(() => {
@@ -2215,13 +2255,15 @@ export default function Home() {
         setElapsed(el);
       }
       const s = settingsRef.current;
-      // ภาพใกล้จบ: เมื่อเวลาผ่านไป 90% หรือครบจำนวนครั้ง 90% ของเป้า
-      if (!endShotRef.current) {
-        const near =
-          s.mode === "time"
-            ? el >= s.seconds * 1000 * 0.9
-            : jumpsRef.current.length >= Math.max(1, Math.ceil(s.target * 0.9));
-        if (near) endShotRef.current = captureShot();
+      // ภาพใกล้ถึงเป้าประจำวัน: ถ่ายครั้งเดียวต่อวัน เมื่อยอดรวมวันนี้ (รวมรอบก่อนหน้า) ถึง 90% ของเป้า
+      // ไม่ถ่ายตอนกดจบเอง เพราะผู้ใช้อาจแบ่งโดดหลายช่วง
+      if (
+        jumpsRef.current.length > 0 &&
+        !(shotsRef.current.day === dayKey(Date.now()) && shotsRef.current.end) &&
+        todayBaseRef.current + jumpsRef.current.length >=
+          Math.ceil(s.dailyGoal * 0.9)
+      ) {
+        commitShot("end", captureShot());
       }
       if (s.mode === "time" && s.sound) {
         const left = Math.ceil((s.seconds * 1000 - el) / 1000);
@@ -2242,7 +2284,7 @@ export default function Home() {
     }
 
     rafRef.current = requestAnimationFrame(loop);
-  }, [finish, captureShot]);
+  }, [finish, captureShot, commitShot]);
 
   const stopAll = useCallback(() => {
     sessionRef.current++;
@@ -2318,9 +2360,12 @@ export default function Home() {
     placementKeyRef.current = "";
     setPlacement(EMPTY_PLACEMENT);
     setHold(0);
-    startShotRef.current = null;
-    endShotRef.current = null;
-    setShots({ start: null, end: null });
+    // ยอดรวมวันนี้ก่อนรอบนี้ ใช้ตัดสินว่าเมื่อไรใกล้ถึงเป้าประจำวัน
+    const dk0 = dayKey(Date.now());
+    todayBaseRef.current = historyRef.current.reduce(
+      (a, x) => (dayKey(x.ts) === dk0 ? a + x.total : a),
+      0
+    );
     setPhase("loading");
 
     if (!audioRef.current) {
@@ -2458,8 +2503,13 @@ export default function Home() {
         counted = true;
         for (let i = 3; i > 0; i--) {
           setCountdown(i);
-          // ภาพก่อนเริ่ม: ถ่ายตอนนับ 1 ผู้เล่นยืนในตำแหน่งที่ผ่านการตรวจแล้ว
-          if (i === 1) startShotRef.current = captureShot();
+          // ภาพแรกของวัน: ถ่ายครั้งเดียวต่อวัน ตอนนับ 1 ผู้เล่นยืนในตำแหน่งที่ผ่านการตรวจแล้ว
+          if (
+            i === 1 &&
+            !(shotsRef.current.day === dayKey(Date.now()) && shotsRef.current.start)
+          ) {
+            commitShot("start", captureShot());
+          }
           if (settingsRef.current.sound) beep(audioRef.current, 600, 0.1);
           const stillOk = await waitUnlessAborted(1000);
           if (cancelled()) return;
@@ -2492,7 +2542,7 @@ export default function Home() {
       setTab("home");
       setPhase("setup");
     }
-  }, [loop, stopAll, facing, captureShot]);
+  }, [loop, stopAll, facing, captureShot, commitShot]);
 
   const skipLeveling = () => {
     const done = levelResolveRef.current;
@@ -3283,44 +3333,46 @@ export default function Home() {
             </p>
           </section>
 
-          {(shots.start || shots.end) && (
-            <section className={`${card} p-4 lg:p-5`}>
-              <h2 className="text-[15px] font-semibold">ภาพยืนยันการกระโดด</h2>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                {(
+          <section className={`${card} p-4 lg:p-5`}>
+            <h2 className="text-[15px] font-semibold">ภาพยืนยันการกระโดดวันนี้</h2>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              {(
+                [
+                  ["ภาพแรกของวัน", shots.start, "ยังไม่มีภาพ"],
                   [
-                    ["ก่อนเริ่ม", shots.start],
-                    ["ใกล้จบรอบ", shots.end],
-                  ] as const
-                ).map(([label, src]) => (
-                  <figure key={label}>
-                    {src ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={src}
-                        alt={`ภาพผู้กระโดด ${label}`}
-                        className="w-full rounded-2xl bg-[#EEF2E4] object-cover"
-                        style={{ aspectRatio: `${vdim.w} / ${vdim.h}` }}
-                      />
-                    ) : (
-                      <div
-                        className="flex w-full items-center justify-center rounded-2xl bg-[#EEF2E4] text-[12px] text-[#6B7A6E]"
-                        style={{ aspectRatio: `${vdim.w} / ${vdim.h}` }}
-                      >
-                        ไม่มีภาพ
-                      </div>
-                    )}
-                    <figcaption className="mt-1.5 text-center text-[12px] text-[#6B7A6E]">
-                      {label}
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-              <p className="mt-3 text-[12px] text-[#6B7A6E]">
-                ภาพเก็บในเครื่องเท่านั้น ไม่ถูกอัปโหลด และหายเมื่อออกจากหน้านี้
-              </p>
-            </section>
-          )}
+                    "ใกล้ถึงเป้าวันนี้",
+                    shots.end,
+                    `จะถ่ายเมื่อโดดถึง ${fmtNum(Math.ceil(dailyGoal * 0.9))} ครั้ง`,
+                  ],
+                ] as const
+              ).map(([label, src, empty]) => (
+                <figure key={label}>
+                  {src ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={src}
+                      alt={`ภาพผู้กระโดด ${label}`}
+                      className="w-full rounded-2xl bg-[#EEF2E4] object-cover"
+                      style={{ aspectRatio: `${vdim.w} / ${vdim.h}` }}
+                    />
+                  ) : (
+                    <div
+                      className="flex w-full items-center justify-center rounded-2xl bg-[#EEF2E4] px-2 text-center text-[12px] text-[#6B7A6E]"
+                      style={{ aspectRatio: `${vdim.w} / ${vdim.h}` }}
+                    >
+                      {empty}
+                    </div>
+                  )}
+                  <figcaption className="mt-1.5 text-center text-[12px] text-[#6B7A6E]">
+                    {label}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+            <p className="mt-3 text-[12px] text-[#6B7A6E]">
+              ถ่ายวันละ 2 ภาพ เก็บในเครื่องนี้เท่านั้น ไม่ถูกอัปโหลด และรีเซ็ตทุกวัน
+            </p>
+          </section>
 
           <section className="rounded-3xl bg-[#E8F5C1] p-4 lg:p-5">
             <div className="flex items-center justify-between text-[14px] font-semibold">
