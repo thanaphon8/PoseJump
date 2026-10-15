@@ -663,6 +663,28 @@ function Icon({
   );
 }
 
+// โลโก้แอป: รูปจาก public/img/logo.jpg ตัดเป็นวงกลม
+function Logo({
+  size = 32,
+  className = "",
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/img/logo.jpg"
+      alt={APP_NAME}
+      width={size}
+      height={size}
+      draggable={false}
+      className={`shrink-0 rounded-full object-cover ${className}`}
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 const ICONS = {
   home: "M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
   chart: "M5 20V11M12 20V4M19 20v-6",
@@ -1395,9 +1417,7 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
       {/* แผงแบรนด์ (เดสก์ท็อป) */}
       <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
         <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#C9F25B] text-[#1B2A21]">
-            <Icon d={ICONS.bolt} size={20} />
-          </span>
+          <Logo size={56} className="-my-2.5" />
           {APP_NAME}
         </div>
         <div>
@@ -1426,9 +1446,7 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
       <div className="flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
         <div className="flex h-12 items-center justify-between">
           <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1B2A21] text-[#C9F25B]">
-              <Icon d={ICONS.bolt} size={16} />
-            </span>
+            <Logo size={40} />
             {APP_NAME}
           </div>
         </div>
@@ -1567,9 +1585,7 @@ function Shell({
     <div className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] lg:flex">
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-1 p-5 lg:flex">
         <div className="mb-6 flex items-center gap-2 px-3 text-[20px] font-bold tracking-tight">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#1B2A21] text-[#C9F25B]">
-            <Icon d={ICONS.bolt} size={18} />
-          </span>
+          <Logo size={48} className="-my-2" />
           {APP_NAME}
         </div>
         {items.map(([t, label, d]) => (
@@ -1592,9 +1608,7 @@ function Shell({
       <main className="pj-fade mx-auto w-full max-w-6xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12">
         <div className="mb-4 flex h-10 items-center justify-between lg:hidden">
           <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1B2A21] text-[#C9F25B]">
-              <Icon d={ICONS.bolt} size={16} />
-            </span>
+            <Logo size={40} className="-my-1" />
             {APP_NAME}
           </div>
           {profile}
@@ -3753,9 +3767,7 @@ export default function Home() {
       {(isPrep || phase === "running") && (
         <aside className="pj-in hidden h-full max-h-[880px] w-[360px] shrink-0 flex-col gap-4 text-[#1B2A21] lg:flex">
           <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#1B2A21] text-[#C9F25B]">
-              <Icon d={ICONS.bolt} size={18} />
-            </span>
+            <Logo size={48} className="-my-2" />
             {APP_NAME}
           </div>
 
