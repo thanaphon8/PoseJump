@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { Prompt } from "next/font/google";
 import type {
   NormalizedLandmark,
@@ -82,6 +82,31 @@ type Session = {
   mode: Mode;
   kcal: number;
 };
+
+type User = {
+  name: string;
+  username?: string;
+};
+
+type Settings = {
+  mode: Mode;
+  seconds: number;
+  target: number;
+  dailyGoal: number;
+  facing: "user" | "environment";
+  sound: boolean;
+};
+
+// ใช้เทียบว่าค่าตั้งค่าเปลี่ยนจากที่ซิงก์ไว้ล่าสุดไหม
+const settingsKey = (v: Settings) =>
+  JSON.stringify({
+    mode: v.mode,
+    seconds: v.seconds,
+    target: v.target,
+    dailyGoal: v.dailyGoal,
+    facing: v.facing,
+    sound: v.sound,
+  });
 
 /* ------------------------------------------------------------------ */
 /* ตรวจตำแหน่งผู้เล่นก่อนเริ่ม                                             */
@@ -624,6 +649,14 @@ const ICONS = {
   clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   bolt: "M13 2L4 14h7l-1 8 9-12h-7z",
   down: "M12 4v15M6 13l6 6 6-6",
+  left: "M15 6l-6 6 6 6",
+  right: "M9 6l6 6-6 6",
+  user: "M20 21a8 8 0 0 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+  logout:
+    "M9 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4M16 17l5-5-5-5M21 12H9",
+  eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  eyeOff:
+    "M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 4M6.5 6.6C3.7 8.4 2 12 2 12s4 7 10 7c1.6 0 3-.4 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2",
 };
 
 function Ring({
@@ -808,13 +841,591 @@ function BarChart({
   );
 }
 
+// ปฏิทินรายเดือน: วันที่ทำถึงเป้าหมายต่อวันจะขึ้นติ๊กถูกสีเขียว
+function Calendar({
+  history,
+  goal,
+  now,
+}: {
+  history: Session[];
+  goal: number;
+  now: number;
+}) {
+  const [offset, setOffset] = useState(0);
+
+  const base = new Date(now);
+  const first = new Date(base.getFullYear(), base.getMonth() + offset, 1);
+  const y = first.getFullYear();
+  const m = first.getMonth();
+  const daysIn = new Date(y, m + 1, 0).getDate();
+  const lead = first.getDay();
+
+  const totals = new Map<string, number>();
+  history.forEach((s) => {
+    const k = dayKey(s.ts);
+    totals.set(k, (totals.get(k) ?? 0) + s.total);
+  });
+
+  const todayKey = dayKey(now);
+  const cells: (number | null)[] = [
+    ...Array<null>(lead).fill(null),
+    ...Array.from({ length: daysIn }, (_, i) => i + 1),
+  ];
+
+  let hits = 0;
+  for (let d = 1; d <= daysIn; d++) {
+    if ((totals.get(`${y}-${m}-${d}`) ?? 0) >= goal) hits++;
+  }
+
+  const nav =
+    "flex h-9 w-9 items-center justify-center rounded-full bg-[#F3F6EC] text-[#1B2A21] transition-transform active:scale-90 disabled:opacity-30";
+
+  return (
+    <section className="rounded-3xl bg-white p-5">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => setOffset(offset - 1)}
+          aria-label="เดือนก่อนหน้า"
+          className={nav}
+        >
+          <Icon d={ICONS.left} size={18} />
+        </button>
+        <div className="text-center">
+          <div className="text-[16px] font-semibold">
+            {first.toLocaleDateString("th-TH", {
+              month: "long",
+              year: "numeric",
+            })}
+          </div>
+          <div className="text-[12px] text-[#6B7A6E]">ถึงเป้า {hits} วัน</div>
+        </div>
+        <button
+          onClick={() => setOffset(offset + 1)}
+          disabled={offset >= 0}
+          aria-label="เดือนถัดไป"
+          className={nav}
+        >
+          <Icon d={ICONS.right} size={18} />
+        </button>
+      </div>
+
+      <div className="mt-4 grid grid-cols-7 gap-y-1.5 text-center">
+        {DAY_NAMES.map((n) => (
+          <div key={n} className="text-[12px] font-medium text-[#6B7A6E]">
+            {n}
+          </div>
+        ))}
+        {cells.map((d, i) => {
+          if (d === null) return <div key={`e${i}`} />;
+          const k = `${y}-${m}-${d}`;
+          const total = totals.get(k) ?? 0;
+          const done = total >= goal;
+          const isToday = k === todayKey;
+          return (
+            <div
+              key={k}
+              className="flex aspect-square items-center justify-center"
+            >
+              {done ? (
+                <span
+                  className={`pj-pop flex h-9 w-9 items-center justify-center rounded-full bg-[#3F5E1F] text-[#C9F25B] ${
+                    isToday ? "ring-2 ring-[#C9F25B] ring-offset-2" : ""
+                  }`}
+                  aria-label={`วันที่ ${d} ถึงเป้า`}
+                >
+                  <Icon d={ICONS.check} size={18} />
+                </span>
+              ) : (
+                <span
+                  className={`relative flex h-9 w-9 items-center justify-center rounded-full text-[14px] tabular-nums ${
+                    isToday
+                      ? "bg-[#E8F5C1] font-semibold text-[#1B2A21]"
+                      : "text-[#1B2A21]"
+                  }`}
+                >
+                  {d}
+                  {total > 0 && (
+                    <span className="absolute bottom-1 h-1 w-1 rounded-full bg-[#A9B79A]" />
+                  )}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex items-center gap-4 text-[12px] text-[#6B7A6E]">
+        <span className="flex items-center gap-1.5">
+          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#3F5E1F] text-[#C9F25B]">
+            <Icon d={ICONS.check} size={10} />
+          </span>
+          ถึงเป้า
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#A9B79A]" />
+          โดดแต่ยังไม่ถึงเป้า
+        </span>
+      </div>
+    </section>
+  );
+}
+
+const initialOf = (name: string) =>
+  (Array.from(name.trim())[0] ?? "?").toUpperCase();
+
+function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-full bg-[#1B2A21] font-semibold text-[#C9F25B]"
+      style={{ width: size, height: size, fontSize: size * 0.42 }}
+      aria-hidden
+    >
+      {initialOf(name)}
+    </span>
+  );
+}
+
+// มุมขวาบน: ยังไม่ล็อกอิน = ปุ่มเข้าสู่ระบบ, ล็อกอินแล้ว = รูปโปรไฟล์ + เมนู
+function ProfileMenu({
+  user,
+  onOpenAuth,
+  onLogout,
+}: {
+  user: User | null;
+  onOpenAuth: () => void;
+  onLogout: () => void;
+}) {
+  const [menu, setMenu] = useState(false);
+
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menu]);
+
+  return (
+    <div className="relative">
+      {user ? (
+        <button
+          onClick={() => setMenu((v) => !v)}
+          aria-label="เมนูโปรไฟล์"
+          aria-expanded={menu}
+          className="flex items-center gap-2 rounded-full bg-white p-1 pr-3 shadow-sm transition-transform active:scale-95"
+        >
+          <Avatar name={user.name} size={36} />
+          <span className="max-w-[96px] truncate text-[14px] font-semibold">
+            {user.name}
+          </span>
+        </button>
+      ) : (
+        <button
+          onClick={onOpenAuth}
+          className="flex h-10 items-center gap-2 rounded-full bg-[#C9F25B] px-4 text-[14px] font-semibold text-[#1B2A21] transition-all active:scale-95 active:bg-[#B8E348]"
+        >
+          <Icon d={ICONS.user} size={18} />
+          เข้าสู่ระบบ
+        </button>
+      )}
+
+      {menu && user && (
+        <>
+          <button
+            aria-label="ปิดเมนู"
+            className="fixed inset-0 z-20 cursor-default"
+            onClick={() => setMenu(false)}
+          />
+          <div className="pj-in absolute right-0 top-12 z-30 w-64 rounded-3xl bg-white p-2 shadow-xl ring-1 ring-[#E3EAD6]">
+            <div className="flex items-center gap-3 px-3 py-3">
+              <Avatar name={user.name} size={44} />
+              <div className="min-w-0">
+                <div className="truncate text-[15px] font-semibold">
+                  {user.name}
+                </div>
+                {user.username && (
+                  <div className="truncate text-[12px] text-[#6B7A6E]">
+                    @{user.username}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="my-1 h-px bg-[#EEF2E4]" />
+            <button
+              onClick={() => {
+                setMenu(false);
+                onLogout();
+              }}
+              className="flex h-11 w-full items-center gap-3 rounded-2xl px-3 text-[15px] font-semibold text-[#D92D20] transition-colors hover:bg-[#FDE8E6]"
+            >
+              <Icon d={ICONS.logout} size={18} />
+              ออกจากระบบ
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* หน้าเข้าสู่ระบบ / สมัครสมาชิก (เชื่อมต่อ MongoDB ผ่าน API)               */
+/* ------------------------------------------------------------------ */
+
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  autoComplete,
+  placeholder,
+  error,
+  hint,
+  maxLength,
+  autoFocus,
+  trailing,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  autoComplete?: string;
+  placeholder?: string;
+  error?: string;
+  hint?: string;
+  maxLength?: number;
+  autoFocus?: boolean;
+  trailing?: ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[13px] font-medium text-[#6B7A6E]">
+        {label}
+      </span>
+      <span className="relative block">
+        <input
+          autoFocus={autoFocus}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          type={type}
+          maxLength={maxLength}
+          autoComplete={autoComplete}
+          placeholder={placeholder}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          aria-invalid={!!error}
+          className={`h-12 w-full select-text rounded-2xl bg-white px-4 text-[16px] text-[#1B2A21] outline-none ring-2 transition-shadow placeholder:text-[#A9B79A] focus:ring-[#C9F25B] ${
+            error ? "ring-[#D92D20]/60" : "ring-transparent"
+          } ${trailing ? "pr-12" : ""}`}
+        />
+        {trailing && (
+          <span className="absolute right-1.5 top-1/2 -translate-y-1/2">
+            {trailing}
+          </span>
+        )}
+      </span>
+      {error ? (
+        <span role="alert" className="pj-in mt-1.5 block text-[12px] text-[#D92D20]">
+          {error}
+        </span>
+      ) : hint ? (
+        <span className="mt-1.5 block text-[12px] text-[#6B7A6E]">{hint}</span>
+      ) : null}
+    </label>
+  );
+}
+
+function AuthScreen({
+  onClose,
+  onAuthed,
+}: {
+  onClose: () => void;
+  onAuthed: (u: User) => void;
+}) {
+  type Errors = Partial<
+    Record<"nickname" | "username" | "password" | "confirm" | "form", string>
+  >;
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [nickname, setNickname] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [show, setShow] = useState(false);
+  const [errors, setErrors] = useState<Errors>({});
+  const [busy, setBusy] = useState(false);
+  const isReg = mode === "register";
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const edit =
+    (key: keyof Errors, set: (v: string) => void) => (v: string) => {
+      set(v);
+      setErrors((p) => ({ ...p, [key]: undefined, form: undefined }));
+    };
+
+  const switchMode = (m: "login" | "register") => {
+    setMode(m);
+    setErrors({});
+    setConfirm("");
+    setShow(false);
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+
+    const nick = nickname.trim();
+    const uname = username.trim();
+    const err: Errors = {};
+    if (isReg && !nick) err.nickname = "กรอกชื่อเล่น";
+    if (!uname) err.username = "กรอก username";
+    else if (isReg && !/^[A-Za-z0-9_]{3,20}$/.test(uname))
+      err.username = "3-20 ตัว ใช้ a-z 0-9 และ _ เท่านั้น";
+    if (!password) err.password = "กรอกรหัสผ่าน";
+    else if (isReg && password.length < 6)
+      err.password = "รหัสผ่านอย่างน้อย 6 ตัวอักษร";
+    if (isReg && !err.password && confirm !== password)
+      err.confirm = "รหัสผ่านไม่ตรงกัน";
+    if (Object.keys(err).length > 0) {
+      setErrors(err);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch(
+        isReg ? "/api/auth/register" : "/api/auth/login",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            isReg
+              ? { nickname: nick, username: uname, password }
+              : { username: uname, password }
+          ),
+        }
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        user?: User;
+        errors?: Errors;
+        error?: string;
+      };
+      if (!res.ok || !data.user) {
+        if (data.errors) setErrors(data.errors);
+        else
+          setErrors({
+            form: data.error ?? "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ ลองใหม่อีกครั้ง",
+          });
+        return;
+      }
+      onAuthed(data.user);
+    } catch {
+      setErrors({ form: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ ลองใหม่อีกครั้ง" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const eye = (
+    <button
+      type="button"
+      onClick={() => setShow((v) => !v)}
+      aria-label={show ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+      className="flex h-9 w-9 items-center justify-center rounded-full text-[#6B7A6E] transition-colors hover:bg-[#F3F6EC] active:scale-90"
+    >
+      <Icon d={show ? ICONS.eyeOff : ICONS.eye} size={20} />
+    </button>
+  );
+
+  const perks = [
+    "นับการกระโดดอัตโนมัติด้วยกล้อง",
+    "ตั้งเป้าหมายรายวัน ดูความคืบหน้า",
+    "ปฏิทินติ๊กถูกทุกวันที่ทำถึงเป้า",
+  ];
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={isReg ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
+      className="pj-in fixed inset-0 z-50 overflow-y-auto bg-[#F3F6EC] text-[#1B2A21] lg:grid lg:grid-cols-[1fr_1fr]"
+    >
+      {/* แผงแบรนด์ (เดสก์ท็อป) */}
+      <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
+        <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#C9F25B] text-[#1B2A21]">
+            <Icon d={ICONS.bolt} size={20} />
+          </span>
+          {APP_NAME}
+        </div>
+        <div>
+          <h2 className="text-[48px] font-bold leading-[1.1] tracking-tight">
+            โดดทุกวัน
+            <br />
+            <span className="text-[#C9F25B]">สร้างสถิติใหม่</span>
+          </h2>
+          <ul className="mt-8 space-y-3">
+            {perks.map((p) => (
+              <li key={p} className="flex items-center gap-3 text-[16px] text-white/80">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
+                  <Icon d={ICONS.check} size={14} />
+                </span>
+                {p}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-[13px] text-white/50">
+          สถิติของคุณซิงก์ข้ามอุปกรณ์ได้
+        </p>
+      </aside>
+
+      {/* ฟอร์ม */}
+      <div className="flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
+        <div className="flex h-12 items-center justify-between">
+          <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1B2A21] text-[#C9F25B]">
+              <Icon d={ICONS.bolt} size={16} />
+            </span>
+            {APP_NAME}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="ปิด"
+            className="ml-auto flex h-10 w-10 items-center justify-center rounded-full bg-white transition-transform active:scale-90"
+          >
+            <Icon d={ICONS.close} size={18} />
+          </button>
+        </div>
+
+        <form
+          onSubmit={submit}
+          noValidate
+          className="mx-auto my-auto w-full max-w-sm py-6"
+        >
+          <h1 className="text-[30px] font-bold leading-tight tracking-tight">
+            {isReg ? "สร้างบัญชีใหม่" : "ยินดีต้อนรับกลับมา"}
+          </h1>
+          <p className="mt-1 text-[14px] text-[#6B7A6E]">
+            {isReg
+              ? "สมัครสมาชิกเพื่อเริ่มเก็บสถิติการกระโดดของคุณ"
+              : "เข้าสู่ระบบเพื่อไปต่อจากรอบล่าสุด"}
+          </p>
+
+          <div className="mt-6">
+            <Segmented<"login" | "register">
+              value={mode}
+              onChange={switchMode}
+              options={
+                [
+                  ["login", "เข้าสู่ระบบ"],
+                  ["register", "สมัครสมาชิก"],
+                ] as const
+              }
+            />
+          </div>
+
+          <div className="mt-5 space-y-4">
+            {isReg && (
+              <Field
+                label="ชื่อเล่น"
+                value={nickname}
+                onChange={edit("nickname", setNickname)}
+                maxLength={20}
+                autoComplete="nickname"
+                placeholder="เช่น มะนาว"
+                error={errors.nickname}
+                autoFocus
+              />
+            )}
+            <Field
+              key={mode}
+              label="Username"
+              value={username}
+              onChange={edit("username", setUsername)}
+              maxLength={20}
+              autoComplete="username"
+              placeholder="เช่น manao_99"
+              error={errors.username}
+              hint={isReg ? "3-20 ตัว ใช้ a-z 0-9 และ _" : undefined}
+              autoFocus={!isReg}
+            />
+            <Field
+              label="รหัสผ่าน"
+              value={password}
+              onChange={edit("password", setPassword)}
+              type={show ? "text" : "password"}
+              autoComplete={isReg ? "new-password" : "current-password"}
+              placeholder={isReg ? "อย่างน้อย 6 ตัวอักษร" : "รหัสผ่านของคุณ"}
+              error={errors.password}
+              trailing={eye}
+            />
+            {isReg && (
+              <Field
+                label="ยืนยันรหัสผ่าน"
+                value={confirm}
+                onChange={edit("confirm", setConfirm)}
+                type={show ? "text" : "password"}
+                autoComplete="new-password"
+                placeholder="พิมพ์รหัสผ่านอีกครั้ง"
+                error={errors.confirm}
+              />
+            )}
+          </div>
+
+          {errors.form && (
+            <p
+              role="alert"
+              className="pj-in mt-4 rounded-2xl bg-[#FDE8E6] px-4 py-3 text-[14px] text-[#D92D20]"
+            >
+              {errors.form}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={busy}
+            className="mt-6 flex h-14 w-full items-center justify-center rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348] disabled:opacity-60"
+          >
+            {busy ? "กำลังดำเนินการ" : isReg ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
+          </button>
+
+          <p className="mt-5 text-center text-[14px] text-[#6B7A6E]">
+            {isReg ? "มีบัญชีอยู่แล้ว?" : "ยังไม่มีบัญชี?"}{" "}
+            <button
+              type="button"
+              onClick={() => switchMode(isReg ? "login" : "register")}
+              className="font-semibold text-[#3F5E1F] underline-offset-2 hover:underline"
+            >
+              {isReg ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
+            </button>
+          </p>
+          <p className="mt-3 text-center text-[12px] text-[#6B7A6E] lg:hidden">
+            สถิติของคุณซิงก์ข้ามอุปกรณ์ได้
+          </p>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function Shell({
   tab,
   onTab,
+  profile,
   children,
 }: {
   tab: Tab;
   onTab: (t: Tab) => void;
+  profile: ReactNode;
   children: ReactNode;
 }) {
   const items: [Tab, string, string][] = [
@@ -848,6 +1459,15 @@ function Shell({
       </aside>
 
       <main className="pj-fade mx-auto w-full max-w-5xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-10">
+        <div className="mb-4 flex h-10 items-center justify-between lg:mb-6 lg:justify-end">
+          <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1B2A21] text-[#C9F25B]">
+              <Icon d={ICONS.bolt} size={16} />
+            </span>
+            {APP_NAME}
+          </div>
+          {profile}
+        </div>
         {children}
       </main>
 
@@ -902,6 +1522,8 @@ export default function Home() {
   const [vp, setVp] = useState({ w: 0, h: 0 });
   const [vdim, setVdim] = useState({ w: 9, h: 16 });
   const [levelInfo, setLevelInfo] = useState<LevelInfo>(EMPTY_LEVEL);
+  const [user, setUser] = useState<User | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -944,6 +1566,47 @@ export default function Home() {
   const levelBarRef = useRef<HTMLDivElement>(null);
   const levelPhoneRef = useRef<SVGGElement>(null);
 
+  // ซิงก์กับ MongoDB (ใช้เมื่อล็อกอินแล้วเท่านั้น)
+  const [remoteReady, setRemoteReady] = useState(false);
+  const userRef = useRef<User | null>(null);
+  const syncedRef = useRef("");
+
+  const loadRemote = useCallback(async () => {
+    try {
+      const [sRes, hRes] = await Promise.all([
+        fetch("/api/settings"),
+        fetch("/api/sessions"),
+      ]);
+      if (hRes.ok) {
+        const h = (await hRes.json()) as { sessions?: Session[] };
+        if (Array.isArray(h.sessions)) setHistory(h.sessions);
+      }
+      if (sRes.ok) {
+        const s = (await sRes.json()) as { settings?: Settings | null };
+        const v = s.settings;
+        if (v) {
+          setMode(v.mode);
+          setSeconds(v.seconds);
+          setTarget(v.target);
+          setDailyGoal(v.dailyGoal);
+          setFacing(v.facing);
+          setSound(v.sound);
+          syncedRef.current = settingsKey(v);
+        } else {
+          // ผู้ใช้ใหม่ ยังไม่มีค่าบนเซิร์ฟเวอร์ ให้ส่งค่าปัจจุบันขึ้นไป
+          syncedRef.current = "";
+        }
+      }
+      setRemoteReady(true);
+    } catch {
+      // ออฟไลน์หรือเชื่อมต่อไม่ได้ ใช้ข้อมูลในเครื่องไปก่อน
+    }
+  }, []);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   useEffect(() => {
     settingsRef.current = { mode, seconds, target, facing, sound };
   }, [mode, seconds, target, facing, sound]);
@@ -975,18 +1638,46 @@ export default function Home() {
     } catch {
       // อ่านค่าเดิมไม่ได้ก็ใช้ค่าเริ่มต้น
     }
-  }, []);
 
+    // มีเซสชันค้างอยู่ในคุกกี้ไหม ถ้ามีดึงข้อมูลจาก MongoDB
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { user?: User | null } | null) => {
+        if (d?.user) {
+          setUser(d.user);
+          loadRemote();
+        }
+      })
+      .catch(() => {});
+  }, [loadRemote]);
+
+  // ผู้เยี่ยมชม: เก็บในเครื่อง / ผู้ใช้ที่ล็อกอิน: ส่งขึ้น MongoDB (หน่วง 0.6 วิ)
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ mode, seconds, target, dailyGoal, facing, sound })
-      );
-    } catch {
-      // บันทึกไม่ได้ก็ข้ามไป
+    const cur: Settings = { mode, seconds, target, dailyGoal, facing, sound };
+    if (!user) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cur));
+      } catch {
+        // บันทึกไม่ได้ก็ข้ามไป
+      }
+      return;
     }
-  }, [mode, seconds, target, dailyGoal, facing, sound]);
+    if (!remoteReady) return;
+    const body = settingsKey(cur);
+    if (body === syncedRef.current) return;
+    const t = setTimeout(() => {
+      fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body,
+      })
+        .then((r) => {
+          if (r.ok) syncedRef.current = body;
+        })
+        .catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [user, remoteReady, mode, seconds, target, dailyGoal, facing, sound]);
 
   useEffect(() => {
     document.title = APP_NAME;
@@ -1181,15 +1872,25 @@ export default function Home() {
           kcal: Math.round(result.total * KCAL_PER_JUMP),
         };
         setNow0(ts);
+        const loggedIn = !!userRef.current;
         setHistory((p) => {
           const next = [entry, ...p].slice(0, 300);
-          try {
-            localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-          } catch {
-            // บันทึกไม่ได้ก็ข้ามไป
+          if (!loggedIn) {
+            try {
+              localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+            } catch {
+              // บันทึกไม่ได้ก็ข้ามไป
+            }
           }
           return next;
         });
+        if (loggedIn) {
+          fetch("/api/sessions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(entry),
+          }).catch(() => {});
+        }
       }
 
       if (settingsRef.current.sound) beep(audioRef.current, 660, 0.5);
@@ -1597,6 +2298,27 @@ export default function Home() {
     setPhase("setup");
   };
 
+  const login = (u: User) => {
+    setUser(u);
+    setAuthOpen(false);
+    loadRemote();
+  };
+
+  const logout = () => {
+    fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    setUser(null);
+    setRemoteReady(false);
+    syncedRef.current = "";
+    // กลับไปใช้ประวัติของผู้เยี่ยมชมที่เก็บในเครื่อง
+    try {
+      const h = localStorage.getItem(HISTORY_KEY);
+      const arr = h ? JSON.parse(h) : [];
+      setHistory(Array.isArray(arr) ? arr : []);
+    } catch {
+      setHistory([]);
+    }
+  };
+
   /* ---------------------- ข้อมูลสรุปจากประวัติ ---------------------- */
 
   const sod = now0 ? startOfDay(now0) : 0;
@@ -1692,13 +2414,7 @@ export default function Home() {
     const homeView = (
       <>
         <header className="mb-5">
-          <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1B2A21] text-[#C9F25B]">
-              <Icon d={ICONS.bolt} size={16} />
-            </span>
-            {APP_NAME}
-          </div>
-          <p className="mt-3 min-h-[18px] text-[13px] text-[#6B7A6E] lg:mt-0">
+          <p className="min-h-[18px] text-[13px] text-[#6B7A6E]">
             {now0
               ? new Date(now0).toLocaleDateString("th-TH", {
                   weekday: "long",
@@ -1709,7 +2425,7 @@ export default function Home() {
               : ""}
           </p>
           <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
-            พร้อมโดดไหม 👋
+            พร้อมโดดไหม{user ? ` ${user.name}` : ""} 👋
           </h1>
         </header>
 
@@ -1934,6 +2650,10 @@ export default function Home() {
                   : `อีก ${fmtNum(periodGoal - periodTotal)} ครั้งก็ถึงเป้า`}
               </p>
             </section>
+
+            {now0 && (
+              <Calendar history={history} goal={dailyGoal} now={now0} />
+            )}
           </div>
 
           <section>
@@ -1997,10 +2717,14 @@ export default function Home() {
             onClick={() => {
               if (window.confirm("ลบประวัติการกระโดดทั้งหมด?")) {
                 setHistory([]);
-                try {
-                  localStorage.removeItem(HISTORY_KEY);
-                } catch {
-                  // ลบไม่ได้ก็ข้ามไป
+                if (user) {
+                  fetch("/api/sessions", { method: "DELETE" }).catch(() => {});
+                } else {
+                  try {
+                    localStorage.removeItem(HISTORY_KEY);
+                  } catch {
+                    // ลบไม่ได้ก็ข้ามไป
+                  }
                 }
               }
             }}
@@ -2015,11 +2739,24 @@ export default function Home() {
     return (
       <div style={fontStyle} className="select-none antialiased">
         <style>{STYLES}</style>
-        <Shell tab={tab} onTab={setTab}>
+        <Shell
+          tab={tab}
+          onTab={setTab}
+          profile={
+            <ProfileMenu
+              user={user}
+              onOpenAuth={() => setAuthOpen(true)}
+              onLogout={logout}
+            />
+          }
+        >
           {tab === "home" && homeView}
           {tab === "history" && historyView}
           {tab === "settings" && settingsView}
         </Shell>
+        {authOpen && !user && (
+          <AuthScreen onClose={() => setAuthOpen(false)} onAuthed={login} />
+        )}
       </div>
     );
   }
