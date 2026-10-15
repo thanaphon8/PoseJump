@@ -1639,6 +1639,11 @@ export default function Home() {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  // ภาพยืนยันการกระโดด (เก็บในหน่วยความจำเท่านั้น ไม่อัปโหลด)
+  const [shots, setShots] = useState<{ start: string | null; end: string | null }>({
+    start: null,
+    end: null,
+  });
   const [placement, setPlacement] = useState<Placement>(EMPTY_PLACEMENT);
   const [hold, setHold] = useState(0);
   const [facing, setFacing] = useState<"user" | "environment">("user");
@@ -1664,6 +1669,8 @@ export default function Home() {
   const audioRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
   const detectorRef = useRef(createJumpDetector());
+  const startShotRef = useRef<string | null>(null);
+  const endShotRef = useRef<string | null>(null);
 
   const sessionRef = useRef(0);
   const runningRef = useRef(false);
@@ -1972,10 +1979,53 @@ export default function Home() {
     }
   }, []);
 
+  // ถ่ายภาพนิ่งจากวิดีโอ (กลับด้านเหมือนที่เห็นบนจอถ้าเป็นกล้องหน้า) พร้อมประทับเวลา
+  const captureShot = useCallback((): string | null => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2 || !video.videoWidth) return null;
+    try {
+      const scale = Math.min(1, 480 / video.videoWidth);
+      const w = Math.round(video.videoWidth * scale);
+      const h = Math.round(video.videoHeight * scale);
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext("2d");
+      if (!ctx) return null;
+      if (settingsRef.current.facing === "user") {
+        ctx.translate(w, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(video, 0, 0, w, h);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      const label = new Date().toLocaleTimeString("th-TH", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+      const fs = Math.max(12, Math.round(w / 26));
+      const pad = Math.round(fs * 0.5);
+      ctx.font = `600 ${fs}px sans-serif`;
+      ctx.textBaseline = "top";
+      const boxW = ctx.measureText(label).width + pad * 2;
+      const boxH = fs + pad;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(pad, h - pad - boxH, boxW, boxH);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillText(label, pad * 2, h - pad - boxH + pad / 2);
+      return c.toDataURL("image/jpeg", 0.75);
+    } catch {
+      return null;
+    }
+  }, []);
+
   const finish = useCallback(
     (reason: EndReason, durationMs: number) => {
       if (!runningRef.current) return;
       runningRef.current = false;
+      // ภาพท้ายรอบ: ถ้ายังไม่ได้ถ่ายตอนใกล้จบ (เช่นหยุดเอง) ถ่ายตอนนี้ ก่อนปิดกล้อง
+      const endShot = endShotRef.current ?? captureShot();
       const result = summarize(jumpsRef.current, durationMs, reason);
 
       // สถิติใหม่ = มากกว่าทุกรอบก่อนหน้า (ต้องมีประวัติเดิมอยู่แล้ว)
@@ -2021,10 +2071,11 @@ export default function Home() {
 
       if (settingsRef.current.sound) beep(audioRef.current, 660, 0.5);
       stopCamera();
+      setShots({ start: startShotRef.current, end: endShot });
       setSummary(result);
       setPhase("summary");
     },
-    [stopCamera]
+    [stopCamera, captureShot]
   );
 
   const loop = useCallback(() => {
@@ -2164,6 +2215,14 @@ export default function Home() {
         setElapsed(el);
       }
       const s = settingsRef.current;
+      // ภาพใกล้จบ: เมื่อเวลาผ่านไป 90% หรือครบจำนวนครั้ง 90% ของเป้า
+      if (!endShotRef.current) {
+        const near =
+          s.mode === "time"
+            ? el >= s.seconds * 1000 * 0.9
+            : jumpsRef.current.length >= Math.max(1, Math.ceil(s.target * 0.9));
+        if (near) endShotRef.current = captureShot();
+      }
       if (s.mode === "time" && s.sound) {
         const left = Math.ceil((s.seconds * 1000 - el) / 1000);
         if (left >= 1 && left <= 3 && left !== lastWarnRef.current) {
@@ -2183,7 +2242,7 @@ export default function Home() {
     }
 
     rafRef.current = requestAnimationFrame(loop);
-  }, [finish]);
+  }, [finish, captureShot]);
 
   const stopAll = useCallback(() => {
     sessionRef.current++;
@@ -2259,6 +2318,9 @@ export default function Home() {
     placementKeyRef.current = "";
     setPlacement(EMPTY_PLACEMENT);
     setHold(0);
+    startShotRef.current = null;
+    endShotRef.current = null;
+    setShots({ start: null, end: null });
     setPhase("loading");
 
     if (!audioRef.current) {
@@ -2396,6 +2458,8 @@ export default function Home() {
         counted = true;
         for (let i = 3; i > 0; i--) {
           setCountdown(i);
+          // ภาพก่อนเริ่ม: ถ่ายตอนนับ 1 ผู้เล่นยืนในตำแหน่งที่ผ่านการตรวจแล้ว
+          if (i === 1) startShotRef.current = captureShot();
           if (settingsRef.current.sound) beep(audioRef.current, 600, 0.1);
           const stillOk = await waitUnlessAborted(1000);
           if (cancelled()) return;
@@ -2428,7 +2492,7 @@ export default function Home() {
       setTab("home");
       setPhase("setup");
     }
-  }, [loop, stopAll, facing]);
+  }, [loop, stopAll, facing, captureShot]);
 
   const skipLeveling = () => {
     const done = levelResolveRef.current;
@@ -3218,6 +3282,45 @@ export default function Home() {
               {summary.total >= 5 && ` · จังหวะสม่ำเสมอ ${summary.consistency}%`}
             </p>
           </section>
+
+          {(shots.start || shots.end) && (
+            <section className={`${card} p-4 lg:p-5`}>
+              <h2 className="text-[15px] font-semibold">ภาพยืนยันการกระโดด</h2>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {(
+                  [
+                    ["ก่อนเริ่ม", shots.start],
+                    ["ใกล้จบรอบ", shots.end],
+                  ] as const
+                ).map(([label, src]) => (
+                  <figure key={label}>
+                    {src ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={src}
+                        alt={`ภาพผู้กระโดด ${label}`}
+                        className="w-full rounded-2xl bg-[#EEF2E4] object-cover"
+                        style={{ aspectRatio: `${vdim.w} / ${vdim.h}` }}
+                      />
+                    ) : (
+                      <div
+                        className="flex w-full items-center justify-center rounded-2xl bg-[#EEF2E4] text-[12px] text-[#6B7A6E]"
+                        style={{ aspectRatio: `${vdim.w} / ${vdim.h}` }}
+                      >
+                        ไม่มีภาพ
+                      </div>
+                    )}
+                    <figcaption className="mt-1.5 text-center text-[12px] text-[#6B7A6E]">
+                      {label}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+              <p className="mt-3 text-[12px] text-[#6B7A6E]">
+                ภาพเก็บในเครื่องเท่านั้น ไม่ถูกอัปโหลด และหายเมื่อออกจากหน้านี้
+              </p>
+            </section>
+          )}
 
           <section className="rounded-3xl bg-[#E8F5C1] p-4 lg:p-5">
             <div className="flex items-center justify-between text-[14px] font-semibold">
