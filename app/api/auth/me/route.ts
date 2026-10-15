@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, connection } from "next/server";
 import { currentUser } from "../../../../lib/auth";
 
 export async function GET() {
+  await connection();
   try {
     const u = await currentUser();
     return NextResponse.json({
