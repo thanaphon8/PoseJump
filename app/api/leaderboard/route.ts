@@ -7,6 +7,8 @@ import { currentUser } from "../../../lib/auth";
 const TZ_OFFSET = 7 * 3_600_000;
 const DAY = 864e5;
 const TOP = 50;
+// ต้องตรงกับ DEFAULT_GOAL ใน /api/sessions
+const DEFAULT_GOAL = 1500;
 
 const toId = (v: ObjectId | string) =>
   typeof v === "string" && ObjectId.isValid(v) ? new ObjectId(v) : v;
@@ -60,14 +62,28 @@ export async function GET() {
       .toArray();
     const seqOf = new Map(hits.map((h) => [String(h.userId), h.seq as number]));
 
-    const entries = top.map((r, i) => ({
-      rank: i + 1,
-      name: names.get(String(r._id)) ?? "ไม่ระบุชื่อ",
-      total: r.total,
-      rounds: r.rounds,
-      me: String(r._id) === myId,
-      goalRank: seqOf.get(String(r._id)) ?? null,
-    }));
+    // เป้าหมายรายวันของแต่ละคน ใช้วาดหลอดความคืบหน้า
+    const sets = await db
+      .collection("settings")
+      .find({ userId: { $in: hitIds } })
+      .project({ userId: 1, dailyGoal: 1 })
+      .toArray();
+    const goalOf = new Map(
+      sets.map((s) => [String(s.userId), s.dailyGoal as number])
+    );
+
+    const entries = top.map((r, i) => {
+      const goal = goalOf.get(String(r._id));
+      return {
+        rank: i + 1,
+        name: names.get(String(r._id)) ?? "ไม่ระบุชื่อ",
+        total: r.total,
+        rounds: r.rounds,
+        me: String(r._id) === myId,
+        goalRank: seqOf.get(String(r._id)) ?? null,
+        goal: typeof goal === "number" && goal > 0 ? goal : DEFAULT_GOAL,
+      };
+    });
 
     // point รวมของผู้ใช้ที่ล็อกอิน
     let myPoints = 0;

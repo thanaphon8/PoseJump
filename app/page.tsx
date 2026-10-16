@@ -45,6 +45,8 @@ const SHOTS_KEY = "pose-jump-shots";
 // แคลอรี่โดยประมาณต่อการกระโดด 1 ครั้ง
 const KCAL_PER_JUMP = 0.1;
 const DAY = 864e5;
+// หน้าประวัติ: แสดงหน้าละกี่รายการ เกินนี้แบ่งเป็น page 1 2 3
+const HISTORY_PAGE_SIZE = 20;
 const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
 // point: 50 คนแรกของวันที่ทำเป้าหมายรายวันสำเร็จ ได้ 100 point (คำนวณฝั่งเซิร์ฟเวอร์)
@@ -116,6 +118,8 @@ type BoardEntry = {
   me: boolean;
   // ลำดับที่ทำเป้าหมายรายวันสำเร็จ (1 = คนแรก) null = ยังไม่ถึงเป้า
   goalRank: number | null;
+  // เป้าหมายรายวันของคนนั้น ใช้วาดหลอดความคืบหน้า
+  goal: number;
 };
 
 type Board = {
@@ -1027,6 +1031,78 @@ function Calendar({
   );
 }
 
+// ตัวแบ่งหน้า: ‹ 1 2 3 … 15 › แสดงเฉพาะหน้าแรก หน้าสุดท้าย และหน้าใกล้หน้าปัจจุบัน
+function Pager({
+  page,
+  total,
+  onChange,
+}: {
+  page: number;
+  total: number;
+  onChange: (p: number) => void;
+}) {
+  const shown = [
+    ...new Set([1, total, page - 1, page, page + 1]),
+  ]
+    .filter((n) => n >= 1 && n <= total)
+    .sort((a, b) => a - b);
+  const items: (number | "gap")[] = [];
+  shown.forEach((n, i) => {
+    if (i > 0 && n - shown[i - 1] > 1) items.push("gap");
+    items.push(n);
+  });
+
+  const base =
+    "flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[14px] font-semibold tabular-nums transition-transform active:scale-90";
+
+  return (
+    <nav
+      aria-label="แบ่งหน้า"
+      className="mt-3 flex flex-wrap items-center justify-center gap-1.5"
+    >
+      <button
+        onClick={() => onChange(page - 1)}
+        disabled={page <= 1}
+        aria-label="หน้าก่อนหน้า"
+        className={`${base} bg-white text-[#1B2A21] disabled:opacity-30`}
+      >
+        <Icon d={ICONS.left} size={18} />
+      </button>
+      {items.map((it, i) =>
+        it === "gap" ? (
+          <span
+            key={`g${i}`}
+            className="px-1 text-[14px] text-[#6B7A6E]"
+            aria-hidden
+          >
+            …
+          </span>
+        ) : (
+          <button
+            key={it}
+            onClick={() => onChange(it)}
+            aria-label={`หน้า ${it}`}
+            aria-current={it === page ? "page" : undefined}
+            className={`${base} ${
+              it === page ? "bg-[#C9F25B] text-[#1B2A21]" : "bg-white text-[#6B7A6E]"
+            }`}
+          >
+            {it}
+          </button>
+        )
+      )}
+      <button
+        onClick={() => onChange(page + 1)}
+        disabled={page >= total}
+        aria-label="หน้าถัดไป"
+        className={`${base} bg-white text-[#1B2A21] disabled:opacity-30`}
+      >
+        <Icon d={ICONS.right} size={18} />
+      </button>
+    </nav>
+  );
+}
+
 const initialOf = (name: string) =>
   (Array.from(name.trim())[0] ?? "?").toUpperCase();
 
@@ -1111,7 +1187,7 @@ function PromoBanner({ status }: { status: "open" | "won" | "missed" }) {
               ? "ทำเป้าหมายรายวันสำเร็จก่อนใครๆ ขอบคุณที่โดดทุกวัน"
               : missed
                 ? "ลำดับวันนี้ครบโควตาแล้ว แต่ยังโดดให้ถึงเป้าเพื่อเก็บสถิติได้"
-                : "ทำเป้าหมายรายวันให้สำเร็จก่อนคนอื่น ลำดับ 51 เป็นต้นไปไม่ได้ point รีเซ็ตทุกเที่ยงคืนเวลาไทย"}
+                : "ทำเป้าหมายรายวันให้สำเร็จก่อนคนอื่น เซ็ตทุกเที่ยงคืนเวลาไทย"}
           </p>
         </div>
       </div>
@@ -1746,6 +1822,7 @@ export default function Home() {
   const [phase, setPhase] = useState<Phase>("setup");
   const [tab, setTab] = useState<Tab>("home");
   const [hTab, setHTab] = useState<"week" | "month">("week");
+  const [hPage, setHPage] = useState(1);
   const [mode, setMode] = useState<Mode>("count");
   const [seconds, setSeconds] = useState(60);
   const [target, setTarget] = useState(100);
@@ -2839,6 +2916,15 @@ export default function Home() {
   if (phase === "setup") {
     const left = Math.max(0, dailyGoal - todayTotal);
 
+    // แบ่งหน้ารายการประวัติ (ลบประวัติจนหน้าที่ดูอยู่เกิน ให้ถอยมาหน้าสุดท้าย)
+    const totalPages = Math.max(
+      1,
+      Math.ceil(history.length / HISTORY_PAGE_SIZE)
+    );
+    const curPage = Math.min(hPage, totalPages);
+    const pageFrom = (curPage - 1) * HISTORY_PAGE_SIZE;
+    const pageItems = history.slice(pageFrom, pageFrom + HISTORY_PAGE_SIZE);
+
     const homeView = (
       <>
         <header className="mb-5">
@@ -3026,7 +3112,6 @@ export default function Home() {
     );
 
     const leader = board?.entries[0];
-    const leaderTotal = Math.max(1, leader?.total ?? 1);
     const leftMs = Math.max(0, (board?.resetAt ?? 0) - boardNow);
     const resetText = `${Math.floor(leftMs / 3600000)} ชม. ${Math.floor(
       (leftMs % 3600000) / 60000
@@ -3170,60 +3255,74 @@ export default function Home() {
                 </p>
               ) : (
                 <ul className={`${card} divide-y divide-[#EEF2E4] overflow-hidden`}>
-                  {board.entries.map((e) => (
-                    <li
-                      key={e.rank}
-                      className={`flex items-center gap-3 px-4 py-3 ${
-                        e.me ? "bg-[#E8F5C1]" : ""
-                      }`}
-                    >
-                      <span
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums ${rankBadge(
-                          e.rank
-                        )}`}
+                  {board.entries.map((e) => {
+                    // ถึงเป้า = เซิร์ฟเวอร์บันทึกว่าถึงเป้าแล้ว หรือยอดรวมทุกรอบของวันถึงเป้าของคนนั้น
+                    const reached = e.goalRank != null || e.total >= e.goal;
+                    const pct = reached
+                      ? 100
+                      : Math.min(100, (e.total / Math.max(1, e.goal)) * 100);
+                    return (
+                      <li
+                        key={e.rank}
+                        className={`flex items-center gap-3 px-4 py-3 ${
+                          e.me ? "bg-[#E8F5C1]" : ""
+                        }`}
                       >
-                        {e.rank}
-                      </span>
-                      <Avatar name={e.name} size={40} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-[16px] font-semibold">
-                            {e.name}
-                          </span>
-                          {e.me && (
-                            <span className="shrink-0 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
-                              คุณ
+                        <span
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums ${rankBadge(
+                            e.rank
+                          )}`}
+                        >
+                          {e.rank}
+                        </span>
+                        <Avatar name={e.name} size={40} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-[16px] font-semibold">
+                              {e.name}
                             </span>
-                          )}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                          <GoalTag goalRank={e.goalRank ?? null} />
-                          {e.goalRank != null && (
-                            <span className="text-[11px] text-[#6B7A6E]">
-                              ถึงเป้าลำดับที่ {e.goalRank}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]">
+                            {e.me && (
+                              <span className="shrink-0 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
+                                คุณ
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <GoalTag goalRank={e.goalRank ?? null} />
+                            {e.goalRank != null && (
+                              <span className="text-[11px] text-[#6B7A6E]">
+                                ถึงเป้าลำดับที่ {e.goalRank}
+                              </span>
+                            )}
+                          </div>
                           <div
-                            className="h-full rounded-full transition-[width] duration-500"
-                            style={{
-                              width: `${(e.total / leaderTotal) * 100}%`,
-                              background: e.rank === 1 ? "#1B2A21" : "#A9B79A",
-                            }}
-                          />
+                            className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]"
+                            role="progressbar"
+                            aria-label="ความคืบหน้าสู่เป้าหมายรายวัน"
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={Math.round(pct)}
+                          >
+                            <div
+                              className="h-full rounded-full transition-[width] duration-500"
+                              style={{
+                                width: `${pct}%`,
+                                background: reached ? "#3F5E1F" : "#A9B79A",
+                              }}
+                            />
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[18px] font-semibold tabular-nums">
-                          {fmtNum(e.total)}
+                        <div className="text-right">
+                          <div className="text-[18px] font-semibold tabular-nums">
+                            {fmtNum(e.total)}
+                          </div>
+                          <div className="text-[11px] text-[#6B7A6E]">
+                            {e.rounds} รอบ
+                          </div>
                         </div>
-                        <div className="text-[11px] text-[#6B7A6E]">
-                          {e.rounds} รอบ
-                        </div>
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
               <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
@@ -3323,9 +3422,24 @@ export default function Home() {
                 ยังไม่มีประวัติ
               </p>
             ) : (
-              <ul className={`${card} divide-y divide-[#EEF2E4]`}>
-                {history.slice(0, 20).map(sessionRow)}
-              </ul>
+              <>
+                <ul className={`${card} divide-y divide-[#EEF2E4]`}>
+                  {pageItems.map(sessionRow)}
+                </ul>
+                {totalPages > 1 && (
+                  <>
+                    <p className="mt-3 text-center text-[12px] text-[#6B7A6E]">
+                      {pageFrom + 1}–{pageFrom + pageItems.length} จาก{" "}
+                      {fmtNum(history.length)} รายการ
+                    </p>
+                    <Pager
+                      page={curPage}
+                      total={totalPages}
+                      onChange={setHPage}
+                    />
+                  </>
+                )}
+              </>
             )}
           </section>
         </div>
@@ -4022,4 +4136,4 @@ export default function Home() {
       )}
     </div>
   );
-}
+} 
