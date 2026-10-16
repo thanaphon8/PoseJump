@@ -48,6 +48,8 @@ const HISTORY_PAGE_SIZE = 20;
 const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
 // point: 100 คนแรกของวันที่ทำเป้าหมายรายวันสำเร็จ ได้ 50 point (คำนวณฝั่งเซิร์ฟเวอร์)
+// เป้าหมายรายวันคงที่ ไม่ให้ผู้ใช้ปรับ
+const DAILY_GOAL = 100;
 const POINT_QUOTA = 100;
 const POINT_REWARD = 50;
 
@@ -869,44 +871,6 @@ function Switch({
         }`}
       />
     </button>
-  );
-}
-
-function Stepper({
-  display,
-  unit,
-  onMinus,
-  onPlus,
-  big,
-}: {
-  display: string;
-  unit: string;
-  onMinus: () => void;
-  onPlus: () => void;
-  big?: boolean;
-}) {
-  const btn =
-    "flex h-12 w-12 items-center justify-center rounded-full bg-white text-3xl font-light text-[#1B2A21] shadow-sm transition-transform active:scale-90";
-  return (
-    <div className="flex items-center justify-between">
-      <button onClick={onMinus} aria-label="ลดลง" className={btn}>
-        −
-      </button>
-      <div className="text-center">
-        <div
-          key={display}
-          className={`pj-pop font-semibold leading-none tabular-nums tracking-tight ${
-            big ? "text-[64px]" : "text-[48px]"
-          }`}
-        >
-          {display}
-        </div>
-        <div className="mt-2 text-[14px] text-[#6B7A6E]">{unit}</div>
-      </div>
-      <button onClick={onPlus} aria-label="เพิ่มขึ้น" className={btn}>
-        +
-      </button>
-    </div>
   );
 }
 
@@ -2187,7 +2151,7 @@ export default function Home() {
   const [mode, setMode] = useState<Mode>("count");
   const [seconds, setSeconds] = useState(60);
   const [target, setTarget] = useState(100);
-  const [dailyGoal, setDailyGoal] = useState(1500);
+  const [dailyGoal] = useState(DAILY_GOAL);
   const [history, setHistory] = useState<Session[]>([]);
   const [now0, setNow0] = useState<number | null>(null);
   const [count, setCount] = useState(0);
@@ -2288,7 +2252,6 @@ export default function Home() {
           setMode(v.mode);
           setSeconds(v.seconds);
           setTarget(v.target);
-          setDailyGoal(v.dailyGoal);
           setFacing(v.facing);
           setSound(v.sound);
           syncedRef.current = settingsKey(v);
@@ -2361,7 +2324,6 @@ export default function Home() {
         if (v.mode === "time" || v.mode === "count") setMode(v.mode);
         if (typeof v.seconds === "number") setSeconds(v.seconds);
         if (typeof v.target === "number") setTarget(v.target);
-        if (typeof v.dailyGoal === "number") setDailyGoal(v.dailyGoal);
         if (v.facing === "user" || v.facing === "environment")
           setFacing(v.facing);
         if (typeof v.sound === "boolean") setSound(v.sound);
@@ -3816,17 +3778,7 @@ export default function Home() {
         <h1 className="text-[30px] font-bold tracking-tight lg:text-[36px]">
           ตั้งค่า
         </h1>
-        <div className="mt-5 space-y-4 lg:grid lg:max-w-4xl lg:grid-cols-2 lg:items-start lg:gap-6 lg:space-y-0">
-          <section className="rounded-3xl bg-[#E8F5C1] p-5">
-            <h2 className="mb-4 text-[16px] font-semibold">เป้าหมายต่อวัน</h2>
-            <Stepper
-              display={fmtNum(dailyGoal)}
-              unit="ครั้งต่อวัน"
-              onMinus={() => setDailyGoal(Math.max(100, dailyGoal - 100))}
-              onPlus={() => setDailyGoal(Math.min(20000, dailyGoal + 100))}
-            />
-          </section>
-
+        <div className="mt-5 space-y-4 lg:max-w-md">
           <div className="space-y-4">
           <ul className={`${card} divide-y divide-[#EEF2E4]`}>
             <li className="flex items-center justify-between gap-3 px-4 py-3">
