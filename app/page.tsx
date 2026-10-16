@@ -1551,7 +1551,7 @@ function RewardModal({
 
       <div className="relative w-full max-w-sm rounded-[32px] bg-[#F3F6EC] p-6 text-center text-[#1B2A21] shadow-2xl">
         <div className="flex items-center justify-center gap-2 text-[14px] font-bold tracking-tight text-[#3F5E1F]">
-          <Logo size={48} className="-my-2" />
+          <Logo size={64} className="-my-4" />
           {APP_NAME}
         </div>
         <span className="pj-stamp mx-auto mt-4 flex h-24 w-24 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21] ring-8 ring-[#C9F25B]/40">
@@ -1593,7 +1593,7 @@ function RewardModal({
 }
 
 // ป๊อปอัพเชิญชวนตอนเข้าหน้าแรก: รูปเต็มการ์ด ข้อความอยู่ในรูป พื้นไล่สีเขียวเข้ม→อ่อน
-// มีปุ่ม X ปิด และช่อง "ไม่ต้องแสดงอีก"
+// ปิดด้วยการแตะพื้นหลัง/Esc/ปุ่มเริ่มเลย และมีช่อง "ไม่ต้องแสดงอีก"
 function PromoPopup({
   onClose,
   onStart,
@@ -1624,15 +1624,6 @@ function PromoPopup({
         className="pj-pop relative w-full max-w-sm"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ปุ่มปิด อยู่นอกการ์ด */}
-        <button
-          onClick={() => onClose(hide)}
-          aria-label="ปิดป้ายนี้"
-          className="absolute -top-14 right-0 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#1B2A21] shadow-md transition-transform active:scale-90"
-        >
-          <Icon d={ICONS.close} size={20} />
-        </button>
-
       <div className="relative flex min-h-[640px] w-full flex-col justify-end overflow-hidden rounded-[32px] bg-gradient-to-t from-[#1B2A21] to-[#8FB54A] text-white shadow-2xl">
         {/* รูปเต็มการ์ด */}
         {imgOk && (
@@ -1697,14 +1688,14 @@ function PhoneExample() {
   const [ok, setOk] = useState(true);
   if (!ok) return null;
   return (
-    <figure className="w-[160px] shrink-0">
+    <figure className="w-full shrink-0">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/img/phone.png"
         alt="ตัวอย่างการตั้งมือถือ"
         draggable={false}
         onError={() => setOk(false)}
-        className="mx-auto max-h-[300px] w-full rounded-2xl object-contain"
+        className="mx-auto max-h-[170px] w-auto max-w-full rounded-2xl object-contain"
       />
       <figcaption className="mt-1.5 text-center text-[12px] text-[#6B7A6E]">
         ตัวอย่างการตั้งมือถือ
@@ -1925,7 +1916,7 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
       {/* แผงแบรนด์ (เดสก์ท็อป) */}
       <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
         <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
-          <Logo size={80} className="-my-6" />
+          <Logo size={104} className="-my-9" />
           {APP_NAME}
         </div>
         <div>
@@ -1954,7 +1945,7 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
       <div className="flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
         <div className="flex h-12 items-center justify-between">
           <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
-            <Logo size={56} className="-my-2" />
+            <Logo size={64} className="-my-[6px]" />
             {APP_NAME}
           </div>
         </div>
@@ -2093,7 +2084,7 @@ function Shell({
     <div className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] lg:flex">
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-1 p-5 lg:flex">
         <div className="mb-6 flex items-center gap-2 px-3 text-[20px] font-bold tracking-tight">
-          <Logo size={68} className="-my-4" />
+          <Logo size={88} className="-my-[26px]" />
           {APP_NAME}
         </div>
         {items.map(([t, label, d]) => (
@@ -2119,7 +2110,7 @@ function Shell({
       >
         <div className="mb-4 flex h-10 items-center justify-between lg:hidden">
           <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
-            <Logo size={56} className="-my-2" />
+            <Logo size={64} className="-my-[6px]" />
             {APP_NAME}
           </div>
           {profile}
@@ -4220,16 +4211,7 @@ export default function Home() {
               </p>
             )}
 
-            <div className="mt-4 flex h-3 w-40 items-center justify-center">
-              <div
-                ref={levelBarRef}
-                className={`h-1 w-full rounded-full transition-colors ${
-                  levelInfo.rollOk ? "bg-[#3F5E1F]" : "bg-[#C5CFB5]"
-                }`}
-              />
-            </div>
-
-            <div className="mt-6 flex items-center justify-center gap-5">
+            <div className="mt-3 flex flex-col items-center gap-3">
             <PhoneExample />
             <div className="relative h-[300px] w-[84px] shrink-0 rounded-full bg-[#E3EAD6]">
               <div
@@ -4384,7 +4366,7 @@ export default function Home() {
       {(isPrep || phase === "running") && (
         <aside className="pj-in hidden h-full max-h-[880px] w-[360px] shrink-0 flex-col gap-4 text-[#1B2A21] lg:flex">
           <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
-            <Logo size={68} className="-my-4" />
+            <Logo size={88} className="-my-[26px]" />
             {APP_NAME}
           </div>
 
