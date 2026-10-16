@@ -699,14 +699,16 @@ function Icon({
 function Logo({
   size = 32,
   className = "",
+  src = "/img/logo.png",
 }: {
   size?: number;
   className?: string;
+  src?: string;
 }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/img/logo.png"
+      src={src}
       alt=""
       onError={(e) => {
         e.currentTarget.style.display = "none";
@@ -717,6 +719,24 @@ function Logo({
       className={`shrink-0 border-0 bg-transparent object-contain shadow-none outline-none ring-0 ${className}`}
       style={{ width: size, height: size }}
     />
+  );
+}
+
+// โลโก้หน้า login/register: กรอบวงกลมสีขาว border-radius 100
+function AuthLogo({
+  size = 160,
+  src = "/img/logo.png",
+}: {
+  size?: number;
+  src?: string;
+}) {
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center overflow-hidden rounded-[100px] border-4 border-white bg-white shadow-lg"
+      style={{ width: size, height: size }}
+    >
+      <Logo size={Math.round(size * 0.78)} src={src} />
+    </span>
   );
 }
 
@@ -1151,17 +1171,12 @@ function GoalTag({ goalRank }: { goalRank: number | null }) {
       </span>
     );
   }
-  if (goalRank <= POINT_QUOTA) {
-    return (
-      <span className="flex shrink-0 items-center gap-1 rounded-full bg-[#3F5E1F] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
-        <Icon d={ICONS.check} size={11} />
-        ทัน {POINT_QUOTA} คนแรก · +{POINT_REWARD}
-      </span>
-    );
-  }
+  // ลำดับ 101 ขึ้นไป ไม่แสดงแท็ก
+  if (goalRank > POINT_QUOTA) return null;
   return (
-    <span className="shrink-0 rounded-full bg-[#EEF2E4] px-2 py-0.5 text-[11px] font-semibold text-[#6B7A6E]">
-      ไม่ทัน {POINT_QUOTA} คนแรก
+    <span className="flex shrink-0 items-center gap-1 rounded-full bg-[#3F5E1F] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
+      <Icon d={ICONS.check} size={11} />
+      ทัน {POINT_QUOTA} คนแรก · +{POINT_REWARD}
     </span>
   );
 }
@@ -1176,42 +1191,43 @@ function PointBadge({ points }: { points: number }) {
   );
 }
 
-// แบนเนอร์ชวนโดด: 100 คนแรกที่ถึงเป้ารายวันรับ point
-function PromoBanner({ status }: { status: "open" | "won" | "missed" }) {
-  const won = status === "won";
-  const missed = status === "missed";
+// แบนเนอร์ชวนโดด: ยังไม่ถึงเป้า = ชวนรับ point / ถึงเป้าแล้ว = ยินดีกับคะแนนที่ทำได้
+function PromoBanner({
+  status,
+  total = 0,
+}: {
+  status: "open" | "done";
+  total?: number;
+}) {
+  const done = status === "done";
   return (
     <section
       className={`relative overflow-hidden rounded-3xl p-5 ${
-        won ? "bg-[#3F5E1F] text-white" : "bg-[#C9F25B] text-[#1B2A21]"
+        done ? "bg-[#3F5E1F] text-white" : "bg-[#C9F25B] text-[#1B2A21]"
       }`}
     >
       <div className="flex items-center gap-4">
         <span
           className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${
-            won ? "bg-[#C9F25B] text-[#1B2A21]" : "bg-[#1B2A21] text-[#C9F25B]"
+            done ? "bg-[#C9F25B] text-[#1B2A21]" : "bg-[#1B2A21] text-[#C9F25B]"
           }`}
         >
-          <Icon d={ICONS.star} size={28} fill />
+          <Icon d={done ? ICONS.trophy : ICONS.star} size={28} fill={!done} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-[18px] font-bold leading-snug">
-            {won
-              ? `เยี่ยม! คุณทัน ${POINT_QUOTA} คนแรก รับ +${POINT_REWARD} point แล้ว`
-              : missed
-                ? `วันนี้เต็ม ${POINT_QUOTA} คนแล้ว พรุ่งนี้ลุยใหม่!`
-                : `${POINT_QUOTA} คนแรกที่โดดถึงเป้า รับ ${POINT_REWARD} point!`}
+            {done
+              ? `ยินดีด้วย! วันนี้คุณทำได้ ${fmtNum(total)} ครั้ง`
+              : `${POINT_QUOTA} คนแรกที่โดดถึงเป้า รับ ${POINT_REWARD} point!`}
           </div>
           <p
             className={`mt-1 text-[13px] leading-5 ${
-              won ? "text-white/80" : "text-[#3F5E1F]"
+              done ? "text-white/80" : "text-[#3F5E1F]"
             }`}
           >
-            {won
-              ? "ทำเป้าหมายรายวันสำเร็จก่อนใครๆ ขอบคุณที่โดดทุกวัน"
-              : missed
-                ? "ลำดับวันนี้ครบโควตาแล้ว แต่ยังโดดให้ถึงเป้าเพื่อเก็บสถิติได้"
-                : "ทำเป้าหมายรายวันให้สำเร็จก่อนคนอื่น เซ็ตทุกเที่ยงคืนเวลาไทย"}
+            {done
+              ? "ถึงเป้าหมายรายวันแล้ว เก่งมาก โดดต่อเพื่อเก็บสถิติได้เลย"
+              : "ทำเป้าหมายรายวันให้สำเร็จก่อนคนอื่น เซ็ตทุกเที่ยงคืนเวลาไทย"}
           </p>
         </div>
       </div>
@@ -1768,7 +1784,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[13px] font-medium text-[#6B7A6E]">
+      <span className="mb-1.5 block text-[13px] font-medium text-white/80 lg:text-[#6B7A6E]">
         {label}
       </span>
       <span className="relative block">
@@ -1795,11 +1811,11 @@ function Field({
         )}
       </span>
       {error ? (
-        <span role="alert" className="pj-in mt-1.5 block text-[12px] text-[#D92D20]">
+        <span role="alert" className="pj-in mt-1.5 block text-[12px] text-[#FFB4AB] lg:text-[#D92D20]">
           {error}
         </span>
       ) : hint ? (
-        <span className="mt-1.5 block text-[12px] text-[#6B7A6E]">{hint}</span>
+        <span className="mt-1.5 block text-[12px] text-white/70 lg:text-[#6B7A6E]">{hint}</span>
       ) : null}
     </label>
   );
@@ -1817,6 +1833,7 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
   const [show, setShow] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
+  const [imgOk, setImgOk] = useState(true);
   const isReg = mode === "register";
 
   const edit =
@@ -1911,12 +1928,27 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
       role="dialog"
       aria-modal="true"
       aria-label={isReg ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
-      className="pj-in fixed inset-0 z-50 overflow-y-auto overflow-x-hidden bg-[#F3F6EC] text-[#1B2A21] lg:grid lg:grid-cols-[1fr_1fr]"
+      className="pj-in fixed inset-0 z-50 overflow-y-auto overflow-x-hidden bg-gradient-to-t from-[#1B2A21] to-[#8FB54A] text-white lg:grid lg:grid-cols-[1fr_1fr] lg:bg-none lg:bg-[#F3F6EC] lg:text-[#1B2A21]"
     >
+      {/* พื้นหลังมือถือ: รูปเต็มจอ + ไล่สีเขียวเข้มล่าง→จางบน เหมือนการ์ดกติกา */}
+      <div className="pointer-events-none fixed inset-0 lg:hidden" aria-hidden>
+        {imgOk && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src="/img/jump.jpg"
+            alt=""
+            draggable={false}
+            onError={() => setImgOk(false)}
+            className="h-full w-full object-cover"
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#1B2A21] via-[#1B2A21]/90 via-50% to-[#3F5E1F]/10" />
+      </div>
+
       {/* แผงแบรนด์ (เดสก์ท็อป) */}
       <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
-        <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
-          <Logo size={104} className="-my-9" />
+        <div className="flex items-center gap-4 text-[22px] font-bold tracking-tight">
+          <AuthLogo size={96} />
           {APP_NAME}
         </div>
         <div>
@@ -1942,23 +1974,21 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
       </aside>
 
       {/* ฟอร์ม */}
-      <div className="flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
-        <div className="flex h-12 items-center justify-between">
-          <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
-            <Logo size={64} className="-my-[6px]" />
-            {APP_NAME}
-          </div>
+      <div className="relative flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
+        <div className="flex flex-col items-center gap-3 pt-4 lg:hidden">
+          <AuthLogo size={168} src="/img/com7logo.png" />
+          <span className="text-[22px] font-bold tracking-tight">{APP_NAME}</span>
         </div>
 
         <form
           onSubmit={submit}
           noValidate
-          className="mx-auto my-auto w-full max-w-sm py-6"
+          className="mx-auto mt-auto w-full max-w-sm pb-2 pt-8 lg:my-auto lg:py-6"
         >
           <h1 className="text-[30px] font-bold leading-tight tracking-tight">
             {isReg ? "สร้างบัญชีใหม่" : "ยินดีต้อนรับกลับมา"}
           </h1>
-          <p className="mt-1 text-[14px] text-[#6B7A6E]">
+          <p className="mt-1 text-[14px] text-white/80 lg:text-[#6B7A6E]">
             {isReg
               ? "สมัครสมาชิกเพื่อเริ่มเก็บสถิติการกระโดดของคุณ"
               : "เข้าสู่ระบบเพื่อไปต่อจากรอบล่าสุด"}
@@ -2042,17 +2072,17 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
             {busy ? "กำลังดำเนินการ" : isReg ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
           </button>
 
-          <p className="mt-5 text-center text-[14px] text-[#6B7A6E]">
+          <p className="mt-5 text-center text-[14px] text-white/80 lg:text-[#6B7A6E]">
             {isReg ? "มีบัญชีอยู่แล้ว?" : "ยังไม่มีบัญชี?"}{" "}
             <button
               type="button"
               onClick={() => switchMode(isReg ? "login" : "register")}
-              className="font-semibold text-[#3F5E1F] underline-offset-2 hover:underline"
+              className="font-semibold text-[#C9F25B] underline-offset-2 hover:underline lg:text-[#3F5E1F]"
             >
               {isReg ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
             </button>
           </p>
-          <p className="mt-3 text-center text-[12px] text-[#6B7A6E] lg:hidden">
+          <p className="mt-3 text-center text-[12px] text-white/60 lg:hidden">
             สถิติของคุณซิงก์ข้ามอุปกรณ์ได้
           </p>
         </form>
@@ -3315,7 +3345,10 @@ export default function Home() {
         </header>
 
         <div className="mb-4">
-          <PromoBanner status="open" />
+          <PromoBanner
+            status={todayTotal >= dailyGoal ? "done" : "open"}
+            total={todayTotal}
+          />
         </div>
 
         <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
@@ -3478,12 +3511,14 @@ export default function Home() {
 
         {(() => {
           const mine = board?.entries.find((e) => e.me);
-          const gr = mine?.goalRank ?? null;
-          const st: "open" | "won" | "missed" =
-            gr === null ? "open" : gr <= POINT_QUOTA ? "won" : "missed";
+          const reached =
+            !!mine && (mine.goalRank != null || mine.total >= mine.goal);
           return (
             <div className="mb-4">
-              <PromoBanner status={st} />
+              <PromoBanner
+                status={reached ? "done" : "open"}
+                total={mine?.total ?? 0}
+              />
             </div>
           );
         })()}
@@ -3584,7 +3619,7 @@ export default function Home() {
                   ยังไม่มีอันดับ
                 </p>
               ) : (
-                <ul className={`${card} divide-y divide-[#EEF2E4] overflow-hidden`}>
+                <ul className="space-y-2">
                   {board.entries.map((e) => {
                     // ถึงเป้า = เซิร์ฟเวอร์บันทึกว่าถึงเป้าแล้ว หรือยอดรวมทุกรอบของวันถึงเป้าของคนนั้น
                     const reached = e.goalRank != null || e.total >= e.goal;
@@ -3594,8 +3629,8 @@ export default function Home() {
                     return (
                       <li
                         key={e.rank}
-                        className={`flex items-center gap-3 px-4 py-3 ${
-                          e.me ? "bg-[#E8F5C1]" : ""
+                        className={`flex items-center gap-3 rounded-3xl px-4 py-3 ${
+                          e.me ? "bg-[#E8F5C1]" : "bg-white"
                         }`}
                       >
                         <span
