@@ -39,6 +39,7 @@ const MIN_JUMP_INTERVAL_MS = 220;
 const STORAGE_KEY = "pose-jump-settings";
 const HISTORY_KEY = "pose-jump-history";
 const SHOTS_KEY = "pose-jump-shots";
+const PROMO_KEY = "pose-jump-promo-hide";
 // แคลอรี่โดยประมาณต่อการกระโดด 1 ครั้ง
 const KCAL_PER_JUMP = 0.1;
 const DAY = 864e5;
@@ -53,9 +54,9 @@ const POINT_REWARD = 50;
 // กติกาการเล่น: ใส่ reward ในแถวไหนก็ได้ ถ้าสัปดาห์นั้นมีแต้ม
 const WEEK_RULES: { week: number; jumps: number; reward?: number }[] = [
   { week: 1, jumps: 100, reward: POINT_REWARD },
-  { week: 2, jumps: 200 },
-  { week: 3, jumps: 300 },
-  { week: 5, jumps: 500 },
+  { week: 2, jumps: 200, reward: POINT_REWARD },
+  { week: 3, jumps: 300, reward: POINT_REWARD },
+  { week: 5, jumps: 500, reward: POINT_REWARD },
 ];
 
 // สี
@@ -694,7 +695,7 @@ function Icon({
   );
 }
 
-// โลโก้แอป: รูปจาก public/img/logo.jpg ตัดเป็นวงกลม
+// โลโก้แอป: รูปจาก public/img/logo.png พื้นหลังโปร่งใส ไม่ตัดกรอบ
 function Logo({
   size = 32,
   className = "",
@@ -705,12 +706,15 @@ function Logo({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/img/logo.jpg"
-      alt={APP_NAME}
+      src="/img/logo.png"
+      alt=""
+      onError={(e) => {
+        e.currentTarget.style.display = "none";
+      }}
       width={size}
       height={size}
       draggable={false}
-      className={`shrink-0 rounded-full object-cover ${className}`}
+      className={`shrink-0 border-0 bg-transparent object-contain shadow-none outline-none ring-0 ${className}`}
       style={{ width: size, height: size }}
     />
   );
@@ -1215,42 +1219,69 @@ function PromoBanner({ status }: { status: "open" | "won" | "missed" }) {
   );
 }
 
-// ป้ายประกาศกติกาการเล่น (แทนส่วนตั้งค่ารอบถัดไป)
+// ป้ายประกาศกติกาการเล่น: สไตล์เดียวกับป๊อปอัพ รูปเต็มการ์ด ข้อความอยู่ในรูป พื้นไล่สีเขียวเข้ม→อ่อน
 function RulesBoard() {
+  const [imgOk, setImgOk] = useState(true);
   return (
-    <section className="relative overflow-hidden rounded-3xl bg-[#E8F5C1] p-5">
-      <div className="flex items-center gap-3">
-        <span className="pj-float flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1B2A21] text-[#C9F25B]">
-          <Icon d={ICONS.star} size={22} fill />
-        </span>
-        <div>
-          <h2 className="text-[16px] font-semibold">กติกาการเล่น</h2>
-          <p className="text-[12px] text-[#4B5E3A]">
-            {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน รับ {POINT_REWARD} point
+    <section className="relative flex min-h-0 flex-col justify-end overflow-hidden rounded-[32px] lg:min-h-[560px] bg-gradient-to-t from-[#1B2A21] to-[#8FB54A] text-white shadow-lg">
+      {imgOk && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/img/jump.jpg"
+          alt=""
+          draggable={false}
+          onError={() => setImgOk(false)}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      )}
+
+      {/* ไล่สีเขียว: เข้มล่าง (ที่ข้อความ) → จางบน (เห็นรูป) */}
+      <div className="absolute inset-0 bg-gradient-to-t from-[#1B2A21] via-[#1B2A21]/90 via-55% to-[#3F5E1F]/10" />
+
+      <div className="relative px-5 pb-5 pt-24 lg:pt-48">
+        <div className="text-center">
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#C9F25B] px-3 py-1 text-[12px] font-semibold text-[#1B2A21]">
+            <Icon d={ICONS.star} size={12} fill />
+            กติกาการเล่น
+          </span>
+          <h2 className="mt-3 text-[28px] font-bold leading-tight tracking-tight drop-shadow-sm">
+            {POINT_QUOTA} คนแรก รับ{" "}
+            <span className="inline-flex items-center gap-1.5 align-middle text-[#C9F25B]">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
+                <Icon d={ICONS.star} size={18} fill />
+              </span>
+              {POINT_REWARD} point!
+            </span>
+          </h2>
+          <p className="mt-2 text-[14px] leading-6 text-white/85">
+            ทำเป้าหมายรายวันให้สำเร็จ เซ็ตใหม่ทุกเที่ยงคืนเวลาไทย
           </p>
         </div>
-      </div>
-      <ul className="pj-stagger mt-4 space-y-2">
-        {WEEK_RULES.map((r) => (
-          <li
-            key={r.week}
-            className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3"
-          >
-            <span className="flex h-9 shrink-0 items-center rounded-full bg-[#1B2A21] px-3 text-[13px] font-semibold text-[#C9F25B]">
-              Week {r.week}
-            </span>
-            <span className="flex-1 text-[16px] font-semibold tabular-nums">
-              โดด {fmtNum(r.jumps)} ครั้ง
-            </span>
-            {r.reward && (
-              <span className="flex items-center gap-1 rounded-full bg-[#3F5E1F] px-2.5 py-1 text-[12px] font-semibold text-[#C9F25B]">
-                <Icon d={ICONS.star} size={12} fill />
-                {r.reward} แต้ม
+
+        <ul className="pj-stagger mt-4 space-y-2">
+          {WEEK_RULES.map((r) => (
+            <li
+              key={r.week}
+              className="flex items-center gap-3 rounded-2xl bg-white/15 px-3 py-2.5 ring-1 ring-white/20 backdrop-blur-md"
+            >
+              <span className="flex h-9 shrink-0 items-center rounded-full bg-[#C9F25B] px-3 text-[13px] font-semibold text-[#1B2A21]">
+                Week {r.week}
               </span>
-            )}
-          </li>
-        ))}
-      </ul>
+              <span className="flex-1 text-[16px] font-semibold tabular-nums">
+                โดด {fmtNum(r.jumps)} ครั้ง
+              </span>
+              {r.reward && (
+                <span className="flex items-center gap-1.5 rounded-full bg-[#1B2A21]/80 py-1 pl-1 pr-2.5 text-[12px] font-semibold text-[#C9F25B]">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
+                    <Icon d={ICONS.star} size={12} fill />
+                  </span>
+                  {r.reward} แต้ม
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
     </section>
   );
 }
@@ -1520,7 +1551,7 @@ function RewardModal({
 
       <div className="relative w-full max-w-sm rounded-[32px] bg-[#F3F6EC] p-6 text-center text-[#1B2A21] shadow-2xl">
         <div className="flex items-center justify-center gap-2 text-[14px] font-bold tracking-tight text-[#3F5E1F]">
-          <Logo size={32} />
+          <Logo size={48} className="-my-2" />
           {APP_NAME}
         </div>
         <span className="pj-stamp mx-auto mt-4 flex h-24 w-24 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21] ring-8 ring-[#C9F25B]/40">
@@ -1556,6 +1587,106 @@ function RewardModal({
         >
           ไปต่อ
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ป๊อปอัพเชิญชวนตอนเข้าหน้าแรก: รูปเต็มการ์ด ข้อความอยู่ในรูป พื้นไล่สีเขียวเข้ม→อ่อน
+// มีปุ่ม X ปิด และช่อง "ไม่ต้องแสดงอีก"
+function PromoPopup({
+  onClose,
+  onStart,
+}: {
+  onClose: (hide: boolean) => void;
+  onStart: (hide: boolean) => void;
+}) {
+  const [hide, setHide] = useState(false);
+  const [imgOk, setImgOk] = useState(true);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose(hide);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hide, onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="รับ point"
+      className="pj-in fixed inset-0 z-40 flex items-center justify-center bg-[#1B2A21]/70 p-5 backdrop-blur-sm"
+      onClick={() => onClose(hide)}
+    >
+      <div
+        className="pj-pop relative w-full max-w-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* ปุ่มปิด อยู่นอกการ์ด */}
+        <button
+          onClick={() => onClose(hide)}
+          aria-label="ปิดป้ายนี้"
+          className="absolute -top-14 right-0 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#1B2A21] shadow-md transition-transform active:scale-90"
+        >
+          <Icon d={ICONS.close} size={20} />
+        </button>
+
+      <div className="relative flex min-h-[640px] w-full flex-col justify-end overflow-hidden rounded-[32px] bg-gradient-to-t from-[#1B2A21] to-[#8FB54A] text-white shadow-2xl">
+        {/* รูปเต็มการ์ด */}
+        {imgOk && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src="/img/jump.jpg"
+            alt=""
+            draggable={false}
+            onError={() => setImgOk(false)}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        )}
+
+        {/* ไล่สีเขียว: เข้มล่าง (ที่ข้อความ) → จางบน (เห็นรูป) */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#1B2A21] via-[#1B2A21]/85 via-45% to-[#3F5E1F]/10" />
+
+        {/* ข้อความอยู่ในรูป */}
+        <div className="relative px-6 pb-5 pt-56 text-center">
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#C9F25B] px-3 py-1 text-[12px] font-semibold text-[#1B2A21]">
+            <Icon d={ICONS.star} size={12} fill />
+            รับ point ทุกวัน
+          </span>
+          <h2 className="mt-3 text-[30px] font-bold leading-tight tracking-tight drop-shadow-sm">
+            โดดปั๊บ รับ{" "}
+            <span className="inline-flex items-center gap-1.5 align-middle text-[#C9F25B]">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
+                <Icon d={ICONS.star} size={18} fill />
+              </span>
+              {POINT_REWARD} point!
+            </span>
+          </h2>
+          <p className="mt-2 text-[14px] leading-6 text-white/85">
+            {POINT_QUOTA} คนแรกที่โดดถึงเป้าหมายรายวัน รับ {POINT_REWARD} point
+            เซ็ตใหม่ทุกเที่ยงคืนเวลาไทย
+          </p>
+
+          <button
+            onClick={() => onStart(hide)}
+            className="pj-glow mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all active:scale-[0.98] active:bg-[#B8E348]"
+          >
+            เริ่มเลย
+          </button>
+
+          <label className="mt-4 inline-flex cursor-pointer items-center gap-2 text-[14px] text-white/80">
+            <input
+              type="checkbox"
+              checked={hide}
+              onChange={(e) => setHide(e.target.checked)}
+              className="h-5 w-5 accent-[#C9F25B]"
+            />
+            ไม่ต้องแสดงอีก
+          </label>
+        </div>
+      </div>
       </div>
     </div>
   );
@@ -1773,7 +1904,7 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
       {/* แผงแบรนด์ (เดสก์ท็อป) */}
       <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
         <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
-          <Logo size={56} className="-my-2.5" />
+          <Logo size={80} className="-my-6" />
           {APP_NAME}
         </div>
         <div>
@@ -1802,7 +1933,7 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
       <div className="flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
         <div className="flex h-12 items-center justify-between">
           <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
-            <Logo size={40} />
+            <Logo size={56} className="-my-2" />
             {APP_NAME}
           </div>
         </div>
@@ -1941,7 +2072,7 @@ function Shell({
     <div className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] lg:flex">
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-1 p-5 lg:flex">
         <div className="mb-6 flex items-center gap-2 px-3 text-[20px] font-bold tracking-tight">
-          <Logo size={48} className="-my-2" />
+          <Logo size={68} className="-my-4" />
           {APP_NAME}
         </div>
         {items.map(([t, label, d]) => (
@@ -1967,7 +2098,7 @@ function Shell({
       >
         <div className="mb-4 flex h-10 items-center justify-between lg:hidden">
           <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
-            <Logo size={40} className="-my-1" />
+            <Logo size={56} className="-my-2" />
             {APP_NAME}
           </div>
           {profile}
@@ -2041,6 +2172,9 @@ export default function Home() {
   const [board, setBoard] = useState<Board | null>(null);
   const [boardErr, setBoardErr] = useState(false);
   const [boardNow, setBoardNow] = useState(0);
+  // ป๊อปอัพเชิญชวน: แสดงครั้งเดียวต่อการเข้าแอป ถ้าไม่ได้ติ๊ก "ไม่ต้องแสดงอีก"
+  const [promoOpen, setPromoOpen] = useState(false);
+  const promoShownRef = useRef(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -2133,6 +2267,23 @@ export default function Home() {
   useEffect(() => {
     historyRef.current = history;
   }, [history]);
+
+  // เข้าแอปแล้วแสดงป๊อปอัพ (เฉพาะผู้ที่ล็อกอินแล้ว และไม่ได้ติ๊กไม่ต้องแสดงอีก)
+  useEffect(() => {
+    if (!authReady) return;
+    if (!user) {
+      promoShownRef.current = false;
+      return;
+    }
+    if (promoShownRef.current) return;
+    promoShownRef.current = true;
+    try {
+      if (localStorage.getItem(PROMO_KEY) === "1") return;
+    } catch {
+      // อ่านค่าไม่ได้ก็แสดงตามปกติ
+    }
+    setPromoOpen(true);
+  }, [authReady, user]);
 
   // โหลดภาพยืนยันของวันนี้ (แยกตามผู้ใช้ ข้ามวันแล้วรีเซ็ต)
   useEffect(() => {
@@ -2944,6 +3095,17 @@ export default function Home() {
     }
   }, [loop, stopAll, facing, captureShot, commitShot]);
 
+  const closePromo = useCallback((hide: boolean) => {
+    setPromoOpen(false);
+    if (hide) {
+      try {
+        localStorage.setItem(PROMO_KEY, "1");
+      } catch {
+        // บันทึกไม่ได้ก็ข้ามไป
+      }
+    }
+  }, []);
+
   const skipLeveling = () => {
     const done = levelResolveRef.current;
     levelResolveRef.current = null;
@@ -3673,6 +3835,15 @@ export default function Home() {
           {tab === "history" && historyView}
           {tab === "settings" && settingsView}
         </Shell>
+        {user && promoOpen && tab === "home" && (
+          <PromoPopup
+            onClose={closePromo}
+            onStart={(hide) => {
+              closePromo(hide);
+              setTab("home");
+            }}
+          />
+        )}
         {!user && <AuthScreen onAuthed={login} />}
       </div>
     );
@@ -4189,7 +4360,7 @@ export default function Home() {
       {(isPrep || phase === "running") && (
         <aside className="pj-in hidden h-full max-h-[880px] w-[360px] shrink-0 flex-col gap-4 text-[#1B2A21] lg:flex">
           <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
-            <Logo size={48} className="-my-2" />
+            <Logo size={68} className="-my-4" />
             {APP_NAME}
           </div>
 
