@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { getDb } from "../../../../lib/mongodb";
 import { createSession } from "../../../../lib/auth";
+import { getUserPoints } from "../../../../lib/points";
 
 export async function POST(req: Request) {
   try {
@@ -33,8 +34,17 @@ export async function POST(req: Request) {
     }
 
     await createSession(u._id);
+
+    // userId ใน points / goal_hits / jumps คือ currentUser().id
+    // ที่นี่ใช้ String(u._id) ให้ตรงกัน (ถ้า currentUser().id เป็นชนิดอื่น ต้องแก้ตรงนี้)
+    const points = await getUserPoints(String(u._id));
+
     return NextResponse.json({
-      user: { name: u.nickname as string, username: u.display as string },
+      user: {
+        name: u.nickname as string,
+        username: u.display as string,
+        points,
+      },
     });
   } catch (e) {
     console.error("login failed", e);

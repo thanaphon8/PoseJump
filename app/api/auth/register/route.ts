@@ -40,8 +40,9 @@ export async function POST(req: Request) {
         createdAt: new Date(),
       });
       await createSession(r.insertedId);
+      // ผู้ใช้ใหม่ยังไม่มี point (แถวใน collection "points" จะถูกสร้างตอนได้ point ครั้งแรก)
       return NextResponse.json(
-        { user: { name: nickname, username: display } },
+        { user: { name: nickname, username: display, points: 0 } },
         { status: 201 }
       );
     } catch (e) {

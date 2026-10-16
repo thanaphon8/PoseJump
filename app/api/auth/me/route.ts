@@ -1,13 +1,15 @@
 import { NextResponse, connection } from "next/server";
 import { currentUser } from "../../../../lib/auth";
+import { getUserPoints } from "../../../../lib/points";
 
 export async function GET() {
   await connection();
   try {
     const u = await currentUser();
+    const points = u ? await getUserPoints(u.id) : 0;
     return NextResponse.json(
       {
-        user: u ? { name: u.nickname, username: u.username } : null,
+        user: u ? { name: u.nickname, username: u.username, points } : null,
       },
       { headers: { "Cache-Control": "no-store" } }
     );

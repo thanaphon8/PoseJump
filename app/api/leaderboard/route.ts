@@ -19,6 +19,8 @@ export async function GET() {
   try {
     const now = Date.now();
     const start = Math.floor((now + TZ_OFFSET) / DAY) * DAY - TZ_OFFSET;
+    // ต้องตรงกับ key ที่ /api/sessions ใช้บันทึก goal_hits (YYYY-MM-DD เวลาไทย)
+    const dayStr = new Date(start + TZ_OFFSET).toISOString().slice(0, 10);
 
     const user = await currentUser();
     const myId = user ? String(user.id) : null;
@@ -48,13 +50,31 @@ export async function GET() {
       .toArray();
     const names = new Map(users.map((u) => [String(u._id), u.nickname as string]));
 
+    // ลำดับที่ทำเป้าหมายรายวันสำเร็จของแต่ละคนในวันนี้ (1 = คนแรก)
+    // userId ใน goal_hits ชนิดเดียวกับใน jumps (ใช้ user.id ตรงๆ เหมือนกัน)
+    const hitIds: unknown[] = top.map((r) => r._id);
+    const hits = await db
+      .collection("goal_hits")
+      .find({ day: dayStr, userId: { $in: hitIds } })
+      .project({ userId: 1, seq: 1 })
+      .toArray();
+    const seqOf = new Map(hits.map((h) => [String(h.userId), h.seq as number]));
+
     const entries = top.map((r, i) => ({
       rank: i + 1,
       name: names.get(String(r._id)) ?? "ไม่ระบุชื่อ",
       total: r.total,
       rounds: r.rounds,
       me: String(r._id) === myId,
+      goalRank: seqOf.get(String(r._id)) ?? null,
     }));
+
+    // point รวมของผู้ใช้ที่ล็อกอิน
+    let myPoints = 0;
+    if (user) {
+      const p = await db.collection("points").findOne({ userId: user.id });
+      myPoints = typeof p?.points === "number" ? p.points : 0;
+    }
 
     const idx = myId ? rows.findIndex((r) => String(r._id) === myId) : -1;
     const me =
@@ -64,6 +84,7 @@ export async function GET() {
             total: rows[idx].total,
             // ต้องโดดอีกกี่ครั้งถึงจะแซงคนอันดับถัดขึ้นไป
             gap: idx > 0 ? rows[idx - 1].total - rows[idx].total + 1 : 0,
+            points: myPoints,
           }
         : null;
 

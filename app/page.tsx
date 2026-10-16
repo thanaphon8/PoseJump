@@ -47,6 +47,10 @@ const KCAL_PER_JUMP = 0.1;
 const DAY = 864e5;
 const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
+// point: 50 คนแรกของวันที่ทำเป้าหมายรายวันสำเร็จ ได้ 100 point (คำนวณฝั่งเซิร์ฟเวอร์)
+const POINT_QUOTA = 50;
+const POINT_REWARD = 100;
+
 // สี
 const LIME = "#C9F25B";
 
@@ -87,6 +91,7 @@ type Session = {
 type User = {
   name: string;
   username?: string;
+  points?: number;
 };
 
 type Settings = {
@@ -109,11 +114,13 @@ type BoardEntry = {
   total: number;
   rounds: number;
   me: boolean;
+  // ลำดับที่ทำเป้าหมายรายวันสำเร็จ (1 = คนแรก) null = ยังไม่ถึงเป้า
+  goalRank: number | null;
 };
 
 type Board = {
   entries: BoardEntry[];
-  me: { rank: number; total: number; gap: number } | null;
+  me: { rank: number; total: number; gap: number; points: number } | null;
   count: number;
   resetAt: number;
 };
@@ -706,6 +713,7 @@ const ICONS = {
   eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
   eyeOff:
     "M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 4M6.5 6.6C3.7 8.4 2 12 2 12s4 7 10 7c1.6 0 3-.4 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2",
+  star: "M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z",
 };
 
 function Ring({
@@ -1034,6 +1042,83 @@ function Avatar({ name, size = 40 }: { name: string; size?: number }) {
   );
 }
 
+// แท็กบอกว่าแต่ละคนทัน 50 คนแรกที่ทำเป้าหมายรายวันสำเร็จหรือไม่
+function GoalTag({ goalRank }: { goalRank: number | null }) {
+  if (goalRank === null) {
+    return (
+      <span className="shrink-0 rounded-full border border-[#C5CFB5] px-2 py-0.5 text-[11px] font-semibold text-[#6B7A6E]">
+        ยังไม่ถึงเป้า
+      </span>
+    );
+  }
+  if (goalRank <= POINT_QUOTA) {
+    return (
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-[#3F5E1F] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
+        <Icon d={ICONS.check} size={11} />
+        ทัน {POINT_QUOTA} คนแรก · +{POINT_REWARD}
+      </span>
+    );
+  }
+  return (
+    <span className="shrink-0 rounded-full bg-[#EEF2E4] px-2 py-0.5 text-[11px] font-semibold text-[#6B7A6E]">
+      ไม่ทัน {POINT_QUOTA} คนแรก
+    </span>
+  );
+}
+
+// ป้าย point รวมของบัญชี
+function PointBadge({ points }: { points: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#3F5E1F]">
+      <Icon d={ICONS.star} size={12} fill />
+      {fmtNum(points)} point
+    </span>
+  );
+}
+
+// แบนเนอร์ชวนโดด: 50 คนแรกที่ถึงเป้ารายวันรับ point
+function PromoBanner({ status }: { status: "open" | "won" | "missed" }) {
+  const won = status === "won";
+  const missed = status === "missed";
+  return (
+    <section
+      className={`relative overflow-hidden rounded-3xl p-5 ${
+        won ? "bg-[#3F5E1F] text-white" : "bg-[#C9F25B] text-[#1B2A21]"
+      }`}
+    >
+      <div className="flex items-center gap-4">
+        <span
+          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${
+            won ? "bg-[#C9F25B] text-[#1B2A21]" : "bg-[#1B2A21] text-[#C9F25B]"
+          }`}
+        >
+          <Icon d={ICONS.star} size={28} fill />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[18px] font-bold leading-snug">
+            {won
+              ? `เยี่ยม! คุณทัน ${POINT_QUOTA} คนแรก รับ +${POINT_REWARD} point แล้ว`
+              : missed
+                ? `วันนี้เต็ม ${POINT_QUOTA} คนแล้ว พรุ่งนี้ลุยใหม่!`
+                : `${POINT_QUOTA} คนแรกที่โดดถึงเป้า รับ ${POINT_REWARD} point!`}
+          </div>
+          <p
+            className={`mt-1 text-[13px] leading-5 ${
+              won ? "text-white/80" : "text-[#3F5E1F]"
+            }`}
+          >
+            {won
+              ? "ทำเป้าหมายรายวันสำเร็จก่อนใครๆ ขอบคุณที่โดดทุกวัน"
+              : missed
+                ? "ลำดับวันนี้ครบโควตาแล้ว แต่ยังโดดให้ถึงเป้าเพื่อเก็บสถิติได้"
+                : "ทำเป้าหมายรายวันให้สำเร็จก่อนคนอื่น ลำดับ 51 เป็นต้นไปไม่ได้ point รีเซ็ตทุกเที่ยงคืนเวลาไทย"}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // มุมขวาบน: รูปโปรไฟล์ + เมนูออกจากระบบ (ยังไม่ล็อกอินจะเห็นหน้า login แทน)
 function ProfileMenu({
   user,
@@ -1054,7 +1139,20 @@ function ProfileMenu({
   }, [menu]);
 
   return (
-    <div className="relative">
+    <div className="relative flex items-center gap-2">
+      {user && (
+        <div
+          className="flex items-center gap-1.5 rounded-full bg-white p-1 pr-3 shadow-sm"
+          aria-label={`${fmtNum(user.points ?? 0)} point`}
+        >
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1B2A21] text-[#C9F25B]">
+            <Icon d={ICONS.star} size={18} fill />
+          </span>
+          <span className="text-[14px] font-semibold tabular-nums">
+            {fmtNum(user.points ?? 0)}
+          </span>
+        </div>
+      )}
       {user && (
         <button
           onClick={() => setMenu((v) => !v)}
@@ -1226,6 +1324,7 @@ function SidebarUser({
             @{user.username}
           </div>
         )}
+        <PointBadge points={user.points ?? 0} />
       </div>
       <button
         onClick={onLogout}
@@ -1405,6 +1504,7 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
     "นับการกระโดดอัตโนมัติด้วยกล้อง",
     "ตั้งเป้าหมายรายวัน ดูความคืบหน้า",
     "ปฏิทินติ๊กถูกทุกวันที่ทำถึงเป้า",
+    `${POINT_QUOTA} คนแรกที่ถึงเป้าทุกวัน รับ ${POINT_REWARD} point`,
   ];
 
   return (
@@ -2118,11 +2218,20 @@ export default function Home() {
           return next;
         });
         if (loggedIn) {
+          // เซิร์ฟเวอร์ตัดสินว่าได้ point ไหม แล้วส่งยอด point รวมกลับมา
           fetch("/api/sessions", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(entry),
-          }).catch(() => {});
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d: { points?: number } | null) => {
+              const pts = d?.points;
+              if (typeof pts === "number") {
+                setUser((u) => (u ? { ...u, points: pts } : u));
+              }
+            })
+            .catch(() => {});
         }
       }
 
@@ -2321,8 +2430,14 @@ export default function Home() {
     try {
       const r = await fetch("/api/leaderboard", { cache: "no-store" });
       if (!r.ok) throw new Error("load failed");
-      setBoard((await r.json()) as Board);
+      const b = (await r.json()) as Board;
+      setBoard(b);
       setBoardErr(false);
+      // ซิงก์ point ล่าสุดของตัวเองเข้า user (เช่น ได้ point จากอุปกรณ์อื่น)
+      const pts = b.me?.points;
+      if (typeof pts === "number") {
+        setUser((u) => (u && u.points !== pts ? { ...u, points: pts } : u));
+      }
     } catch {
       setBoardErr(true);
     }
@@ -2740,7 +2855,16 @@ export default function Home() {
           <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
             พร้อมโดดไหม{user ? ` ${user.name}` : ""} 👋
           </h1>
+          {user && (
+            <div className="mt-1 hidden lg:block">
+              <PointBadge points={user.points ?? 0} />
+            </div>
+          )}
         </header>
+
+        <div className="mb-4">
+          <PromoBanner status="open" />
+        </div>
 
         <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
           <div className="space-y-4">
@@ -2937,6 +3061,18 @@ export default function Home() {
           </button>
         </header>
 
+        {(() => {
+          const mine = board?.entries.find((e) => e.me);
+          const gr = mine?.goalRank ?? null;
+          const st: "open" | "won" | "missed" =
+            gr === null ? "open" : gr <= POINT_QUOTA ? "won" : "missed";
+          return (
+            <div className="mb-4">
+              <PromoBanner status={st} />
+            </div>
+          );
+        })()}
+
         {!board && !boardErr && (
           <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
             กำลังโหลดอันดับ
@@ -3002,6 +3138,9 @@ export default function Home() {
                       <div className="mt-2 text-[14px] text-[#4B5E3A]">
                         {fmtNum(board.me.total)} ครั้งวันนี้
                       </div>
+                      <div className="mt-1">
+                        <PointBadge points={board.me.points} />
+                      </div>
                     </div>
                     <div className="max-w-[160px] text-right text-[13px] font-medium text-[#3F5E1F]">
                       {board.me.rank === 1
@@ -3057,6 +3196,14 @@ export default function Home() {
                             </span>
                           )}
                         </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <GoalTag goalRank={e.goalRank ?? null} />
+                          {e.goalRank != null && (
+                            <span className="text-[11px] text-[#6B7A6E]">
+                              ถึงเป้าลำดับที่ {e.goalRank}
+                            </span>
+                          )}
+                        </div>
                         <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]">
                           <div
                             className="h-full rounded-full transition-[width] duration-500"
@@ -3080,7 +3227,7 @@ export default function Home() {
                 </ul>
               )}
               <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-                นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุกเที่ยงคืนเวลาไทย
+                {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุกเที่ยงคืนเวลาไทย
               </p>
             </section>
           </div>
@@ -3451,6 +3598,11 @@ export default function Home() {
                 style={{ width: `${goalPct * 100}%` }}
               />
             </div>
+            {user && (
+              <div className="mt-3">
+                <PointBadge points={user.points ?? 0} />
+              </div>
+            )}
           </section>
 
           </div>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Db } from "mongodb";
 import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
 
@@ -11,6 +12,116 @@ const num = (v: unknown, min: number, max: number) =>
   typeof v === "number" && Number.isFinite(v) && v >= min && v <= max
     ? Math.round(v)
     : null;
+
+/* ------------------------------------------------------------------ */
+/* ระบบ point                                                           */
+/* ------------------------------------------------------------------ */
+
+// 50 คนแรกของวัน (เวลาไทย) ที่ทำเป้าหมายรายวันสำเร็จ ได้ 100 point
+const POINT_QUOTA = 50;
+const POINT_REWARD = 100;
+const DEFAULT_GOAL = 1500;
+// เป้าขั้นต่ำที่นับ point กันตั้งเป้า 100 แล้วรีบถึงก่อนใคร
+const MIN_GOAL_FOR_POINTS = 1000;
+
+const TH_OFFSET = 7 * 3600_000; // ไทย UTC+7 ไม่มี DST
+
+// ช่วงวันไทยของเวลา t [start, end) เป็น epoch ms
+function thaiDay(t: number) {
+  const start = Math.floor((t + TH_OFFSET) / 864e5) * 864e5 - TH_OFFSET;
+  const key = new Date(start + TH_OFFSET).toISOString().slice(0, 10); // YYYY-MM-DD
+  return { start, end: start + 864e5, key };
+}
+
+// สร้าง index ครั้งเดียวต่อโปรเซส
+let indexReady: Promise<unknown> | null = null;
+function ensureIndexes(db: Db) {
+  if (!indexReady) {
+    indexReady = Promise.all([
+      // 1 คน 1 วัน ได้บันทึกถึงเป้าครั้งเดียว กัน point ซ้ำ
+      db
+        .collection("goal_hits")
+        .createIndex({ userId: 1, day: 1 }, { unique: true }),
+      // เรียงลำดับในวันเดียวกัน
+      db.collection("goal_hits").createIndex({ day: 1, seq: 1 }),
+      db.collection("points").createIndex({ userId: 1 }, { unique: true }),
+    ]).catch((e) => {
+      indexReady = null;
+      console.error("ensureIndexes failed", e);
+    });
+  }
+  return indexReady;
+}
+
+const isDup = (e: unknown) =>
+  typeof e === "object" && e !== null && (e as { code?: number }).code === 11000;
+
+// เช็กว่าวันนี้ผู้ใช้ถึงเป้าหรือยัง ถ้าถึงเป็นครั้งแรกของวัน จองลำดับและให้ point
+async function settleDailyGoal(db: Db, userId: unknown, now: number) {
+  const { start, end, key } = thaiDay(now);
+
+  const already = await db.collection("goal_hits").findOne({ userId, day: key });
+  if (already) return;
+
+  // ยอดรวมวันนี้ (วันไทย) ของผู้ใช้
+  const agg = await db
+    .collection("jumps")
+    .aggregate<{ total: number }>([
+      { $match: { userId, ts: { $gte: start, $lt: end } } },
+      { $group: { _id: null, total: { $sum: "$total" } } },
+    ])
+    .toArray();
+  const todayTotal = agg[0]?.total ?? 0;
+
+  // เป้าของผู้ใช้ (collection "settings" เก็บ dailyGoal ตามผู้ใช้)
+  const s = await db.collection("settings").findOne({ userId });
+  const goal = Math.max(
+    MIN_GOAL_FOR_POINTS,
+    typeof s?.dailyGoal === "number" ? s.dailyGoal : DEFAULT_GOAL
+  );
+  if (todayTotal < goal) return;
+
+  // จองลำดับแบบ atomic: ใครมาก่อนได้เลขน้อยกว่า
+  const res = await db
+    .collection<{ _id: string; seq: number }>("goal_counters")
+    .findOneAndUpdate(
+      { _id: key },
+      { $inc: { seq: 1 } },
+      { upsert: true, returnDocument: "after" }
+    );
+  // รองรับทั้ง mongodb driver v5 (res.value) และ v6 (res เป็น doc ตรงๆ)
+  const doc = (res && "value" in (res as object)
+    ? (res as unknown as { value: { seq: number } | null }).value
+    : res) as { seq: number } | null;
+  const seq = doc?.seq ?? 1;
+  const award = seq <= POINT_QUOTA ? POINT_REWARD : 0;
+
+  try {
+    await db.collection("goal_hits").insertOne({
+      userId,
+      day: key,
+      seq,
+      reachedAt: now,
+      award,
+    });
+  } catch (e) {
+    if (isDup(e)) return; // มี request อื่นบันทึกไปก่อนแล้ว ไม่ให้ซ้ำ
+    throw e;
+  }
+
+  if (award > 0) {
+    await db
+      .collection("points")
+      .updateOne({ userId }, { $inc: { points: award } }, { upsert: true });
+  }
+}
+
+async function getPoints(db: Db, userId: unknown) {
+  const p = await db.collection("points").findOne({ userId });
+  return typeof p?.points === "number" ? p.points : 0;
+}
+
+/* ------------------------------------------------------------------ */
 
 // ประวัติการกระโดด 300 รอบล่าสุด
 export async function GET() {
@@ -43,7 +154,7 @@ export async function GET() {
   }
 }
 
-// บันทึกรอบใหม่
+// บันทึกรอบใหม่ + ตัดสิน point
 export async function POST(req: Request) {
   try {
     const user = await currentUser();
@@ -79,6 +190,8 @@ export async function POST(req: Request) {
     if (Math.abs(now - ts) > 864e5) ts = now;
 
     const db = await getDb();
+    await ensureIndexes(db);
+
     await db.collection("jumps").insertOne({
       userId: user.id,
       ts,
@@ -89,14 +202,23 @@ export async function POST(req: Request) {
       mode,
       kcal,
     });
-    return NextResponse.json({ ok: true }, { status: 201 });
+
+    // ให้ point ล้มเหลวไม่ทำให้การบันทึกรอบล้มเหลว
+    try {
+      await settleDailyGoal(db, user.id, now);
+    } catch (e) {
+      console.error("settleDailyGoal failed", e);
+    }
+
+    const points = await getPoints(db, user.id).catch(() => 0);
+    return NextResponse.json({ ok: true, points }, { status: 201 });
   } catch (e) {
     console.error("sessions POST failed", e);
     return failed();
   }
 }
 
-// ล้างประวัติทั้งหมดของผู้ใช้
+// ล้างประวัติทั้งหมดของผู้ใช้ (ไม่ลบ point และบันทึกถึงเป้า)
 export async function DELETE() {
   try {
     const user = await currentUser();
