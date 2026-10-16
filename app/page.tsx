@@ -1911,7 +1911,7 @@ function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
       role="dialog"
       aria-modal="true"
       aria-label={isReg ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
-      className="pj-in fixed inset-0 z-50 overflow-y-auto bg-[#F3F6EC] text-[#1B2A21] lg:grid lg:grid-cols-[1fr_1fr]"
+      className="pj-in fixed inset-0 z-50 overflow-y-auto overflow-x-hidden bg-[#F3F6EC] text-[#1B2A21] lg:grid lg:grid-cols-[1fr_1fr]"
     >
       {/* แผงแบรนด์ (เดสก์ท็อป) */}
       <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
@@ -2081,7 +2081,7 @@ function Shell({
     ["settings", "ตั้งค่า", ICONS.gear],
   ];
   return (
-    <div className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] lg:flex">
+    <div className="fixed inset-0 overflow-hidden bg-[#F3F6EC] text-[#1B2A21] lg:flex">
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-1 p-5 lg:flex">
         <div className="mb-6 flex items-center gap-2 px-3 text-[20px] font-bold tracking-tight">
           <Logo size={88} className="-my-[26px]" />
@@ -2104,9 +2104,13 @@ function Shell({
         <div className="mt-auto">{footer}</div>
       </aside>
 
-      <main
+      <div
         key={tab}
-        className="pj-fade mx-auto w-full max-w-6xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12"
+        className="h-full min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+        style={{ touchAction: "pan-y" }}
+      >
+      <main
+        className="pj-fade mx-auto w-full max-w-6xl px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12"
       >
         <div className="mb-4 flex h-10 items-center justify-between lg:hidden">
           <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
@@ -2117,6 +2121,7 @@ function Shell({
         </div>
         {children}
       </main>
+      </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 flex justify-around border-t border-[#E3EAD6] bg-white/90 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl lg:hidden">
         {items.map(([t, label, d]) => (
@@ -2392,6 +2397,10 @@ export default function Home() {
     meta.setAttribute("content", "#F3F6EC");
     document.documentElement.style.backgroundColor = "#F3F6EC";
     document.documentElement.style.colorScheme = "light";
+    // กันเลื่อนซ้าย-ขวา
+    document.documentElement.style.overflowX = "hidden";
+    document.body.style.overflowX = "hidden";
+    document.body.style.overscrollBehaviorX = "none";
   }, []);
 
   useEffect(() => {
@@ -3906,7 +3915,7 @@ export default function Home() {
     return (
       <div
         style={fontStyle}
-        className="min-h-dvh select-none bg-[#F3F6EC] text-[#1B2A21] antialiased"
+        className="min-h-dvh select-none overflow-x-hidden bg-[#F3F6EC] text-[#1B2A21] antialiased"
       >
         <style>{STYLES}</style>
         <main className="pj-fade mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] lg:max-w-5xl lg:py-10">
