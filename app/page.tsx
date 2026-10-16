@@ -2494,7 +2494,7 @@ export default function Home() {
               const pts = d?.points;
               if (typeof pts === "number") {
                 // point เพิ่มขึ้น = เข้า 100 คนแรก แสดงหน้าแสดงความยินดี
-                if (pts > before) setReward({ gain: pts - before, total: pts });
+                if (pts > before) setReward({ gain: POINT_REWARD, total: pts });
                 setUser((u) => (u ? { ...u, points: pts } : u));
               }
             })

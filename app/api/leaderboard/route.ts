@@ -6,7 +6,7 @@ import { currentUser } from "../../../lib/auth";
 // "วันนี้" นับตามเวลาไทย (UTC+7) อันดับจึงรีเซ็ตตอนเที่ยงคืนของไทย
 const TZ_OFFSET = 7 * 3_600_000;
 const DAY = 864e5;
-const TOP = 50;
+const TOP = 100;
 // ต้องตรงกับ DEFAULT_GOAL ใน /api/sessions
 const DEFAULT_GOAL = 1500;
 

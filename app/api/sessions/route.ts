@@ -18,8 +18,8 @@ const num = (v: unknown, min: number, max: number) =>
 /* ------------------------------------------------------------------ */
 
 // 50 คนแรกของวัน (เวลาไทย) ที่ทำเป้าหมายรายวันสำเร็จ ได้ 100 point
-const POINT_QUOTA = 50;
-const POINT_REWARD = 100;
+const POINT_QUOTA = 100;
+const POINT_REWARD = 50;
 const DEFAULT_GOAL = 1500;
 // เป้าขั้นต่ำที่นับ point (0 = ไม่จำกัด ใช้เป้าที่ผู้ใช้ตั้งเองตรงๆ)
 // ถ้าอยากกันคนตั้งเป้าต่ำๆ ให้ตั้ง MIN_GOAL_FOR_POINTS ใน .env.local เช่น 1000
