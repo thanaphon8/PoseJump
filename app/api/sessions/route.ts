@@ -21,8 +21,9 @@ const num = (v: unknown, min: number, max: number) =>
 const POINT_QUOTA = 50;
 const POINT_REWARD = 100;
 const DEFAULT_GOAL = 1500;
-// เป้าขั้นต่ำที่นับ point กันตั้งเป้า 100 แล้วรีบถึงก่อนใคร
-const MIN_GOAL_FOR_POINTS = 1000;
+// เป้าขั้นต่ำที่นับ point (0 = ไม่จำกัด ใช้เป้าที่ผู้ใช้ตั้งเองตรงๆ)
+// ถ้าอยากกันคนตั้งเป้าต่ำๆ ให้ตั้ง MIN_GOAL_FOR_POINTS ใน .env.local เช่น 1000
+const MIN_GOAL_FOR_POINTS = Number(process.env.MIN_GOAL_FOR_POINTS ?? 0) || 0;
 
 const TH_OFFSET = 7 * 3600_000; // ไทย UTC+7 ไม่มี DST
 
