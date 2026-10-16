@@ -36,9 +36,6 @@ const REQUIRED_LANDMARKS = [11, 12, 23, 24, 27, 28];
 const MIN_AMPLITUDE = 0.035;
 const MIN_JUMP_INTERVAL_MS = 220;
 
-const TIME_PRESETS = [30, 60, 120, 180];
-const COUNT_PRESETS = [50, 100, 200, 500];
-
 const STORAGE_KEY = "pose-jump-settings";
 const HISTORY_KEY = "pose-jump-history";
 const SHOTS_KEY = "pose-jump-shots";
@@ -49,9 +46,17 @@ const DAY = 864e5;
 const HISTORY_PAGE_SIZE = 20;
 const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
-// point: 50 คนแรกของวันที่ทำเป้าหมายรายวันสำเร็จ ได้ 100 point (คำนวณฝั่งเซิร์ฟเวอร์)
-const POINT_QUOTA = 50;
-const POINT_REWARD = 100;
+// point: 100 คนแรกของวันที่ทำเป้าหมายรายวันสำเร็จ ได้ 50 point (คำนวณฝั่งเซิร์ฟเวอร์)
+const POINT_QUOTA = 100;
+const POINT_REWARD = 50;
+
+// กติกาการเล่น: ใส่ reward ในแถวไหนก็ได้ ถ้าสัปดาห์นั้นมีแต้ม
+const WEEK_RULES: { week: number; jumps: number; reward?: number }[] = [
+  { week: 1, jumps: 100, reward: POINT_REWARD },
+  { week: 2, jumps: 200 },
+  { week: 3, jumps: 300 },
+  { week: 5, jumps: 500 },
+];
 
 // สี
 const LIME = "#C9F25B";
@@ -645,7 +650,22 @@ const STYLES = `
 .pj-in { animation: pj-in .25s ease-out both; }
 @keyframes pj-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 .pj-pulse { animation: pj-pulse 1.4s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-pop, .pj-in, .pj-pulse { animation: none; } }
+@keyframes pj-float { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-5px) rotate(4deg); } }
+.pj-float { animation: pj-float 2.4s ease-in-out infinite; }
+@keyframes pj-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(201,242,91,.55); } 50% { box-shadow: 0 0 0 10px rgba(201,242,91,0); } }
+.pj-glow { animation: pj-glow 2s ease-out infinite; }
+@keyframes pj-coin { 0% { transform: translateY(-12vh) rotate(0); opacity: 0; } 10% { opacity: 1; } 100% { transform: translateY(112vh) rotate(540deg); opacity: .9; } }
+.pj-coin { position: absolute; top: 0; animation: pj-coin linear infinite; }
+@keyframes pj-stamp { 0% { transform: scale(.2) rotate(-25deg); opacity: 0; } 60% { transform: scale(1.15) rotate(6deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
+.pj-stamp { animation: pj-stamp .6s cubic-bezier(.2,.9,.3,1.2) both; }
+.pj-lift { transition: transform .2s ease, box-shadow .2s ease; }
+@media (hover: hover) { .pj-lift:hover { transform: translateY(-3px); box-shadow: 0 10px 24px -12px rgba(27,42,33,.25); } }
+.pj-stagger > * { animation: pj-fade .45s cubic-bezier(.2,.8,.2,1) both; }
+.pj-stagger > *:nth-child(2) { animation-delay: .06s; }
+.pj-stagger > *:nth-child(3) { animation-delay: .12s; }
+.pj-stagger > *:nth-child(4) { animation-delay: .18s; }
+.pj-stagger > *:nth-child(5) { animation-delay: .24s; }
+@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-pop, .pj-in, .pj-pulse, .pj-float, .pj-glow, .pj-coin, .pj-stamp, .pj-stagger > * { animation: none; } .pj-lift { transition: none; } }
 `;
 
 function Icon({
@@ -1118,7 +1138,7 @@ function Avatar({ name, size = 40 }: { name: string; size?: number }) {
   );
 }
 
-// แท็กบอกว่าแต่ละคนทัน 50 คนแรกที่ทำเป้าหมายรายวันสำเร็จหรือไม่
+// แท็กบอกว่าแต่ละคนทัน 100 คนแรกที่ทำเป้าหมายรายวันสำเร็จหรือไม่
 function GoalTag({ goalRank }: { goalRank: number | null }) {
   if (goalRank === null) {
     return (
@@ -1152,7 +1172,7 @@ function PointBadge({ points }: { points: number }) {
   );
 }
 
-// แบนเนอร์ชวนโดด: 50 คนแรกที่ถึงเป้ารายวันรับ point
+// แบนเนอร์ชวนโดด: 100 คนแรกที่ถึงเป้ารายวันรับ point
 function PromoBanner({ status }: { status: "open" | "won" | "missed" }) {
   const won = status === "won";
   const missed = status === "missed";
@@ -1193,6 +1213,68 @@ function PromoBanner({ status }: { status: "open" | "won" | "missed" }) {
       </div>
     </section>
   );
+}
+
+// ป้ายประกาศกติกาการเล่น (แทนส่วนตั้งค่ารอบถัดไป)
+function RulesBoard() {
+  return (
+    <section className="relative overflow-hidden rounded-3xl bg-[#E8F5C1] p-5">
+      <div className="flex items-center gap-3">
+        <span className="pj-float flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1B2A21] text-[#C9F25B]">
+          <Icon d={ICONS.star} size={22} fill />
+        </span>
+        <div>
+          <h2 className="text-[16px] font-semibold">กติกาการเล่น</h2>
+          <p className="text-[12px] text-[#4B5E3A]">
+            {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน รับ {POINT_REWARD} point
+          </p>
+        </div>
+      </div>
+      <ul className="pj-stagger mt-4 space-y-2">
+        {WEEK_RULES.map((r) => (
+          <li
+            key={r.week}
+            className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3"
+          >
+            <span className="flex h-9 shrink-0 items-center rounded-full bg-[#1B2A21] px-3 text-[13px] font-semibold text-[#C9F25B]">
+              Week {r.week}
+            </span>
+            <span className="flex-1 text-[16px] font-semibold tabular-nums">
+              โดด {fmtNum(r.jumps)} ครั้ง
+            </span>
+            {r.reward && (
+              <span className="flex items-center gap-1 rounded-full bg-[#3F5E1F] px-2.5 py-1 text-[12px] font-semibold text-[#C9F25B]">
+                <Icon d={ICONS.star} size={12} fill />
+                {r.reward} แต้ม
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// ตัวเลขนับขึ้นจาก 0 (ไม่นับถ้าผู้ใช้ตั้งค่าลดการเคลื่อนไหว)
+function CountUp({ value, ms = 700 }: { value: number; ms?: number }) {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setV(value);
+      return;
+    }
+    let raf = 0;
+    let s = 0;
+    const tick = (t: number) => {
+      if (!s) s = t;
+      const p = Math.min(1, (t - s) / ms);
+      setV(Math.round(value * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, ms]);
+  return <>{fmtNum(v)}</>;
 }
 
 // มุมขวาบน: รูปโปรไฟล์ + เมนูออกจากระบบ (ยังไม่ล็อกอินจะเห็นหน้า login แทน)
@@ -1378,6 +1460,104 @@ function Confetti({ count = 70 }: { count?: number }) {
       aria-hidden
       className="pointer-events-none absolute inset-0 h-full w-full"
     />
+  );
+}
+
+// หน้าแสดงความยินดี: ได้ point จากการเข้า 100 คนแรก มี point ร่วง พลุกระดาษ และปุ่มชวนเพื่อน
+function RewardModal({
+  name,
+  gain,
+  total,
+  onClose,
+}: {
+  name: string;
+  gain: number;
+  total: number;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const text = `ฉันเป็น ${POINT_QUOTA} คนแรกที่โดดถึงเป้าวันนี้ ได้ +${gain} point จาก ${APP_NAME}! มาโดดเชือกด้วยกันนะ`;
+
+  const share = async () => {
+    const url = window.location.origin;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: APP_NAME, text, url });
+      } else {
+        await navigator.clipboard.writeText(`${text} ${url}`);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch {
+      // ยกเลิกแชร์ก็ข้ามไป
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="ยินดีด้วย"
+      className="pj-in fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-[#1B2A21]/95 p-5"
+    >
+      {/* point หล่นเป็นสายฝน */}
+      {Array.from({ length: 16 }, (_, i) => (
+        <span
+          key={i}
+          aria-hidden
+          className="pj-coin text-[#C9F25B]"
+          style={{
+            left: `${(i * 37) % 100}%`,
+            animationDuration: `${3.2 + (i % 5) * 0.6}s`,
+            animationDelay: `${(i % 7) * 0.35}s`,
+            opacity: 0.85,
+          }}
+        >
+          <Icon d={ICONS.star} size={18 + (i % 4) * 6} fill />
+        </span>
+      ))}
+      <Confetti count={160} />
+
+      <div className="relative w-full max-w-sm rounded-[32px] bg-[#F3F6EC] p-6 text-center text-[#1B2A21] shadow-2xl">
+        <div className="flex items-center justify-center gap-2 text-[14px] font-bold tracking-tight text-[#3F5E1F]">
+          <Logo size={32} />
+          {APP_NAME}
+        </div>
+        <span className="pj-stamp mx-auto mt-4 flex h-24 w-24 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21] ring-8 ring-[#C9F25B]/40">
+          <Icon d={ICONS.star} size={52} fill />
+        </span>
+        <h2 className="mt-4 text-[26px] font-bold leading-tight">
+          ยินดีด้วย {name}!
+        </h2>
+        <p className="mt-1 text-[14px] text-[#6B7A6E]">
+          คุณเป็น {POINT_QUOTA} คนแรกที่โดดถึงเป้าวันนี้
+        </p>
+        <div className="mt-4 rounded-3xl bg-[#1B2A21] py-4 text-white">
+          <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
+            +<CountUp value={gain} />
+          </div>
+          <div className="mt-1 text-[14px] text-white/70">point</div>
+          <div className="mt-2 text-[12px] text-white/50">
+            point สะสมทั้งหมด {fmtNum(total)}
+          </div>
+        </div>
+        <p className="mt-4 text-[13px] text-[#4B5E3A]">
+          แคปหน้าจอนี้ไปอวดเพื่อน แล้วชวนมาโดดเชือกด้วยกัน
+        </p>
+        <button
+          onClick={share}
+          className="pj-glow mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#C9F25B] text-[17px] font-semibold transition-all active:scale-[0.98] active:bg-[#B8E348]"
+        >
+          {copied ? "คัดลอกข้อความแล้ว" : "ชวนเพื่อนมาโดด"}
+        </button>
+        <button
+          onClick={onClose}
+          className="mt-2 h-12 w-full rounded-full text-[15px] font-semibold text-[#3F5E1F] active:opacity-60"
+        >
+          ไปต่อ
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1781,7 +1961,10 @@ function Shell({
         <div className="mt-auto">{footer}</div>
       </aside>
 
-      <main className="pj-fade mx-auto w-full max-w-6xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12">
+      <main
+        key={tab}
+        className="pj-fade mx-auto w-full max-w-6xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12"
+      >
         <div className="mb-4 flex h-10 items-center justify-between lg:hidden">
           <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
             <Logo size={40} className="-my-1" />
@@ -1835,6 +2018,10 @@ export default function Home() {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  // ได้ point จากการเข้า 100 คนแรก: แสดงหน้าแสดงความยินดี
+  const [reward, setReward] = useState<{ gain: number; total: number } | null>(
+    null
+  );
   // ภาพยืนยันของวันนี้ (เก็บใน localStorage ของเครื่องนี้ ไม่อัปโหลด)
   const [shots, setShots] = useState<DayShots>(EMPTY_SHOTS);
   // true = หน้าสรุปผลกำลังแสดง "ผลวันนี้" รวมทุกรอบ (เปิดจากหน้าประวัติ)
@@ -2296,6 +2483,7 @@ export default function Home() {
         });
         if (loggedIn) {
           // เซิร์ฟเวอร์ตัดสินว่าได้ point ไหม แล้วส่งยอด point รวมกลับมา
+          const before = userRef.current?.points ?? 0;
           fetch("/api/sessions", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2305,6 +2493,8 @@ export default function Home() {
             .then((d: { points?: number } | null) => {
               const pts = d?.points;
               if (typeof pts === "number") {
+                // point เพิ่มขึ้น = เข้า 100 คนแรก แสดงหน้าแสดงความยินดี
+                if (pts > before) setReward({ gain: pts - before, total: pts });
                 setUser((u) => (u ? { ...u, points: pts } : u));
               }
             })
@@ -2556,6 +2746,7 @@ export default function Home() {
 
     setError(null);
     setDayMode(false);
+    setReward(null);
     setCount(0);
     setElapsed(0);
     setBodyOk(false);
@@ -2865,22 +3056,14 @@ export default function Home() {
   const closeSummary = () => {
     setTab(dayMode ? "today" : "home");
     setDayMode(false);
+    setReward(null);
     setPhase("setup");
   };
 
   /* ---------------------------- ตั้งค่ารอบ ---------------------------- */
 
-  const presets = mode === "time" ? TIME_PRESETS : COUNT_PRESETS;
-  const value = mode === "time" ? seconds : target;
-  const step = 10;
-  const setValue = (n: number) => {
-    const v = Math.max(5, Math.min(mode === "time" ? 3600 : 10000, n || 5));
-    if (mode === "time") setSeconds(v);
-    else setTarget(v);
-  };
-
   const fontStyle = { fontFamily: FONT, touchAction: "manipulation" as const };
-  const card = "rounded-3xl bg-white";
+  const card = "rounded-3xl bg-white pj-lift";
   const limeBtn =
     "flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348]";
 
@@ -2953,7 +3136,7 @@ export default function Home() {
         </div>
 
         <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
-          <div className="space-y-4">
+          <div className="pj-stagger space-y-4">
             <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
               <div className="flex items-start justify-between gap-3">
                 <span className="text-[15px] font-semibold">เป้าหมายวันนี้</span>
@@ -2967,7 +3150,7 @@ export default function Home() {
               <div className="mt-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight lg:text-[72px]">
-                    {fmtNum(todayTotal)}
+                    <CountUp value={todayTotal} />
                   </div>
                   <div className="mt-2 text-[14px] text-white/60">
                     จาก {fmtNum(dailyGoal)} ครั้ง
@@ -3038,7 +3221,7 @@ export default function Home() {
               </p>
             )}
 
-            <button onClick={startSession} className={limeBtn}>
+            <button onClick={startSession} className={`${limeBtn} pj-glow`}>
               <Icon d={ICONS.play} size={20} fill />
               เริ่มกระโดด
             </button>
@@ -3047,44 +3230,8 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="space-y-4">
-            <section className="rounded-3xl bg-[#E8F5C1] p-5">
-              <h2 className="mb-3 text-[16px] font-semibold">รอบถัดไปของคุณ</h2>
-              <Segmented<Mode>
-                value={mode}
-                onChange={setMode}
-                options={
-                  [
-                    ["count", "จำนวนครั้ง"],
-                    ["time", "เวลา"],
-                  ] as const
-                }
-              />
-              <div className="mt-5">
-                <Stepper
-                  big
-                  display={mode === "time" ? formatTime(seconds * 1000) : `${target}`}
-                  unit={mode === "time" ? "นาที : วินาที" : "ครั้ง"}
-                  onMinus={() => setValue(value - step)}
-                  onPlus={() => setValue(value + step)}
-                />
-              </div>
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
-                {presets.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setValue(p)}
-                    className={`h-8 rounded-full px-4 text-[14px] font-semibold transition-all duration-200 active:scale-95 ${
-                      value === p
-                        ? "bg-[#1B2A21] text-white"
-                        : "bg-white text-[#1B2A21]"
-                    }`}
-                  >
-                    {mode === "time" ? formatTime(p * 1000) : p}
-                  </button>
-                ))}
-              </div>
-            </section>
+          <div className="pj-stagger space-y-4">
+            <RulesBoard />
 
             <section>
               <div className="mb-2 flex items-center justify-between px-1">
@@ -3180,7 +3327,7 @@ export default function Home() {
 
         {board && (
           <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
-            <div className="space-y-4">
+            <div className="pj-stagger space-y-4">
               <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-[15px] font-semibold">ผู้นำวันนี้</span>
@@ -3190,7 +3337,7 @@ export default function Home() {
                 </div>
                 {leader ? (
                   <div className="mt-4 flex items-center gap-4">
-                    <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
+                    <span className="pj-float flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
                       <Icon d={ICONS.trophy} size={32} />
                     </span>
                     <div className="min-w-0">
@@ -3356,7 +3503,7 @@ export default function Home() {
         </div>
 
         <div className="mt-4 space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
-          <div className="space-y-4">
+          <div className="pj-stagger space-y-4">
             <section className={`${card} p-5`}>
               <div className="flex items-center justify-between text-[13px] text-[#6B7A6E]">
                 <span>{hTab === "week" ? "7 วันล่าสุด" : "4 สัปดาห์ล่าสุด"}</span>
@@ -3612,7 +3759,7 @@ export default function Home() {
             <div className="text-[13px] text-white/60">{dayMode ? "ครั้งรวมวันนี้" : "จำนวนครั้งทั้งหมด"}</div>
             <div className="mt-1 flex items-baseline justify-center gap-2">
               <span className="pj-pop text-[88px] font-semibold leading-none tabular-nums tracking-tight">
-                {fmtNum(summary.total)}
+                <CountUp value={summary.total} />
               </span>
               <span className="text-[18px] text-white/70">ครั้ง</span>
             </div>
@@ -3735,6 +3882,15 @@ export default function Home() {
             </button>
           </div>
         </main>
+
+        {reward && !dayMode && (
+          <RewardModal
+            name={user?.name ?? ""}
+            gain={reward.gain}
+            total={reward.total}
+            onClose={() => setReward(null)}
+          />
+        )}
       </div>
     );
   }
@@ -4136,4 +4292,4 @@ export default function Home() {
       )}
     </div>
   );
-} 
+}
