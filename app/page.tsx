@@ -1692,6 +1692,27 @@ function PromoPopup({
   );
 }
 
+// รูปตัวอย่างการตั้งมือถือ (public/img/phone.png) ใช้ในขั้นตอนปรับมุมเอียง
+function PhoneExample() {
+  const [ok, setOk] = useState(true);
+  if (!ok) return null;
+  return (
+    <figure className="w-[160px] shrink-0">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/img/phone.png"
+        alt="ตัวอย่างการตั้งมือถือ"
+        draggable={false}
+        onError={() => setOk(false)}
+        className="mx-auto max-h-[300px] w-full rounded-2xl object-contain"
+      />
+      <figcaption className="mt-1.5 text-center text-[12px] text-[#6B7A6E]">
+        ตัวอย่างการตั้งมือถือ
+      </figcaption>
+    </figure>
+  );
+}
+
 // แถบผู้ใช้ท้าย sidebar (เดสก์ท็อป)
 function SidebarUser({
   user,
@@ -4208,7 +4229,9 @@ export default function Home() {
               />
             </div>
 
-            <div className="relative mt-6 h-[300px] w-[84px] shrink-0 rounded-full bg-[#E3EAD6]">
+            <div className="mt-6 flex items-center justify-center gap-5">
+            <PhoneExample />
+            <div className="relative h-[300px] w-[84px] shrink-0 rounded-full bg-[#E3EAD6]">
               <div
                 className={`absolute left-1/2 top-1/2 h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-dashed transition-colors ${
                   levelInfo.pitchOk ? "border-[#3F5E1F]" : "border-[#A9B79A]"
@@ -4235,6 +4258,7 @@ export default function Home() {
                   )}
                 </div>
               </div>
+            </div>
             </div>
 
             <button
