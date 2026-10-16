@@ -58,7 +58,7 @@ const WEEK_RULES: { week: number; jumps: number; reward?: number }[] = [
   { week: 1, jumps: 100, reward: POINT_REWARD },
   { week: 2, jumps: 200, reward: POINT_REWARD },
   { week: 3, jumps: 300, reward: POINT_REWARD },
-  { week: 4, jumps: 500, reward: POINT_REWARD },
+  { week: 5, jumps: 500, reward: POINT_REWARD },
 ];
 
 // สี
@@ -163,8 +163,8 @@ const MAX_BOTTOM = 0.97;
 const CENTER_TOL = 0.25;
 
 // ตั้งมือถือด้วยไจโร (องศา) 90 = ตั้งตรง น้อยกว่า = เอนหลัง กล้องหลังใช้ 180 - ค่านี้
-// ตั้งค่า: พิงมือถือกับลัง/ผนังให้หงายหลัง 20 องศา (กล้องหน้าแหงนขึ้น ไม่ก้มลง) ยอมคลาดเคลื่อนได้ ±7 องศา
-const LEVEL_TARGET_BETA = 70;
+// ตั้งค่า: พิงมือถือกับลัง/ผนังให้หงายหลัง 25 องศา (กล้องหน้าแหงนขึ้น ไม่ก้มลง) ยอมคลาดเคลื่อนได้ ±7 องศา
+const LEVEL_TARGET_BETA = 65;
 const LEVEL_TOL_DEG = 7;
 const LEVEL_JITTER_DEG = 2;
 const LEVEL_WINDOW_MS = 500;
@@ -657,6 +657,10 @@ const STYLES = `
 .pj-float { animation: pj-float 2.4s ease-in-out infinite; }
 @keyframes pj-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(201,242,91,.55); } 50% { box-shadow: 0 0 0 10px rgba(201,242,91,0); } }
 .pj-glow { animation: pj-glow 2s ease-out infinite; }
+@keyframes pj-wave { 0% { transform: scale(1); opacity: .65; } 100% { transform: scale(1.55, 1.9); opacity: 0; } }
+.pj-wave { position: absolute; inset: 0; border-radius: 9999px; background: rgba(150,255,30,.6); pointer-events: none; animation: pj-wave 2.4s ease-out infinite; }
+.pj-wave.pj-wave-2 { animation-delay: .8s; }
+.pj-wave.pj-wave-3 { animation-delay: 1.6s; }
 @keyframes pj-coin { 0% { transform: translateY(-12vh) rotate(0); opacity: 0; } 10% { opacity: 1; } 100% { transform: translateY(112vh) rotate(540deg); opacity: .9; } }
 .pj-coin { position: absolute; top: 0; animation: pj-coin linear infinite; }
 @keyframes pj-stamp { 0% { transform: scale(.2) rotate(-25deg); opacity: 0; } 60% { transform: scale(1.15) rotate(6deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
@@ -668,7 +672,7 @@ const STYLES = `
 .pj-stagger > *:nth-child(3) { animation-delay: .12s; }
 .pj-stagger > *:nth-child(4) { animation-delay: .18s; }
 .pj-stagger > *:nth-child(5) { animation-delay: .24s; }
-@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-pop, .pj-in, .pj-pulse, .pj-float, .pj-glow, .pj-coin, .pj-stamp, .pj-stagger > * { animation: none; } .pj-lift { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-pop, .pj-in, .pj-pulse, .pj-float, .pj-glow, .pj-wave, .pj-coin, .pj-stamp, .pj-stagger > * { animation: none; } .pj-lift { transition: none; } }
 `;
 
 function Icon({
@@ -1225,7 +1229,7 @@ function RulesBoard() {
             กติกาการเล่น
           </span>
           <h2 className="mt-3 text-[28px] font-bold leading-tight tracking-tight drop-shadow-sm">
-            {POINT_QUOTA} คนแรก รับ{" "}
+            {POINT_QUOTA} คนแรกของทุกวัน รับ{" "}
             <span className="inline-flex items-center gap-1.5 align-middle text-[#C9F25B]">
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
                 <Icon d={ICONS.star} size={18} fill />
@@ -1250,14 +1254,6 @@ function RulesBoard() {
               <span className="flex-1 text-[16px] font-semibold tabular-nums">
                 โดด {fmtNum(r.jumps)} ครั้ง
               </span>
-              {r.reward && (
-                <span className="flex items-center gap-1.5 rounded-full bg-[#1B2A21]/80 py-1 pl-1 pr-2.5 text-[12px] font-semibold text-[#C9F25B]">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
-                    <Icon d={ICONS.star} size={12} fill />
-                  </span>
-                  {r.reward} แต้ม
-                </span>
-              )}
             </li>
           ))}
         </ul>
@@ -3121,12 +3117,6 @@ export default function Home() {
     }
   }, []);
 
-  const skipLeveling = () => {
-    const done = levelResolveRef.current;
-    levelResolveRef.current = null;
-    done?.();
-  };
-
   const stopEarly = () => {
     finish("manual", performance.now() - startRef.current);
   };
@@ -3308,13 +3298,6 @@ export default function Home() {
           )}
         </header>
 
-        <div className="mb-4">
-          <PromoBanner
-            status={todayTotal >= dailyGoal ? "done" : "open"}
-            total={todayTotal}
-          />
-        </div>
-
         <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
           <div className="pj-stagger space-y-4">
             <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
@@ -3401,10 +3384,18 @@ export default function Home() {
               </p>
             )}
 
-            <button onClick={startSession} className={`${limeBtn} pj-glow`}>
-              <Icon d={ICONS.play} size={20} fill />
-              เริ่มกระโดด
-            </button>
+            <div className="relative">
+              <span aria-hidden className="pj-wave" />
+              <span aria-hidden className="pj-wave pj-wave-2" />
+              <span aria-hidden className="pj-wave pj-wave-3" />
+              <button
+                onClick={startSession}
+                className="relative z-10 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#EEFF41] to-[#76FF03] text-[17px] font-bold text-[#1B2A21] shadow-lg shadow-[#76FF03]/50 transition-all duration-150 active:scale-[0.98] active:brightness-95"
+              >
+                <Icon d={ICONS.play} size={20} fill />
+                เริ่มกระโดด
+              </button>
+            </div>
             <p className="text-center text-[12px] text-[#6B7A6E]">
               พิงมือถือกับลังหรือผนังให้หงายขึ้นเล็กน้อย สูงระดับเอว ยืนให้เห็นศีรษะถึงเท้า แล้วกางมือเหมือนจับเชือก
             </p>
@@ -4096,7 +4087,7 @@ export default function Home() {
   const glass = "bg-black/45 backdrop-blur-xl";
   const isPrep = phase === "positioning" || phase === "countdown";
   const isLevel = phase === "leveling";
-  // มุมหงายหลังเป้าหมาย (องศา) = 90 - beta เป้าหมาย → 20° (กล้องหน้า)
+  // มุมหงายหลังเป้าหมาย (องศา) = 90 - beta เป้าหมาย → 25° (กล้องหน้า)
   const targetLean =
     90 - (facing === "user" ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA);
   const flip = facing === "user" ? "-scale-x-100" : "";
@@ -4242,10 +4233,10 @@ export default function Home() {
             </div>
 
             <button
-              onClick={skipLeveling}
+              onClick={cancelScan}
               className="mt-auto h-12 px-6 text-[17px] font-semibold text-[#3F5E1F] active:opacity-60"
             >
-              ข้าม
+              ย้อนกลับ
             </button>
           </div>
         )}
