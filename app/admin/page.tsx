@@ -220,15 +220,13 @@ function StatCard({
 }) {
   return (
     <div
-      className={`rounded-3xl p-5 ${
-        dark ? "bg-[#1B2A21] text-white" : "bg-white text-[#1B2A21]"
-      }`}
+      className={`rounded-3xl p-5 ${dark ? "bg-[#1B2A21] text-white" : "bg-white text-[#1B2A21]"
+        }`}
     >
       <div className="flex items-center gap-2">
         <span
-          className={`flex h-9 w-9 items-center justify-center rounded-full ${
-            dark ? "bg-[#C9F25B] text-[#1B2A21]" : "bg-[#E8F5C1] text-[#3F5E1F]"
-          }`}
+          className={`flex h-9 w-9 items-center justify-center rounded-full ${dark ? "bg-[#C9F25B] text-[#1B2A21]" : "bg-[#E8F5C1] text-[#3F5E1F]"
+            }`}
         >
           <Icon d={icon} size={18} />
         </span>
@@ -297,9 +295,8 @@ function Segmented<T extends string>({
         <button
           key={v}
           onClick={() => onChange(v)}
-          className={`h-9 rounded-full px-5 text-[14px] font-semibold transition-all duration-200 ${
-            value === v ? "bg-white text-[#1B2A21] shadow-sm" : "text-[#6B7A6E]"
-          }`}
+          className={`h-9 rounded-full px-5 text-[14px] font-semibold transition-all duration-200 ${value === v ? "bg-white text-[#1B2A21] shadow-sm" : "text-[#6B7A6E]"
+            }`}
         >
           {label}
         </button>
@@ -337,11 +334,10 @@ function Shell({
           <button
             key={v}
             onClick={() => onView(v)}
-            className={`flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold transition-colors ${
-              view === v
-                ? "bg-[#C9F25B] text-[#1B2A21]"
-                : "text-[#6B7A6E] hover:bg-[#E8EEDD]"
-            }`}
+            className={`flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold transition-colors ${view === v
+              ? "bg-[#C9F25B] text-[#1B2A21]"
+              : "text-[#6B7A6E] hover:bg-[#E8EEDD]"
+              }`}
           >
             <Icon d={d} size={20} />
             {label}
@@ -384,9 +380,8 @@ function Shell({
             className="flex flex-col items-center gap-0.5 text-[11px] font-semibold"
           >
             <span
-              className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors ${
-                view === v ? "bg-[#C9F25B]" : "text-[#6B7A6E]"
-              }`}
+              className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors ${view === v ? "bg-[#C9F25B]" : "text-[#6B7A6E]"
+                }`}
             >
               <Icon d={d} size={20} />
             </span>
@@ -407,6 +402,7 @@ export default function AdminPage() {
   const [today, setToday] = useState("");
   const [q, setQ] = useState("");
   const [onlyAwarded, setOnlyAwarded] = useState(false);
+  const [weekSort, setWeekSort] = useState<"points" | "total">("points");
   const [day, setDay] = useState<DayData | null>(null);
   const [week, setWeek] = useState<WeekData | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "locked" | "error">(
@@ -482,7 +478,7 @@ export default function AdminPage() {
   };
 
   const logout = async () => {
-    await fetch("/api/admin/login", { method: "DELETE" }).catch(() => {});
+    await fetch("/api/admin/login", { method: "DELETE" }).catch(() => { });
     setDay(null);
     setWeek(null);
     setState("locked");
@@ -564,9 +560,8 @@ export default function AdminPage() {
                   }}
                   autoComplete="current-password"
                   aria-invalid={!!pwErr}
-                  className={`h-12 w-full rounded-2xl bg-white px-4 pr-20 text-[16px] outline-none ring-2 transition-shadow focus:ring-[#C9F25B] ${
-                    pwErr ? "ring-[#D92D20]/60" : "ring-transparent"
-                  }`}
+                  className={`h-12 w-full rounded-2xl bg-white px-4 pr-20 text-[16px] outline-none ring-2 transition-shadow focus:ring-[#C9F25B] ${pwErr ? "ring-[#D92D20]/60" : "ring-transparent"
+                    }`}
                 />
                 <button
                   type="button"
@@ -608,12 +603,19 @@ export default function AdminPage() {
 
   const dayRows = day
     ? day.entries.filter(
-        (e) =>
-          (!onlyAwarded || e.points > 0) && matches(q, e.name, e.username)
-      )
+      (e) =>
+        (!onlyAwarded || e.points > 0) && matches(q, e.name, e.username)
+    )
     : [];
   const weekRows = week
-    ? week.entries.filter((e) => matches(q, e.name, e.username))
+    ? [...week.entries]
+      .sort(
+        weekSort === "total"
+          ? (a, b) => b.total - a.total || b.points - a.points
+          : (a, b) => b.points - a.points || b.total - a.total
+      )
+      .map((e, i) => ({ ...e, rank: i + 1 }))
+      .filter((e) => matches(q, e.name, e.username))
     : [];
 
   const dayTotal = day ? day.entries.reduce((a, e) => a + e.total, 0) : 0;
@@ -701,15 +703,15 @@ export default function AdminPage() {
                 className="h-10 w-full rounded-full bg-white pl-10 pr-4 text-[14px] shadow-sm outline-none ring-2 ring-transparent placeholder:text-[#A9B79A] focus:ring-[#C9F25B]"
               />
             </label>
-            {view === "day" && (
-              <div className="w-56 shrink-0">
-                <Segmented<"all" | "awarded">
-                  value={onlyAwarded ? "awarded" : "all"}
-                  onChange={(v) => setOnlyAwarded(v === "awarded")}
+            {view === "week" && (
+              <div className="w-64 shrink-0">
+                <Segmented<"points" | "total">
+                  value={weekSort}
+                  onChange={setWeekSort}
                   options={
                     [
-                      ["all", "ทุกคน"],
-                      ["awarded", `ได้ point`],
+                      ["points", "point สูงสุด"],
+                      ["total", "โดดมากสุด"],
                     ] as const
                   }
                 />
@@ -953,11 +955,10 @@ export default function AdminPage() {
                               className="hidden px-1 py-3 text-center md:table-cell"
                             >
                               <span
-                                className={`inline-block min-w-12 rounded-lg py-1 text-[12px] tabular-nums ${
-                                  p > 0
-                                    ? "bg-[#3F5E1F] font-semibold text-[#C9F25B]"
-                                    : "bg-[#EEF2E4] text-[#A9B79A]"
-                                }`}
+                                className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-[12px] tabular-nums ${p > 0
+                                  ? "bg-[#3F5E1F] font-semibold text-[#C9F25B]"
+                                  : "bg-[#EEF2E4] text-[#A9B79A]"
+                                  }`}
                               >
                                 {p > 0 ? `+${p}` : "–"}
                               </span>
@@ -968,9 +969,8 @@ export default function AdminPage() {
                           </td>
                           <td className="px-4 py-3 text-right">
                             <span
-                              className={`text-[22px] font-semibold tabular-nums ${
-                                e.points > 0 ? "text-[#3F5E1F]" : "text-[#A9B79A]"
-                              }`}
+                              className={`text-[22px] font-semibold tabular-nums ${e.points > 0 ? "text-[#3F5E1F]" : "text-[#A9B79A]"
+                                }`}
                             >
                               {fmtNum(e.points)}
                             </span>
@@ -983,7 +983,9 @@ export default function AdminPage() {
               )}
             </section>
             <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-              เรียงตาม point รวมของสัปดาห์ ถ้าเท่ากันเรียงตามยอดโดดรวม
+              {weekSort === "total"
+                ? "เรียงตามยอดโดดรวมของสัปดาห์ ถ้าเท่ากันเรียงตาม point"
+                : "เรียงตาม point รวมของสัปดาห์ ถ้าเท่ากันเรียงตามยอดโดดรวม"}
               point คำนวณจากกติกา {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน ได้ {POINT_REWARD} point
             </p>
           </>
