@@ -8,10 +8,11 @@ const JUMPS_COLLECTION = "jumps";
 export const DAY_MS = 864e5;
 const TZ_MS = 7 * 3600e3;
 
-// กติกา: 50 คนแรกที่ถึงเป้ารายวัน ได้ 100 point
-export const POINT_QUOTA = 50;
-export const POINT_REWARD = 100;
-const DEFAULT_GOAL = 1500;
+// กติกา: 100 คนแรกที่ถึงเป้ารายวัน ได้ 50 point
+export const POINT_QUOTA = 100;
+export const POINT_REWARD = 50;
+// เป้ารายวันคงที่ ตรงกับฝั่งผู้ใช้ (DAILY_GOAL ใน app/page.tsx)
+export const DAILY_GOAL = 100;
 
 export const ymdOf = (t: number) =>
   new Date(t + TZ_MS).toISOString().slice(0, 10);
@@ -49,18 +50,6 @@ export type DayEntry = {
 const toId = (v: unknown) =>
   typeof v === "string" && ObjectId.isValid(v) ? new ObjectId(v) : v;
 
-// ปรับตรงนี้ถ้าเป้าหมายรายวันเก็บที่อื่น
-// ที่นี่สมมติ collection "settings" { userId, dailyGoal }
-async function loadGoals(db: Db, ids: unknown[]) {
-  const rows = await db
-    .collection("settings")
-    .find({ userId: { $in: [...ids, ...ids.map(String)] } })
-    .toArray();
-  return new Map(
-    rows.map((r) => [String(r.userId), Number(r.dailyGoal) || DEFAULT_GOAL])
-  );
-}
-
 // ผลของทุกคนในหนึ่งวัน เรียงตามยอดรวมมากไปน้อย
 // goalRank = ลำดับเวลาที่ยอดสะสมของวันนั้นถึงเป้า (1 = ถึงก่อน)
 export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
@@ -74,13 +63,10 @@ export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
   const ids = [
     ...new Map(rows.map((r) => [String(r.userId), r.userId])).values(),
   ];
-  const [users, goals] = await Promise.all([
-    db
-      .collection("users")
-      .find({ _id: { $in: ids.map(toId) as ObjectId[] } })
-      .toArray(),
-    loadGoals(db, ids),
-  ]);
+  const users = await db
+    .collection("users")
+    .find({ _id: { $in: ids.map(toId) as ObjectId[] } })
+    .toArray();
   const userMap = new Map(users.map((u) => [String(u._id), u]));
 
   const acc = new Map<
@@ -92,7 +78,7 @@ export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
     const a = acc.get(k) ?? { total: 0, rounds: 0, goalAt: null };
     a.total += Number(r.total) || 0;
     a.rounds += 1;
-    if (a.goalAt === null && a.total >= (goals.get(k) ?? DEFAULT_GOAL)) {
+    if (a.goalAt === null && a.total >= DAILY_GOAL) {
       a.goalAt = Number(r.ts);
     }
     acc.set(k, a);
@@ -114,7 +100,7 @@ export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
         username: String(u?.username ?? ""),
         total: a.total,
         rounds: a.rounds,
-        goal: goals.get(k) ?? DEFAULT_GOAL,
+        goal: DAILY_GOAL,
         goalRank,
         points: goalRank !== null && goalRank <= POINT_QUOTA ? POINT_REWARD : 0,
       };

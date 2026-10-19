@@ -6,12 +6,28 @@ import { Prompt } from "next/font/google";
 
 const APP_NAME = "Pose Jump";
 
+// ต้องตรงกับ lib/admin-stats.ts และฝั่งผู้ใช้
+const POINT_QUOTA = 100;
+const POINT_REWARD = 50;
+
 const prompt = Prompt({
   subsets: ["thai", "latin"],
   weight: ["300", "400", "500", "600", "700"],
   display: "swap",
 });
 const FONT = `${prompt.style.fontFamily}, -apple-system, BlinkMacSystemFont, "Noto Sans Thai", Sarabun, sans-serif`;
+
+const STYLES = `
+@keyframes pj-fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes pj-in { from { opacity: 0; } to { opacity: 1; } }
+.pj-fade { animation: pj-fade .35s cubic-bezier(.2,.8,.2,1) both; }
+.pj-in { animation: pj-in .25s ease-out both; }
+.pj-stagger > * { animation: pj-fade .45s cubic-bezier(.2,.8,.2,1) both; }
+.pj-stagger > *:nth-child(2) { animation-delay: .06s; }
+.pj-stagger > *:nth-child(3) { animation-delay: .12s; }
+.pj-stagger > *:nth-child(4) { animation-delay: .18s; }
+@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-in, .pj-stagger > * { animation: none; } }
+`;
 
 /* ---------------- ชนิดข้อมูล ---------------- */
 
@@ -131,16 +147,26 @@ function Icon({
   );
 }
 
-function Logo({ size = 32, className = "" }: { size?: number; className?: string }) {
+// โลโก้เหมือนฝั่งผู้ใช้: public/img/logo.png พื้นหลังโปร่งใส ไม่ตัดกรอบ
+function Logo({
+  size = 32,
+  className = "",
+}: {
+  size?: number;
+  className?: string;
+}) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/img/logo.jpg"
-      alt={APP_NAME}
+      src="/img/logo.png"
+      alt=""
+      onError={(e) => {
+        e.currentTarget.style.display = "none";
+      }}
       width={size}
       height={size}
       draggable={false}
-      className={`shrink-0 rounded-full object-cover ${className}`}
+      className={`shrink-0 border-0 bg-transparent object-contain ${className}`}
       style={{ width: size, height: size }}
     />
   );
@@ -301,10 +327,10 @@ function Shell({
     <div className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] lg:flex">
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-1 p-5 lg:flex">
         <div className="mb-1 flex items-center gap-2 px-3 text-[20px] font-bold tracking-tight">
-          <Logo size={48} className="-my-2" />
+          <Logo size={88} className="-my-[26px]" />
           {APP_NAME}
         </div>
-        <span className="mb-5 ml-3 w-fit rounded-full bg-[#1B2A21] px-3 py-0.5 text-[12px] font-semibold text-[#C9F25B]">
+        <span className="mb-5 ml-3 mt-3 w-fit rounded-full bg-[#1B2A21] px-3 py-0.5 text-[12px] font-semibold text-[#C9F25B]">
           ผู้ดูแล
         </span>
         {items.map(([v, label, d]) => (
@@ -330,10 +356,10 @@ function Shell({
         </button>
       </aside>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12">
+      <main className="pj-fade mx-auto w-full max-w-6xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12">
         <div className="mb-4 flex h-10 items-center justify-between lg:hidden">
           <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight">
-            <Logo size={40} className="-my-1" />
+            <Logo size={64} className="-my-[6px]" />
             {APP_NAME}
             <span className="rounded-full bg-[#1B2A21] px-2.5 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
               ผู้ดูแล
@@ -397,6 +423,20 @@ export default function AdminPage() {
     setDate(t);
   }, []);
 
+  // ธีมเดียวกับฝั่งผู้ใช้
+  useEffect(() => {
+    document.title = `${APP_NAME} · ผู้ดูแล`;
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "theme-color");
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute("content", "#F3F6EC");
+    document.documentElement.style.backgroundColor = "#F3F6EC";
+    document.documentElement.style.colorScheme = "light";
+  }, []);
+
   const load = useCallback(async () => {
     if (!date) return;
     setState("loading");
@@ -458,9 +498,10 @@ export default function AdminPage() {
         style={fontStyle}
         className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] antialiased lg:grid lg:grid-cols-2"
       >
+        <style>{STYLES}</style>
         <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
           <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
-            <Logo size={56} className="-my-2.5" />
+            <Logo size={88} className="-my-[26px]" />
             {APP_NAME}
           </div>
           <div>
@@ -472,7 +513,7 @@ export default function AdminPage() {
             <ul className="mt-8 space-y-3">
               {[
                 "ดูผลวันนี้ของผู้เล่นทุกคน",
-                "ย้อนหลังรายวัน ดูว่าใครเข้า 50 คนแรก",
+                `ย้อนหลังรายวัน ดูว่าใครเข้า ${POINT_QUOTA} คนแรก`,
                 "สรุป point รายสัปดาห์",
               ].map((p) => (
                 <li
@@ -490,10 +531,10 @@ export default function AdminPage() {
           <p className="text-[13px] text-white/50">สำหรับผู้ดูแลเท่านั้น</p>
         </aside>
 
-        <div className="flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
+        <div className="pj-fade flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
           <div className="flex h-12 items-center lg:hidden">
             <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight">
-              <Logo size={40} />
+              <Logo size={64} className="-my-[6px]" />
               {APP_NAME}
             </div>
           </div>
@@ -540,7 +581,7 @@ export default function AdminPage() {
             {pwErr && (
               <p
                 role="alert"
-                className="mt-4 rounded-2xl bg-[#FDE8E6] px-4 py-3 text-[14px] text-[#D92D20]"
+                className="pj-in mt-4 rounded-2xl bg-[#FDE8E6] px-4 py-3 text-[14px] text-[#D92D20]"
               >
                 {pwErr}
               </p>
@@ -598,6 +639,7 @@ export default function AdminPage() {
 
   return (
     <div style={fontStyle} className="select-text antialiased">
+      <style>{STYLES}</style>
       <Shell
         view={view}
         onView={(v) => {
@@ -699,7 +741,7 @@ export default function AdminPage() {
         {/* ---------------- รายวัน ---------------- */}
         {state === "ok" && view === "day" && day && (
           <>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+            <div className="pj-stagger grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
               <StatCard
                 dark
                 icon={ICONS.users}
@@ -723,7 +765,7 @@ export default function AdminPage() {
                 icon={ICONS.star}
                 label={`ได้ ${fmtNum(day.reward)} point`}
                 value={`${day.awardedCount}/${day.quota}`}
-                sub="โควตา 50 คนแรก"
+                sub={`โควตา ${fmtNum(day.quota)} คนแรก`}
               />
             </div>
 
@@ -834,7 +876,7 @@ export default function AdminPage() {
         {/* ---------------- รายสัปดาห์ ---------------- */}
         {state === "ok" && view === "week" && week && (
           <>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
+            <div className="pj-stagger grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
               <StatCard
                 dark
                 icon={ICONS.users}
@@ -942,7 +984,7 @@ export default function AdminPage() {
             </section>
             <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
               เรียงตาม point รวมของสัปดาห์ ถ้าเท่ากันเรียงตามยอดโดดรวม
-              point คำนวณจากกติกา 50 คนแรกที่ถึงเป้ารายวัน ได้ 100 point
+              point คำนวณจากกติกา {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน ได้ {POINT_REWARD} point
             </p>
           </>
         )}
