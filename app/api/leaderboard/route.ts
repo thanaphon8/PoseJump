@@ -29,7 +29,7 @@ export async function GET() {
     const myId = user ? String(user.id) : null;
 
     const db = await getDb();
-    const rows = (await db
+    const rawRows = (await db
       .collection("jumps")
       .aggregate([
         { $match: { ts: { $gte: start, $lt: start + DAY } } },
@@ -46,12 +46,18 @@ export async function GET() {
       ])
       .toArray()) as Row[];
 
-    const top = rows.slice(0, TOP);
-    const users = await db
+    // ตัดบัญชีที่ถูกลบไปแล้ว (ข้อมูล jumps กำพร้า) ออกจากอันดับ
+    const existing = await db
       .collection<UserDoc>("users")
-      .find({ _id: { $in: top.map((r) => toId(r._id)) } })
+      .find({ _id: { $in: rawRows.map((r) => toId(r._id)) } })
+      .project({ _id: 1, nickname: 1 })
       .toArray();
-    const names = new Map(users.map((u) => [String(u._id), u.nickname as string]));
+    const names = new Map(
+      existing.map((u) => [String(u._id), u.nickname as string])
+    );
+    const rows = rawRows.filter((r) => names.has(String(r._id)));
+
+    const top = rows.slice(0, TOP);
 
     // ลำดับที่ทำเป้าหมายรายวันสำเร็จของแต่ละคนในวันนี้ (1 = คนแรก)
     // userId ใน goal_hits ชนิดเดียวกับใน jumps (ใช้ user.id ตรงๆ เหมือนกัน)
