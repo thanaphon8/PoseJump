@@ -2,6 +2,7 @@ import { NextResponse, connection } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
+import { getUserPoints } from "../../../lib/points";
 
 // "วันนี้" นับตามเวลาไทย (UTC+7) อันดับจึงรีเซ็ตตอนเที่ยงคืนของไทย
 const TZ_OFFSET = 7 * 3_600_000;
@@ -85,12 +86,8 @@ export async function GET() {
       };
     });
 
-    // point รวมของผู้ใช้ที่ล็อกอิน
-    let myPoints = 0;
-    if (user) {
-      const p = await db.collection("points").findOne({ userId: user.id });
-      myPoints = typeof p?.points === "number" ? p.points : 0;
-    }
+    // point รวมของผู้ใช้ที่ล็อกอิน (เก็บใน users.points)
+    const myPoints = user ? await getUserPoints(user.id) : 0;
 
     const idx = myId ? rows.findIndex((r) => String(r._id) === myId) : -1;
     const me =

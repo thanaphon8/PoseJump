@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Db } from "mongodb";
 import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
+import { addUserPoints, getUserPoints } from "../../../lib/points";
 
 const unauthorized = () =>
   NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
@@ -45,7 +46,6 @@ function ensureIndexes(db: Db) {
         .createIndex({ userId: 1, day: 1 }, { unique: true }),
       // เรียงลำดับในวันเดียวกัน
       db.collection("goal_hits").createIndex({ day: 1, seq: 1 }),
-      db.collection("points").createIndex({ userId: 1 }, { unique: true }),
     ]).catch((e) => {
       indexReady = null;
       console.error("ensureIndexes failed", e);
@@ -110,16 +110,10 @@ async function settleDailyGoal(db: Db, userId: unknown, now: number) {
     throw e;
   }
 
+  // point เก็บใน users.points
   if (award > 0) {
-    await db
-      .collection("points")
-      .updateOne({ userId }, { $inc: { points: award } }, { upsert: true });
+    await addUserPoints(userId, award);
   }
-}
-
-async function getPoints(db: Db, userId: unknown) {
-  const p = await db.collection("points").findOne({ userId });
-  return typeof p?.points === "number" ? p.points : 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -211,7 +205,7 @@ export async function POST(req: Request) {
       console.error("settleDailyGoal failed", e);
     }
 
-    const points = await getPoints(db, user.id).catch(() => 0);
+    const points = await getUserPoints(user.id);
     return NextResponse.json({ ok: true, points }, { status: 201 });
   } catch (e) {
     console.error("sessions POST failed", e);

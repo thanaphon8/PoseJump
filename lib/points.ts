@@ -1,14 +1,26 @@
+import { ObjectId } from "mongodb";
 import { getDb } from "./mongodb";
 
-// point รวมของผู้ใช้ (เก็บใน collection "points" เป็น { userId, points })
-// userId ต้องเป็นชนิดเดียวกับที่ใช้ใน jumps / goal_hits คือ currentUser().id
+const toId = (id: unknown) =>
+  typeof id === "string" && ObjectId.isValid(id) ? new ObjectId(id) : id;
+
 export async function getUserPoints(userId: unknown): Promise<number> {
   try {
     const db = await getDb();
-    const p = await db.collection("points").findOne({ userId });
-    return typeof p?.points === "number" ? p.points : 0;
+    const u = await db
+      .collection("users")
+      .findOne({ _id: toId(userId) as any }, { projection: { points: 1 } });
+    return typeof u?.points === "number" ? u.points : 0;
   } catch (e) {
     console.error("getUserPoints failed", e);
     return 0;
   }
+}
+
+export async function addUserPoints(userId: unknown, amount: number) {
+  const db = await getDb();
+  const r = await db
+    .collection("users")
+    .updateOne({ _id: toId(userId) as any }, { $inc: { points: amount } });
+  if (r.matchedCount === 0) console.error("addUserPoints: user not found", userId);
 }

@@ -37,10 +37,11 @@ export async function POST(req: Request) {
         display,
         nickname,
         passwordHash,
+        // point เก็บในเอกสาร user โดยตรง (เริ่มที่ 0)
+        points: 0,
         createdAt: new Date(),
       });
       await createSession(r.insertedId);
-      // ผู้ใช้ใหม่ยังไม่มี point (แถวใน collection "points" จะถูกสร้างตอนได้ point ครั้งแรก)
       return NextResponse.json(
         { user: { name: nickname, username: display, points: 0 } },
         { status: 201 }
