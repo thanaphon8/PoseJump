@@ -79,6 +79,11 @@ async function loadUserMap(db: Db, rows: Row[]) {
   return new Map(users.map((u) => [String(u._id), u as Row]));
 }
 
+// ตัดรอบกระโดดของบัญชีที่ถูกลบไปแล้วออก (ไม่มี doc ใน users)
+// ข้อมูลคนที่ลบแล้วจึงไม่โผล่ในหน้า admin ทั้งรายวัน/สัปดาห์/เดือน
+const aliveOnly = (rows: Row[], userMap: Map<string, Row>) =>
+  rows.filter((r) => userMap.has(String(r.userId)));
+
 // รอบกระโดดของหนึ่งวัน (เรียงเวลาแล้ว) -> ผลของทุกคน เรียงตามยอดรวมมากไปน้อย
 // goalRank = ลำดับเวลาที่ยอดสะสมของวันนั้นถึงเป้า (1 = ถึงก่อน)
 function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
@@ -131,7 +136,8 @@ export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
     .sort({ ts: 1 })
     .toArray()) as Row[];
   if (rows.length === 0) return [];
-  return buildDay(rows, await loadUserMap(db, rows));
+  const userMap = await loadUserMap(db, rows);
+  return buildDay(aliveOnly(rows, userMap), userMap);
 }
 
 // ผลหลายวันในครั้งเดียว (ดึงฐานข้อมูลรอบเดียว) start ต้องเป็นเที่ยงคืนเวลาไทย
@@ -154,7 +160,7 @@ export async function computeRange(
 
   const userMap = await loadUserMap(db, rows);
   const buckets: Row[][] = Array.from({ length: n }, () => []);
-  for (const r of rows) {
+  for (const r of aliveOnly(rows, userMap)) {
     const i = Math.floor((Number(r.ts) - start) / DAY_MS);
     if (i >= 0 && i < n) buckets[i].push(r);
   }
@@ -165,10 +171,18 @@ export async function computeRange(
 }
 
 // เวลาของรอบกระโดดแรกสุด (เริ่มกิจกรรม) null = ยังไม่มีข้อมูล
+// นับเฉพาะรอบของบัญชีที่ยังอยู่ (บัญชีที่ลบแล้วไม่ทำให้วันเริ่มกิจกรรมเพี้ยน)
 export async function firstJumpTs(db: Db): Promise<number | null> {
+  const users = await db
+    .collection("users")
+    .find({}, { projection: { _id: 1 } })
+    .toArray();
+  if (users.length === 0) return null;
+
+  const ids: unknown[] = users.flatMap((u) => [u._id, String(u._id)]);
   const row = await db
     .collection(JUMPS_COLLECTION)
-    .find({})
+    .find({ userId: { $in: ids } })
     .sort({ ts: 1 })
     .limit(1)
     .next();
