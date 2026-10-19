@@ -163,8 +163,8 @@ const MAX_BOTTOM = 0.97;
 const CENTER_TOL = 0.25;
 
 // ตั้งมือถือด้วยไจโร (องศา) 90 = ตั้งตรง น้อยกว่า = เอนหลัง กล้องหลังใช้ 180 - ค่านี้
-// ตั้งค่า: พิงมือถือกับลัง/ผนังให้หงายหลัง 25 องศา (กล้องหน้าแหงนขึ้น ไม่ก้มลง) ยอมคลาดเคลื่อนได้ ±7 องศา
-const LEVEL_TARGET_BETA = 65;
+// ตั้งค่า: พิงมือถือกับลัง/ผนังให้หงายหลัง 15 องศา (กล้องหน้าแหงนขึ้น ไม่ก้มลง) ยอมคลาดเคลื่อนได้ ±7 องศา
+const LEVEL_TARGET_BETA = 75;
 const LEVEL_TOL_DEG = 7;
 const LEVEL_JITTER_DEG = 2;
 const LEVEL_WINDOW_MS = 500;
@@ -4087,7 +4087,7 @@ export default function Home() {
   const glass = "bg-black/45 backdrop-blur-xl";
   const isPrep = phase === "positioning" || phase === "countdown";
   const isLevel = phase === "leveling";
-  // มุมหงายหลังเป้าหมาย (องศา) = 90 - beta เป้าหมาย → 25° (กล้องหน้า)
+  // มุมหงายหลังเป้าหมาย (องศา) = 90 - beta เป้าหมาย → 15° (กล้องหน้า)
   const targetLean =
     90 - (facing === "user" ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA);
   const flip = facing === "user" ? "-scale-x-100" : "";
