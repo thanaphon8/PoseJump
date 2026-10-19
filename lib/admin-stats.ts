@@ -35,6 +35,22 @@ export const validYmd = (v: unknown): v is string =>
   /^\d{4}-\d{2}-\d{2}$/.test(v) &&
   !Number.isNaN(dayStartOf(v));
 
+// YYYY-MM ที่ถูกต้อง (เดือน 01-12)
+export const validMonth = (v: unknown): v is string =>
+  typeof v === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
+
+// เที่ยงคืนเวลาไทยของวันที่ 1 ของเดือน YYYY-MM และของเดือนถัดไป
+export const monthRange = (month: string) => {
+  const [y, m] = month.split("-").map(Number);
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    start: dayStartOf(`${y}-${pad(m)}-01`),
+    end: dayStartOf(`${ny}-${pad(nm)}-01`),
+  };
+};
+
 export type DayEntry = {
   userId: string;
   name: string;
@@ -46,20 +62,13 @@ export type DayEntry = {
   points: number;
 };
 
+type Row = Record<string, unknown>;
+
 // userId อาจเก็บเป็น ObjectId หรือ string รองรับทั้งสองแบบ
 const toId = (v: unknown) =>
   typeof v === "string" && ObjectId.isValid(v) ? new ObjectId(v) : v;
 
-// ผลของทุกคนในหนึ่งวัน เรียงตามยอดรวมมากไปน้อย
-// goalRank = ลำดับเวลาที่ยอดสะสมของวันนั้นถึงเป้า (1 = ถึงก่อน)
-export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
-  const rows = await db
-    .collection(JUMPS_COLLECTION)
-    .find({ ts: { $gte: start, $lt: start + DAY_MS } })
-    .sort({ ts: 1 })
-    .toArray();
-  if (rows.length === 0) return [];
-
+async function loadUserMap(db: Db, rows: Row[]) {
   const ids = [
     ...new Map(rows.map((r) => [String(r.userId), r.userId])).values(),
   ];
@@ -67,7 +76,13 @@ export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
     .collection("users")
     .find({ _id: { $in: ids.map(toId) as ObjectId[] } })
     .toArray();
-  const userMap = new Map(users.map((u) => [String(u._id), u]));
+  return new Map(users.map((u) => [String(u._id), u as Row]));
+}
+
+// รอบกระโดดของหนึ่งวัน (เรียงเวลาแล้ว) -> ผลของทุกคน เรียงตามยอดรวมมากไปน้อย
+// goalRank = ลำดับเวลาที่ยอดสะสมของวันนั้นถึงเป้า (1 = ถึงก่อน)
+function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
+  if (rows.length === 0) return [];
 
   const acc = new Map<
     string,
@@ -106,4 +121,57 @@ export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
       };
     })
     .sort((a, b) => b.total - a.total);
+}
+
+// ผลของทุกคนในหนึ่งวัน
+export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
+  const rows = (await db
+    .collection(JUMPS_COLLECTION)
+    .find({ ts: { $gte: start, $lt: start + DAY_MS } })
+    .sort({ ts: 1 })
+    .toArray()) as Row[];
+  if (rows.length === 0) return [];
+  return buildDay(rows, await loadUserMap(db, rows));
+}
+
+// ผลหลายวันในครั้งเดียว (ดึงฐานข้อมูลรอบเดียว) start ต้องเป็นเที่ยงคืนเวลาไทย
+// คืนอาร์เรย์ยาว (end - start) / 1 วัน แต่ละช่อง = ผลของวันนั้น
+export async function computeRange(
+  db: Db,
+  start: number,
+  end: number
+): Promise<DayEntry[][]> {
+  const n = Math.max(0, Math.round((end - start) / DAY_MS));
+  const out: DayEntry[][] = Array.from({ length: n }, () => []);
+  if (n === 0) return out;
+
+  const rows = (await db
+    .collection(JUMPS_COLLECTION)
+    .find({ ts: { $gte: start, $lt: end } })
+    .sort({ ts: 1 })
+    .toArray()) as Row[];
+  if (rows.length === 0) return out;
+
+  const userMap = await loadUserMap(db, rows);
+  const buckets: Row[][] = Array.from({ length: n }, () => []);
+  for (const r of rows) {
+    const i = Math.floor((Number(r.ts) - start) / DAY_MS);
+    if (i >= 0 && i < n) buckets[i].push(r);
+  }
+  buckets.forEach((b, i) => {
+    out[i] = buildDay(b, userMap);
+  });
+  return out;
+}
+
+// เวลาของรอบกระโดดแรกสุด (เริ่มกิจกรรม) null = ยังไม่มีข้อมูล
+export async function firstJumpTs(db: Db): Promise<number | null> {
+  const row = await db
+    .collection(JUMPS_COLLECTION)
+    .find({})
+    .sort({ ts: 1 })
+    .limit(1)
+    .next();
+  const t = Number(row?.ts);
+  return Number.isFinite(t) ? t : null;
 }

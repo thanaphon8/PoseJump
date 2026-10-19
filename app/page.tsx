@@ -58,7 +58,7 @@ const WEEK_RULES: { week: number; jumps: number; reward?: number }[] = [
   { week: 1, jumps: 100, reward: POINT_REWARD },
   { week: 2, jumps: 200, reward: POINT_REWARD },
   { week: 3, jumps: 300, reward: POINT_REWARD },
-  { week: 5, jumps: 500, reward: POINT_REWARD },
+  { week: 4, jumps: 500, reward: POINT_REWARD },
 ];
 
 // สี

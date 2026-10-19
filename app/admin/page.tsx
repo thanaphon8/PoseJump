@@ -61,7 +61,29 @@ type WeekEntry = {
   perDay: number[];
 };
 type WeekData = { start: string; days: string[]; entries: WeekEntry[] };
-type View = "day" | "week";
+type MonthEntry = {
+  rank: number;
+  userId: string;
+  name: string;
+  username: string;
+  points: number;
+  total: number;
+  rounds: number;
+  rewardDays: number;
+  activeDays: number;
+  bestDay: number;
+};
+type MonthData = {
+  scope: "month" | "all";
+  month: string;
+  since: string;
+  dayCount: number;
+  activeDays: number;
+  entries: MonthEntry[];
+};
+type View = "day" | "week" | "month";
+type Sort = "points" | "total";
+type Scope = "month" | "all";
 
 /* ---------------- ฟังก์ชันช่วย ---------------- */
 
@@ -73,6 +95,12 @@ const shiftYmd = (ymd: string, days: number) =>
   new Date(Date.parse(`${ymd}T00:00:00Z`) + days * DAY)
     .toISOString()
     .slice(0, 10);
+// เลื่อนเดือน คืนวันที่ 1 ของเดือนใหม่
+const shiftMonth = (ymd: string, n: number) => {
+  const [y, m] = ymd.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return d.toISOString().slice(0, 10);
+};
 const fmtShort = (ymd: string) =>
   new Date(`${ymd}T00:00:00Z`).toLocaleDateString("th-TH", {
     day: "numeric",
@@ -83,6 +111,12 @@ const fmtLong = (ymd: string) =>
   new Date(`${ymd}T00:00:00Z`).toLocaleDateString("th-TH", {
     weekday: "long",
     day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+const fmtMonth = (ym: string) =>
+  new Date(`${ym}-01T00:00:00Z`).toLocaleDateString("th-TH", {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
@@ -107,6 +141,7 @@ const matches = (q: string, name: string, username: string) => {
 const ICONS = {
   day: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
   week: "M5 20V11M12 20V4M19 20v-6",
+  month: "M4 6h16M4 12h16M4 18h16",
   check: "M5 13l4 4 10-10",
   left: "M15 6l-6 6 6 6",
   right: "M9 6l6 6-6 6",
@@ -220,13 +255,15 @@ function StatCard({
 }) {
   return (
     <div
-      className={`rounded-3xl p-5 ${dark ? "bg-[#1B2A21] text-white" : "bg-white text-[#1B2A21]"
-        }`}
+      className={`rounded-3xl p-5 ${
+        dark ? "bg-[#1B2A21] text-white" : "bg-white text-[#1B2A21]"
+      }`}
     >
       <div className="flex items-center gap-2">
         <span
-          className={`flex h-9 w-9 items-center justify-center rounded-full ${dark ? "bg-[#C9F25B] text-[#1B2A21]" : "bg-[#E8F5C1] text-[#3F5E1F]"
-            }`}
+          className={`flex h-9 w-9 items-center justify-center rounded-full ${
+            dark ? "bg-[#C9F25B] text-[#1B2A21]" : "bg-[#E8F5C1] text-[#3F5E1F]"
+          }`}
         >
           <Icon d={icon} size={18} />
         </span>
@@ -295,8 +332,9 @@ function Segmented<T extends string>({
         <button
           key={v}
           onClick={() => onChange(v)}
-          className={`h-9 rounded-full px-5 text-[14px] font-semibold transition-all duration-200 ${value === v ? "bg-white text-[#1B2A21] shadow-sm" : "text-[#6B7A6E]"
-            }`}
+          className={`h-9 rounded-full px-5 text-[14px] font-semibold transition-all duration-200 ${
+            value === v ? "bg-white text-[#1B2A21] shadow-sm" : "text-[#6B7A6E]"
+          }`}
         >
           {label}
         </button>
@@ -319,6 +357,7 @@ function Shell({
   const items: [View, string, string][] = [
     ["day", "รายวัน", ICONS.day],
     ["week", "รายสัปดาห์", ICONS.week],
+    ["month", "รายเดือน", ICONS.month],
   ];
   return (
     <div className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] lg:flex">
@@ -334,10 +373,11 @@ function Shell({
           <button
             key={v}
             onClick={() => onView(v)}
-            className={`flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold transition-colors ${view === v
-              ? "bg-[#C9F25B] text-[#1B2A21]"
-              : "text-[#6B7A6E] hover:bg-[#E8EEDD]"
-              }`}
+            className={`flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold transition-colors ${
+              view === v
+                ? "bg-[#C9F25B] text-[#1B2A21]"
+                : "text-[#6B7A6E] hover:bg-[#E8EEDD]"
+            }`}
           >
             <Icon d={d} size={20} />
             {label}
@@ -380,8 +420,9 @@ function Shell({
             className="flex flex-col items-center gap-0.5 text-[11px] font-semibold"
           >
             <span
-              className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors ${view === v ? "bg-[#C9F25B]" : "text-[#6B7A6E]"
-                }`}
+              className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors ${
+                view === v ? "bg-[#C9F25B]" : "text-[#6B7A6E]"
+              }`}
             >
               <Icon d={d} size={20} />
             </span>
@@ -402,9 +443,11 @@ export default function AdminPage() {
   const [today, setToday] = useState("");
   const [q, setQ] = useState("");
   const [onlyAwarded, setOnlyAwarded] = useState(false);
-  const [weekSort, setWeekSort] = useState<"points" | "total">("points");
+  const [sort, setSort] = useState<Sort>("points");
+  const [scope, setScope] = useState<Scope>("month");
   const [day, setDay] = useState<DayData | null>(null);
   const [week, setWeek] = useState<WeekData | null>(null);
+  const [month, setMonth] = useState<MonthData | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "locked" | "error">(
     "loading"
   );
@@ -439,14 +482,20 @@ export default function AdminPage() {
     try {
       if (view === "day") {
         setDay(await getJson<DayData>(`/api/admin/day?date=${date}`));
-      } else {
+      } else if (view === "week") {
         setWeek(await getJson<WeekData>(`/api/admin/week?date=${date}`));
+      } else {
+        setMonth(
+          await getJson<MonthData>(
+            `/api/admin/month?month=${date.slice(0, 7)}&scope=${scope}`
+          )
+        );
       }
       setState("ok");
     } catch (e) {
       setState(e instanceof Error && e.message === "locked" ? "locked" : "error");
     }
-  }, [view, date]);
+  }, [view, date, scope]);
 
   useEffect(() => {
     load();
@@ -478,9 +527,10 @@ export default function AdminPage() {
   };
 
   const logout = async () => {
-    await fetch("/api/admin/login", { method: "DELETE" }).catch(() => { });
+    await fetch("/api/admin/login", { method: "DELETE" }).catch(() => {});
     setDay(null);
     setWeek(null);
+    setMonth(null);
     setState("locked");
   };
 
@@ -510,7 +560,7 @@ export default function AdminPage() {
               {[
                 "ดูผลวันนี้ของผู้เล่นทุกคน",
                 `ย้อนหลังรายวัน ดูว่าใครเข้า ${POINT_QUOTA} คนแรก`,
-                "สรุป point รายสัปดาห์",
+                "สรุป point รายสัปดาห์ รายเดือน และตั้งแต่เริ่มกิจกรรม",
               ].map((p) => (
                 <li
                   key={p}
@@ -560,8 +610,9 @@ export default function AdminPage() {
                   }}
                   autoComplete="current-password"
                   aria-invalid={!!pwErr}
-                  className={`h-12 w-full rounded-2xl bg-white px-4 pr-20 text-[16px] outline-none ring-2 transition-shadow focus:ring-[#C9F25B] ${pwErr ? "ring-[#D92D20]/60" : "ring-transparent"
-                    }`}
+                  className={`h-12 w-full rounded-2xl bg-white px-4 pr-20 text-[16px] outline-none ring-2 transition-shadow focus:ring-[#C9F25B] ${
+                    pwErr ? "ring-[#D92D20]/60" : "ring-transparent"
+                  }`}
                 />
                 <button
                   type="button"
@@ -597,43 +648,80 @@ export default function AdminPage() {
 
   /* ---------------- ข้อมูลที่คำนวณจากผลลัพธ์ ---------------- */
 
+  const isAll = view === "month" && scope === "all";
   const step = view === "day" ? 1 : 7;
   const atLatest =
-    !today || date >= (view === "day" ? today : shiftYmd(today, -6));
+    !today ||
+    (view === "day"
+      ? date >= today
+      : view === "week"
+        ? date >= shiftYmd(today, -6)
+        : date.slice(0, 7) >= today.slice(0, 7));
 
-  const dayRows = day
-    ? day.entries.filter(
-      (e) =>
-        (!onlyAwarded || e.points > 0) && matches(q, e.name, e.username)
-    )
-    : [];
-  const weekRows = week
-    ? [...week.entries]
+  const goPrev = () =>
+    setDate(view === "month" ? shiftMonth(date, -1) : shiftYmd(date, -step));
+  const goNext = () =>
+    setDate(view === "month" ? shiftMonth(date, 1) : shiftYmd(date, step));
+
+  const byKey = <T extends { points: number; total: number }>(rows: T[]) =>
+    [...rows]
       .sort(
-        weekSort === "total"
+        sort === "total"
           ? (a, b) => b.total - a.total || b.points - a.points
           : (a, b) => b.points - a.points || b.total - a.total
       )
-      .map((e, i) => ({ ...e, rank: i + 1 }))
-      .filter((e) => matches(q, e.name, e.username))
+      .map((e, i) => ({ ...e, rank: i + 1 }));
+
+  const dayRows = day
+    ? day.entries.filter(
+        (e) =>
+          (!onlyAwarded || e.points > 0) && matches(q, e.name, e.username)
+      )
+    : [];
+  const weekRows = week
+    ? byKey(week.entries).filter((e) => matches(q, e.name, e.username))
+    : [];
+  const monthRows = month
+    ? byKey(month.entries).filter((e) => matches(q, e.name, e.username))
     : [];
 
   const dayTotal = day ? day.entries.reduce((a, e) => a + e.total, 0) : 0;
   const weekPoints = week ? week.entries.reduce((a, e) => a + e.points, 0) : 0;
   const weekTotal = week ? week.entries.reduce((a, e) => a + e.total, 0) : 0;
+  const monthPoints = month
+    ? month.entries.reduce((a, e) => a + e.points, 0)
+    : 0;
+  const monthTotal = month
+    ? month.entries.reduce((a, e) => a + e.total, 0)
+    : 0;
 
   const navBtn =
     "flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#1B2A21] shadow-sm transition-transform active:scale-90 disabled:opacity-30";
 
-  const title = view === "day" ? "ผลรายวัน" : "สรุปรายสัปดาห์";
+  const title =
+    view === "day"
+      ? "ผลรายวัน"
+      : view === "week"
+        ? "สรุปรายสัปดาห์"
+        : isAll
+          ? "สรุปตั้งแต่เริ่มกิจกรรม"
+          : "สรุปรายเดือน";
   const subtitle =
     view === "day"
       ? date
         ? fmtLong(date)
         : ""
-      : week
-        ? `${fmtShort(week.days[0])} – ${fmtShort(week.days[6])} · จันทร์ถึงอาทิตย์ เวลาไทย`
-        : "";
+      : view === "week"
+        ? week
+          ? `${fmtShort(week.days[0])} – ${fmtShort(week.days[6])} · จันทร์ถึงอาทิตย์ เวลาไทย`
+          : ""
+        : isAll
+          ? month && month.dayCount > 0
+            ? `ตั้งแต่ ${fmtShort(month.since)} ถึงวันนี้ · ${fmtNum(month.dayCount)} วัน`
+            : ""
+          : date
+            ? fmtMonth(date.slice(0, 7))
+            : "";
 
   const card = "rounded-3xl bg-white";
   const th =
@@ -659,37 +747,70 @@ export default function AdminPage() {
 
         {/* แถบเครื่องมือ */}
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setDate(shiftYmd(date, -step))}
-              disabled={!date}
-              aria-label="ก่อนหน้า"
-              className={navBtn}
-            >
-              <Icon d={ICONS.left} size={18} />
-            </button>
-            <input
-              type="date"
-              value={date}
-              max={today || undefined}
-              onChange={(e) => e.target.value && setDate(e.target.value)}
-              className="h-10 min-w-0 flex-1 rounded-full bg-white px-4 text-[15px] shadow-sm outline-none ring-2 ring-transparent focus:ring-[#C9F25B] lg:w-48 lg:flex-none"
-            />
-            <button
-              onClick={() => setDate(shiftYmd(date, step))}
-              disabled={atLatest}
-              aria-label="ถัดไป"
-              className={navBtn}
-            >
-              <Icon d={ICONS.right} size={18} />
-            </button>
-            <button
-              onClick={() => today && setDate(today)}
-              className="h-10 rounded-full bg-[#C9F25B] px-5 text-[14px] font-semibold text-[#1B2A21] transition-all active:scale-95 active:bg-[#B8E348]"
-            >
-              {view === "day" ? "วันนี้" : "สัปดาห์นี้"}
-            </button>
-          </div>
+          {view === "month" && (
+            <div className="w-full shrink-0 lg:w-64">
+              <Segmented<Scope>
+                value={scope}
+                onChange={setScope}
+                options={
+                  [
+                    ["month", "รายเดือน"],
+                    ["all", "ตั้งแต่เริ่ม"],
+                  ] as const
+                }
+              />
+            </div>
+          )}
+
+          {!isAll && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={goPrev}
+                disabled={!date}
+                aria-label="ก่อนหน้า"
+                className={navBtn}
+              >
+                <Icon d={ICONS.left} size={18} />
+              </button>
+              {view === "month" ? (
+                <input
+                  type="month"
+                  value={date.slice(0, 7)}
+                  max={today ? today.slice(0, 7) : undefined}
+                  onChange={(e) =>
+                    e.target.value && setDate(`${e.target.value}-01`)
+                  }
+                  className="h-10 min-w-0 flex-1 rounded-full bg-white px-4 text-[15px] shadow-sm outline-none ring-2 ring-transparent focus:ring-[#C9F25B] lg:w-48 lg:flex-none"
+                />
+              ) : (
+                <input
+                  type="date"
+                  value={date}
+                  max={today || undefined}
+                  onChange={(e) => e.target.value && setDate(e.target.value)}
+                  className="h-10 min-w-0 flex-1 rounded-full bg-white px-4 text-[15px] shadow-sm outline-none ring-2 ring-transparent focus:ring-[#C9F25B] lg:w-48 lg:flex-none"
+                />
+              )}
+              <button
+                onClick={goNext}
+                disabled={atLatest}
+                aria-label="ถัดไป"
+                className={navBtn}
+              >
+                <Icon d={ICONS.right} size={18} />
+              </button>
+              <button
+                onClick={() => today && setDate(today)}
+                className="h-10 rounded-full bg-[#C9F25B] px-5 text-[14px] font-semibold text-[#1B2A21] transition-all active:scale-95 active:bg-[#B8E348]"
+              >
+                {view === "day"
+                  ? "วันนี้"
+                  : view === "week"
+                    ? "สัปดาห์นี้"
+                    : "เดือนนี้"}
+              </button>
+            </div>
+          )}
 
           <div className="flex flex-1 flex-wrap items-center gap-3 lg:justify-end">
             <label className="relative block min-w-0 flex-1 lg:max-w-xs lg:flex-none">
@@ -703,15 +824,29 @@ export default function AdminPage() {
                 className="h-10 w-full rounded-full bg-white pl-10 pr-4 text-[14px] shadow-sm outline-none ring-2 ring-transparent placeholder:text-[#A9B79A] focus:ring-[#C9F25B]"
               />
             </label>
-            {view === "week" && (
+            {view !== "day" && (
               <div className="w-64 shrink-0">
-                <Segmented<"points" | "total">
-                  value={weekSort}
-                  onChange={setWeekSort}
+                <Segmented<Sort>
+                  value={sort}
+                  onChange={setSort}
                   options={
                     [
                       ["points", "point สูงสุด"],
                       ["total", "โดดมากสุด"],
+                    ] as const
+                  }
+                />
+              </div>
+            )}
+            {view === "day" && (
+              <div className="w-56 shrink-0">
+                <Segmented<"all" | "awarded">
+                  value={onlyAwarded ? "awarded" : "all"}
+                  onChange={(v) => setOnlyAwarded(v === "awarded")}
+                  options={
+                    [
+                      ["all", "ทุกคน"],
+                      ["awarded", `ได้ point`],
                     ] as const
                   }
                 />
@@ -955,10 +1090,11 @@ export default function AdminPage() {
                               className="hidden px-1 py-3 text-center md:table-cell"
                             >
                               <span
-                                className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-[12px] tabular-nums ${p > 0
-                                  ? "bg-[#3F5E1F] font-semibold text-[#C9F25B]"
-                                  : "bg-[#EEF2E4] text-[#A9B79A]"
-                                  }`}
+                                className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-[12px] tabular-nums ${
+                                  p > 0
+                                    ? "bg-[#3F5E1F] font-semibold text-[#C9F25B]"
+                                    : "bg-[#EEF2E4] text-[#A9B79A]"
+                                }`}
                               >
                                 {p > 0 ? `+${p}` : "–"}
                               </span>
@@ -969,8 +1105,9 @@ export default function AdminPage() {
                           </td>
                           <td className="px-4 py-3 text-right">
                             <span
-                              className={`text-[22px] font-semibold tabular-nums ${e.points > 0 ? "text-[#3F5E1F]" : "text-[#A9B79A]"
-                                }`}
+                              className={`text-[22px] font-semibold tabular-nums ${
+                                e.points > 0 ? "text-[#3F5E1F]" : "text-[#A9B79A]"
+                              }`}
                             >
                               {fmtNum(e.points)}
                             </span>
@@ -983,10 +1120,148 @@ export default function AdminPage() {
               )}
             </section>
             <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-              {weekSort === "total"
+              {sort === "total"
                 ? "เรียงตามยอดโดดรวมของสัปดาห์ ถ้าเท่ากันเรียงตาม point"
-                : "เรียงตาม point รวมของสัปดาห์ ถ้าเท่ากันเรียงตามยอดโดดรวม"}
+                : "เรียงตาม point รวมของสัปดาห์ ถ้าเท่ากันเรียงตามยอดโดดรวม"}{" "}
               point คำนวณจากกติกา {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน ได้ {POINT_REWARD} point
+            </p>
+          </>
+        )}
+
+        {/* ---------------- รายเดือน / ตั้งแต่เริ่ม ---------------- */}
+        {state === "ok" && view === "month" && month && (
+          <>
+            <div className="pj-stagger grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+              <StatCard
+                dark
+                icon={ICONS.users}
+                label="คนที่โดด"
+                value={fmtNum(month.entries.length)}
+                sub={isAll ? "คนทั้งหมดที่เคยโดด" : "คนในเดือนนี้"}
+              />
+              <StatCard
+                icon={ICONS.star}
+                label="point ที่แจกรวม"
+                value={fmtNum(monthPoints)}
+                sub="point"
+              />
+              <StatCard
+                icon={ICONS.bolt}
+                label="โดดรวม"
+                value={fmtNum(monthTotal)}
+                sub="ครั้ง"
+              />
+              <StatCard
+                icon={ICONS.day}
+                label="วันที่มีคนโดด"
+                value={fmtNum(month.activeDays)}
+                sub={`จาก ${fmtNum(month.dayCount)} วัน`}
+              />
+            </div>
+
+            <section className={`${card} mt-4 overflow-hidden`}>
+              {monthRows.length === 0 ? (
+                <p className="px-4 py-10 text-center text-[14px] text-[#6B7A6E]">
+                  ไม่มีข้อมูล
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#EEF2E4]">
+                        <th className={`${th} w-16`}>#</th>
+                        <th className={th}>ผู้เล่น</th>
+                        <th className={`${th} hidden text-right md:table-cell`}>
+                          วันที่โดด
+                        </th>
+                        <th className={`${th} hidden text-right md:table-cell`}>
+                          วันที่ได้ point
+                        </th>
+                        <th className={`${th} hidden text-right lg:table-cell`}>
+                          รอบ
+                        </th>
+                        <th className={`${th} hidden text-right lg:table-cell`}>
+                          วันที่ดีที่สุด
+                        </th>
+                        <th className={`${th} text-right`}>โดดรวม</th>
+                        <th className={`${th} text-right`}>point รวม</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EEF2E4]">
+                      {monthRows.map((e) => (
+                        <tr key={e.userId}>
+                          <td className="px-4 py-3">
+                            <Rank rank={e.rank} />
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <Avatar name={e.name} />
+                              <div className="min-w-0">
+                                <div className="truncate text-[15px] font-semibold">
+                                  {e.name}
+                                </div>
+                                {e.username && (
+                                  <div className="truncate text-[12px] text-[#6B7A6E]">
+                                    @{e.username}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="hidden px-4 py-3 text-right text-[14px] tabular-nums text-[#6B7A6E] md:table-cell">
+                            {fmtNum(e.activeDays)}
+                          </td>
+                          <td className="hidden px-4 py-3 text-right md:table-cell">
+                            <span
+                              className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-[13px] font-semibold tabular-nums ${
+                                e.rewardDays > 0
+                                  ? "bg-[#3F5E1F] text-[#C9F25B]"
+                                  : "bg-[#EEF2E4] text-[#A9B79A]"
+                              }`}
+                            >
+                              {e.rewardDays}
+                            </span>
+                          </td>
+                          <td className="hidden px-4 py-3 text-right text-[14px] tabular-nums text-[#6B7A6E] lg:table-cell">
+                            {fmtNum(e.rounds)}
+                          </td>
+                          <td className="hidden px-4 py-3 text-right text-[14px] tabular-nums text-[#6B7A6E] lg:table-cell">
+                            {fmtNum(e.bestDay)}
+                          </td>
+                          <td
+                            className={`px-4 py-3 text-right tabular-nums ${
+                              sort === "total"
+                                ? "text-[22px] font-semibold text-[#3F5E1F]"
+                                : "text-[15px] text-[#6B7A6E]"
+                            }`}
+                          >
+                            {fmtNum(e.total)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span
+                              className={`font-semibold tabular-nums ${
+                                sort === "total" ? "text-[15px]" : "text-[22px]"
+                              } ${
+                                e.points > 0 ? "text-[#3F5E1F]" : "text-[#A9B79A]"
+                              }`}
+                            >
+                              {fmtNum(e.points)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+            <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
+              {sort === "total"
+                ? "เรียงตามยอดโดดรวม ถ้าเท่ากันเรียงตาม point"
+                : "เรียงตาม point รวม ถ้าเท่ากันเรียงตามยอดโดดรวม"}{" "}
+              วันที่ดีที่สุด = ยอดโดดสูงสุดในหนึ่งวัน ·{" "}
+              {isAll ? "นับตั้งแต่รอบกระโดดแรกของระบบ " : "นับทั้งเดือน "}
+              ตัดวันที่เที่ยงคืนเวลาไทย · point จากกติกา {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน ได้ {POINT_REWARD} point
             </p>
           </>
         )}
