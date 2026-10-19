@@ -665,6 +665,8 @@ const STYLES = `
 .pj-coin { position: absolute; top: 0; animation: pj-coin linear infinite; }
 @keyframes pj-stamp { 0% { transform: scale(.2) rotate(-25deg); opacity: 0; } 60% { transform: scale(1.15) rotate(6deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
 .pj-stamp { animation: pj-stamp .6s cubic-bezier(.2,.9,.3,1.2) both; }
+@keyframes pj-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.pj-rise { transform-origin: bottom; animation: pj-rise .6s cubic-bezier(.2,.9,.3,1.1) both; }
 .pj-lift { transition: transform .2s ease, box-shadow .2s ease; }
 @media (hover: hover) { .pj-lift:hover { transform: translateY(-3px); box-shadow: 0 10px 24px -12px rgba(27,42,33,.25); } }
 .pj-stagger > * { animation: pj-fade .45s cubic-bezier(.2,.8,.2,1) both; }
@@ -672,7 +674,7 @@ const STYLES = `
 .pj-stagger > *:nth-child(3) { animation-delay: .12s; }
 .pj-stagger > *:nth-child(4) { animation-delay: .18s; }
 .pj-stagger > *:nth-child(5) { animation-delay: .24s; }
-@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-pop, .pj-in, .pj-pulse, .pj-float, .pj-glow, .pj-wave, .pj-coin, .pj-stamp, .pj-stagger > * { animation: none; } .pj-lift { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-pop, .pj-in, .pj-pulse, .pj-float, .pj-glow, .pj-wave, .pj-coin, .pj-stamp, .pj-rise, .pj-stagger > * { animation: none; } .pj-lift { transition: none; } }
 `;
 
 function Icon({
@@ -1159,6 +1161,116 @@ function PointBadge({ points }: { points: number }) {
   );
 }
 
+// แท่นยืน 3 อันดับแรก: เรียงซ้าย→ขวา = อันดับ 2, 1, 3 แท่นสูงตามอันดับ
+function Podium({ entries }: { entries: BoardEntry[] }) {
+  const slots: { place: 1 | 2 | 3; e?: BoardEntry }[] = [
+    { place: 2, e: entries[1] },
+    { place: 1, e: entries[0] },
+    { place: 3, e: entries[2] },
+  ];
+  const look = {
+    1: { h: 128, step: "bg-[#C9F25B] text-[#1B2A21]", av: 60, delay: "0s" },
+    2: { h: 96, step: "bg-[#1B2A21] text-[#C9F25B]", av: 48, delay: ".12s" },
+    3: { h: 72, step: "bg-[#3F5E1F] text-white", av: 48, delay: ".24s" },
+  } as const;
+
+  return (
+    <section aria-label="3 อันดับแรก" className="relative">
+      <div className="overflow-hidden rounded-3xl bg-white px-3 pt-5">
+      <div className="flex items-end gap-2">
+        {slots.map(({ place, e }) => {
+          const L = look[place];
+          const reached = !!e && (e.goalRank != null || e.total >= e.goal);
+          return (
+            <div
+              key={place}
+              className="flex min-w-0 flex-1 flex-col items-center"
+            >
+              {e ? (
+                <>
+                  {place === 1 && (
+                    <span className="pj-float mb-1 text-[#3F5E1F]">
+                      <Icon d={ICONS.trophy} size={26} />
+                    </span>
+                  )}
+                  <span
+                    className={`rounded-full ${
+                      e.me ? "ring-2 ring-[#3F5E1F] ring-offset-2" : ""
+                    }`}
+                  >
+                    <Avatar name={e.name} size={L.av} />
+                  </span>
+                  <div className="mt-2 w-full truncate text-center text-[14px] font-semibold">
+                    {e.name}
+                  </div>
+                  {e.me && (
+                    <span className="mt-0.5 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
+                      คุณ
+                    </span>
+                  )}
+                  <div className="mt-1 text-[20px] font-semibold leading-none tabular-nums">
+                    {fmtNum(e.total)}
+                  </div>
+                  <div className="mb-2 mt-1 text-[11px] text-[#6B7A6E]">
+                    ครั้ง · {e.rounds} รอบ
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span
+                    className="flex items-center justify-center rounded-full bg-[#EEF2E4] font-semibold text-[#A9B79A]"
+                    style={{ width: L.av, height: L.av }}
+                    aria-hidden
+                  >
+                    —
+                  </span>
+                  <div className="mt-2 text-[14px] text-[#A9B79A]">ว่าง</div>
+                  <div className="mb-2 mt-1 text-[11px] text-transparent">
+                    -
+                  </div>
+                </>
+              )}
+              <div
+                className={`pj-rise flex w-full flex-col items-center justify-start gap-1 rounded-t-2xl pt-3 ${
+                  e ? L.step : "bg-[#EEF2E4] text-[#A9B79A]"
+                }`}
+                style={{ height: L.h, animationDelay: L.delay }}
+              >
+                <span className="text-[32px] font-bold leading-none tabular-nums">
+                  {place}
+                </span>
+                {reached && (
+                  <span
+                    className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20"
+                    aria-label="ถึงเป้าแล้ว"
+                  >
+                    <Icon d={ICONS.check} size={12} />
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      </div>
+
+      {/* พลุกระดาษให้อันดับ 1: ยิงครั้งเดียวตอนเข้าหน้า (แท่นยืนเมานต์ใหม่ทุกครั้งที่เปิดแท็บ)
+          ใช้สีเขียวเข้มกับมะนาวให้เห็นชัดบนพื้นขาว และยื่นพ้นกรอบการ์ดขึ้นไปด้านบน */}
+      {entries[0] && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 -top-20 bottom-0 z-10"
+        >
+          <Confetti
+            count={90}
+            colors={[LIME, "#8FB54A", "#3F5E1F", "#1B2A21", "#E8F5C1"]}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
 // แบนเนอร์ชวนโดด: ยังไม่ถึงเป้า = ชวนรับ point / ถึงเป้าแล้ว = ยินดีกับคะแนนที่ทำได้
 function PromoBanner({
   status,
@@ -1185,7 +1297,7 @@ function PromoBanner({
         <div className="min-w-0 flex-1">
           <div className="text-[18px] font-bold leading-snug">
             {done
-              ? `ยินดีด้วย! วันนี้คุณทำได้ ${fmtNum(total)} ครั้ง`
+              ? `เยี่ยมมาก! วันนี้โดดไป ${fmtNum(total)} ครั้ง ผ่านเป้าแล้ว`
               : `${POINT_QUOTA} คนแรกที่โดดถึงเป้า รับ ${POINT_REWARD} point!`}
           </div>
           <p
@@ -1194,7 +1306,7 @@ function PromoBanner({
             }`}
           >
             {done
-              ? "ถึงเป้าหมายรายวันแล้ว เก่งมาก โดดต่อเพื่อเก็บสถิติได้เลย"
+              ? "เป้าหมายวันนี้สำเร็จ โดดต่อเพื่อไต่อันดับและทำสถิติใหม่ได้เลย"
               : "ทำเป้าหมายรายวันให้สำเร็จก่อนคนอื่น เซ็ตทุกเที่ยงคืนเวลาไทย"}
           </p>
         </div>
@@ -1373,7 +1485,13 @@ function ProfileMenu({
 
 // พลุกระดาษมินิมอล: ยิงจากกลางการ์ดตัวเลข สีตามธีม จางหายใน ~2.6 วิ
 // ไม่ยิงถ้าผู้ใช้ตั้งค่าลดการเคลื่อนไหว
-function Confetti({ count = 70 }: { count?: number }) {
+function Confetti({
+  count = 70,
+  colors = [LIME, "#E8F5C1", "#FFFFFF", "#8FB54A"],
+}: {
+  count?: number;
+  colors?: string[];
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -1390,7 +1508,6 @@ function Confetti({ count = 70 }: { count?: number }) {
     canvas.height = h * dpr;
     ctx.scale(dpr, dpr);
 
-    const colors = [LIME, "#E8F5C1", "#FFFFFF", "#8FB54A"];
     const DURATION = 2600;
     const FADE = 700;
 
@@ -1459,6 +1576,8 @@ function Confetti({ count = 70 }: { count?: number }) {
       clearTimeout(timer);
       cancelAnimationFrame(raf);
     };
+    // ยิงครั้งเดียวตอนเมานต์ ไม่ยิงซ้ำเมื่อ colors (array ใหม่ทุกเรนเดอร์) เปลี่ยน
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count]);
 
   return (
@@ -1534,10 +1653,10 @@ function RewardModal({
           <Icon d={ICONS.star} size={52} fill />
         </span>
         <h2 className="mt-4 text-[26px] font-bold leading-tight">
-          ยินดีด้วย {name}!
+          สุดยอด {name}!
         </h2>
         <p className="mt-1 text-[14px] text-[#6B7A6E]">
-          คุณเป็น {POINT_QUOTA} คนแรกที่โดดถึงเป้าวันนี้
+          คุณคือ 1 ใน {POINT_QUOTA} คนแรกที่โดดถึงเป้าวันนี้ รับ point ไปเลย
         </p>
         <div className="mt-4 rounded-3xl bg-[#1B2A21] py-4 text-white">
           <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
@@ -3443,6 +3562,74 @@ export default function Home() {
             ? "bg-[#3F5E1F] text-white"
             : "text-[#6B7A6E]";
 
+    // แถวอันดับ 4 ขึ้นไป (3 อันดับแรกอยู่บนแท่นยืน)
+    const boardRow = (e: BoardEntry) => {
+      // ถึงเป้า = เซิร์ฟเวอร์บันทึกว่าถึงเป้าแล้ว หรือยอดรวมทุกรอบของวันถึงเป้าของคนนั้น
+      const reached = e.goalRank != null || e.total >= e.goal;
+      const pct = reached
+        ? 100
+        : Math.min(100, (e.total / Math.max(1, e.goal)) * 100);
+      return (
+        <li
+          key={e.rank}
+          className={`flex items-center gap-3 rounded-3xl px-4 py-3 ${
+            e.me ? "bg-[#E8F5C1]" : "bg-white"
+          }`}
+        >
+          <span
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums ${rankBadge(
+              e.rank
+            )}`}
+          >
+            {e.rank}
+          </span>
+          <Avatar name={e.name} size={40} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-[16px] font-semibold">
+                {e.name}
+              </span>
+              {e.me && (
+                <span className="shrink-0 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
+                  คุณ
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <GoalTag goalRank={e.goalRank ?? null} />
+              {e.goalRank != null && (
+                <span className="text-[11px] text-[#6B7A6E]">
+                  ถึงเป้าลำดับที่ {e.goalRank}
+                </span>
+              )}
+            </div>
+            <div
+              className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]"
+              role="progressbar"
+              aria-label="ความคืบหน้าสู่เป้าหมายรายวัน"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(pct)}
+            >
+              <div
+                className="h-full rounded-full transition-[width] duration-500"
+                style={{
+                  width: `${pct}%`,
+                  background: reached ? "#3F5E1F" : "#A9B79A",
+                }}
+              />
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-[18px] font-semibold tabular-nums">
+              {fmtNum(e.total)}
+            </div>
+            <div className="text-[11px] text-[#6B7A6E]">{e.rounds} รอบ</div>
+          </div>
+        </li>
+      );
+    };
+
     const todayView = (
       <>
         <header className="mb-5 flex items-end justify-between gap-3">
@@ -3464,19 +3651,6 @@ export default function Home() {
           </button>
         </header>
 
-        {(() => {
-          const mine = board?.entries.find((e) => e.me);
-          const reached =
-            !!mine && (mine.goalRank != null || mine.total >= mine.goal);
-          return (
-            <div className="mb-4">
-              <PromoBanner
-                status={reached ? "done" : "open"}
-                total={mine?.total ?? 0}
-              />
-            </div>
-          );
-        })()}
 
         {!board && !boardErr && (
           <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
@@ -3499,11 +3673,33 @@ export default function Home() {
         )}
 
         {board && (
-          <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
-            <div className="pj-stagger space-y-4">
+          <div className="space-y-4">
+            <section>
+              <h2 className="mb-2 px-1 text-[16px] font-semibold">ตารางอันดับ</h2>
+              {board.entries.length === 0 ? (
+                <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
+                  ยังไม่มีอันดับ
+                </p>
+              ) : (
+                <>
+                  <Podium entries={board.entries.slice(0, 3)} />
+                  {board.entries.length > 3 && (
+                    <ul className="mt-3 space-y-2">
+                      {board.entries.slice(3).map(boardRow)}
+                    </ul>
+                  )}
+                </>
+              )}
+              <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
+                {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุกเที่ยงคืนเวลาไทย
+              </p>
+            </section>
+            <div className="pj-stagger space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
               <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
                 <div className="flex items-start justify-between gap-3">
-                  <span className="text-[15px] font-semibold">ผู้นำวันนี้</span>
+                  <span className="text-[15px] font-semibold">
+                    เจ้าของอันดับ 1 วันนี้
+                  </span>
                   <span className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-medium text-[#C9F25B]">
                     {board.count} คนลงสนาม
                   </span>
@@ -3523,11 +3719,16 @@ export default function Home() {
                         </span>
                         <span className="text-[14px] text-white/60">ครั้ง</span>
                       </div>
+                      <p className="mt-1.5 text-[13px] text-white/70">
+                        {leader.me
+                          ? "คุณนำอยู่ รักษาตำแหน่งนี้ไว้ให้ได้"
+                          : `ใครจะแซง ${leader.name} ได้ ลงสนามเลย`}
+                      </p>
                     </div>
                   </div>
                 ) : (
                   <p className="mt-4 text-[16px] text-white/80">
-                    ยังไม่มีใครกระโดดวันนี้ ลงสนามเป็นคนแรกเลย
+                    ยังไม่มีใครขึ้นแท่น ลงสนามแล้วชิงอันดับ 1 เป็นคนแรก
                   </p>
                 )}
               </section>
@@ -3567,88 +3768,21 @@ export default function Home() {
               </section>
             </div>
 
-            <section>
-              <h2 className="mb-2 px-1 text-[16px] font-semibold">ตารางอันดับ</h2>
-              {board.entries.length === 0 ? (
-                <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
-                  ยังไม่มีอันดับ
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {board.entries.map((e) => {
-                    // ถึงเป้า = เซิร์ฟเวอร์บันทึกว่าถึงเป้าแล้ว หรือยอดรวมทุกรอบของวันถึงเป้าของคนนั้น
-                    const reached = e.goalRank != null || e.total >= e.goal;
-                    const pct = reached
-                      ? 100
-                      : Math.min(100, (e.total / Math.max(1, e.goal)) * 100);
-                    return (
-                      <li
-                        key={e.rank}
-                        className={`flex items-center gap-3 rounded-3xl px-4 py-3 ${
-                          e.me ? "bg-[#E8F5C1]" : "bg-white"
-                        }`}
-                      >
-                        <span
-                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums ${rankBadge(
-                            e.rank
-                          )}`}
-                        >
-                          {e.rank}
-                        </span>
-                        <Avatar name={e.name} size={40} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="truncate text-[16px] font-semibold">
-                              {e.name}
-                            </span>
-                            {e.me && (
-                              <span className="shrink-0 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
-                                คุณ
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            <GoalTag goalRank={e.goalRank ?? null} />
-                            {e.goalRank != null && (
-                              <span className="text-[11px] text-[#6B7A6E]">
-                                ถึงเป้าลำดับที่ {e.goalRank}
-                              </span>
-                            )}
-                          </div>
-                          <div
-                            className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]"
-                            role="progressbar"
-                            aria-label="ความคืบหน้าสู่เป้าหมายรายวัน"
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                            aria-valuenow={Math.round(pct)}
-                          >
-                            <div
-                              className="h-full rounded-full transition-[width] duration-500"
-                              style={{
-                                width: `${pct}%`,
-                                background: reached ? "#3F5E1F" : "#A9B79A",
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-[18px] font-semibold tabular-nums">
-                            {fmtNum(e.total)}
-                          </div>
-                          <div className="text-[11px] text-[#6B7A6E]">
-                            {e.rounds} รอบ
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-                {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุกเที่ยงคืนเวลาไทย
-              </p>
-            </section>
+            <div>
+            {(() => {
+          const mine = board?.entries.find((e) => e.me);
+          const reached =
+            !!mine && (mine.goalRank != null || mine.total >= mine.goal);
+          return (
+            <div className="mb-4">
+              <PromoBanner
+                status={reached ? "done" : "open"}
+                total={mine?.total ?? 0}
+              />
+            </div>
+          );
+        })()}
+            </div>
           </div>
         )}
       </>
@@ -4458,4 +4592,4 @@ export default function Home() {
       )}
     </div>
   );
-} 
+}
