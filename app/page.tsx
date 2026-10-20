@@ -201,6 +201,7 @@ function Avatar({
       <img
         src={src}
         alt={name}
+        referrerPolicy="no-referrer"
         onError={() => setImgError(true)}
         className="shrink-0 rounded-full object-cover bg-[#1B2A21]"
         style={{ width: size, height: size }}
@@ -908,6 +909,11 @@ export default function Home() {
     setUser((u) => (u && u.points !== pts ? { ...u, points: pts } : u));
   }, []);
 
+  // อัปเดตชื่อ/รูปโปรไฟล์ใน state หลังบันทึกจากหน้าตั้งค่า
+  const updateProfile = useCallback((patch: Partial<User>) => {
+    setUser((u) => (u ? { ...u, ...patch } : u));
+  }, []);
+
   const startSession = useCallback(() => {
     setGyroPromise(Pose.prime(facing, audioRef));
     setError(null);
@@ -1074,6 +1080,8 @@ export default function Home() {
           )}
           {tab === "settings" && (
             <Setting
+              user={user}
+              onUserChange={updateProfile}
               facing={facing}
               onFacing={setFacing}
               sound={sound}

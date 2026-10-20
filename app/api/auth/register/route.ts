@@ -113,4 +113,4 @@ export async function POST(req: Request) {
     console.error("register failed", e);
     return NextResponse.json({ error: "เซิร์ฟเวอร์ผิดพลาด" }, { status: 500 });
   }
-} 
+}

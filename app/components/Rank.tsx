@@ -79,6 +79,7 @@ function Avatar({
       <img
         src={src}
         alt={name}
+        referrerPolicy="no-referrer"
         onError={() => setImgError(true)}
         className="shrink-0 rounded-full object-cover bg-[#1B2A21]"
         style={{ width: size, height: size }}
