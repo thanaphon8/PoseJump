@@ -6,6 +6,7 @@ import { Prompt } from "next/font/google";
 import LoginForm from "./components/LoginForm";
 import RegisterForm from "./components/RegisterForm";
 import Pose from "./components/pose/page";
+import Rank from "./components/rank/page";
 import {
   APP_NAME,
   ICONS,
@@ -99,26 +100,6 @@ type Settings = {
 // ภาพยืนยันของวันนี้: ภาพแรกของวัน (ครั้งเดียว) + ภาพตอนใกล้ถึงเป้าประจำวัน (ครั้งเดียว)
 type DayShots = { day: string; start: string | null; end: string | null };
 const EMPTY_SHOTS: DayShots = { day: "", start: null, end: null };
-
-// อันดับวันนี้ (มาจาก /api/leaderboard)
-type BoardEntry = {
-  rank: number;
-  name: string;
-  total: number;
-  rounds: number;
-  me: boolean;
-  // ลำดับที่ทำเป้าหมายรายวันสำเร็จ (1 = คนแรก) null = ยังไม่ถึงเป้า
-  goalRank: number | null;
-  // เป้าหมายรายวันของคนนั้น ใช้วาดหลอดความคืบหน้า
-  goal: number;
-};
-
-type Board = {
-  entries: BoardEntry[];
-  me: { rank: number; total: number; gap: number; points: number } | null;
-  count: number;
-  resetAt: number;
-};
 
 // ใช้เทียบว่าค่าตั้งค่าเปลี่ยนจากที่ซิงก์ไว้ล่าสุดไหม
 const settingsKey = (v: Settings) =>
@@ -522,25 +503,6 @@ function Avatar({ name, size = 40 }: { name: string; size?: number }) {
   );
 }
 
-// แท็กบอกว่าแต่ละคนทัน 100 คนแรกที่ทำเป้าหมายรายวันสำเร็จหรือไม่
-function GoalTag({ goalRank }: { goalRank: number | null }) {
-  if (goalRank === null) {
-    return (
-      <span className="shrink-0 rounded-full border border-[#C5CFB5] px-2 py-0.5 text-[11px] font-semibold text-[#6B7A6E]">
-        ยังไม่ถึงเป้า
-      </span>
-    );
-  }
-  // ลำดับ 101 ขึ้นไป ไม่แสดงแท็ก
-  if (goalRank > POINT_QUOTA) return null;
-  return (
-    <span className="flex shrink-0 items-center gap-1 rounded-full bg-[#3F5E1F] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
-      <Icon d={ICONS.check} size={11} />
-      ทัน {POINT_QUOTA} คนแรก · +{POINT_REWARD}
-    </span>
-  );
-}
-
 // ป้าย point รวมของบัญชี
 function PointBadge({ points }: { points: number }) {
   return (
@@ -548,160 +510,6 @@ function PointBadge({ points }: { points: number }) {
       <Icon d={ICONS.star} size={12} fill />
       {fmtNum(points)} point
     </span>
-  );
-}
-
-// แท่นยืน 3 อันดับแรก: เรียงซ้าย→ขวา = อันดับ 2, 1, 3 แท่นสูงตามอันดับ
-function Podium({ entries }: { entries: BoardEntry[] }) {
-  const slots: { place: 1 | 2 | 3; e?: BoardEntry }[] = [
-    { place: 2, e: entries[1] },
-    { place: 1, e: entries[0] },
-    { place: 3, e: entries[2] },
-  ];
-  const look = {
-    1: { h: 128, step: "bg-[#C9F25B] text-[#1B2A21]", av: 60, delay: "0s" },
-    2: { h: 96, step: "bg-[#1B2A21] text-[#C9F25B]", av: 48, delay: ".12s" },
-    3: { h: 72, step: "bg-[#3F5E1F] text-white", av: 48, delay: ".24s" },
-  } as const;
-
-  return (
-    <section aria-label="3 อันดับแรก" className="relative">
-      <div className="overflow-hidden rounded-3xl bg-white px-3 pt-5">
-      <div className="flex items-end gap-2">
-        {slots.map(({ place, e }) => {
-          const L = look[place];
-          const reached = !!e && (e.goalRank != null || e.total >= e.goal);
-          return (
-            <div
-              key={place}
-              className="flex min-w-0 flex-1 flex-col items-center"
-            >
-              {e ? (
-                <>
-                  {place === 1 && (
-                    <span className="pj-float mb-1 text-[#3F5E1F]">
-                      <Icon d={ICONS.trophy} size={26} />
-                    </span>
-                  )}
-                  <span
-                    className={`rounded-full ${
-                      e.me ? "ring-2 ring-[#3F5E1F] ring-offset-2" : ""
-                    }`}
-                  >
-                    <Avatar name={e.name} size={L.av} />
-                  </span>
-                  <div className="mt-2 w-full truncate text-center text-[14px] font-semibold">
-                    {e.name}
-                  </div>
-                  {e.me && (
-                    <span className="mt-0.5 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
-                      คุณ
-                    </span>
-                  )}
-                  <div className="mt-1 text-[20px] font-semibold leading-none tabular-nums">
-                    {fmtNum(e.total)}
-                  </div>
-                  <div className="mb-2 mt-1 text-[11px] text-[#6B7A6E]">
-                    ครั้ง · {e.rounds} รอบ
-                  </div>
-                </>
-              ) : (
-                <>
-                  <span
-                    className="flex items-center justify-center rounded-full bg-[#EEF2E4] font-semibold text-[#A9B79A]"
-                    style={{ width: L.av, height: L.av }}
-                    aria-hidden
-                  >
-                    —
-                  </span>
-                  <div className="mt-2 text-[14px] text-[#A9B79A]">ว่าง</div>
-                  <div className="mb-2 mt-1 text-[11px] text-transparent">
-                    -
-                  </div>
-                </>
-              )}
-              <div
-                className={`pj-rise flex w-full flex-col items-center justify-start gap-1 rounded-t-2xl pt-3 ${
-                  e ? L.step : "bg-[#EEF2E4] text-[#A9B79A]"
-                }`}
-                style={{ height: L.h, animationDelay: L.delay }}
-              >
-                <span className="text-[32px] font-bold leading-none tabular-nums">
-                  {place}
-                </span>
-                {reached && (
-                  <span
-                    className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20"
-                    aria-label="ถึงเป้าแล้ว"
-                  >
-                    <Icon d={ICONS.check} size={12} />
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      </div>
-
-      {/* พลุกระดาษให้อันดับ 1: ยิงครั้งเดียวตอนเข้าหน้า (แท่นยืนเมานต์ใหม่ทุกครั้งที่เปิดแท็บ)
-          ใช้สีเขียวเข้มกับมะนาวให้เห็นชัดบนพื้นขาว และยื่นพ้นกรอบการ์ดขึ้นไปด้านบน */}
-      {entries[0] && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 -top-20 bottom-0 z-10"
-        >
-          <Confetti
-            count={90}
-            colors={[LIME, "#8FB54A", "#3F5E1F", "#1B2A21", "#E8F5C1"]}
-          />
-        </div>
-      )}
-    </section>
-  );
-}
-
-// แบนเนอร์ชวนโดด: ยังไม่ถึงเป้า = ชวนรับ point / ถึงเป้าแล้ว = ยินดีกับคะแนนที่ทำได้
-function PromoBanner({
-  status,
-  total = 0,
-}: {
-  status: "open" | "done";
-  total?: number;
-}) {
-  const done = status === "done";
-  return (
-    <section
-      className={`relative overflow-hidden rounded-3xl p-5 ${
-        done ? "bg-[#3F5E1F] text-white" : "bg-[#C9F25B] text-[#1B2A21]"
-      }`}
-    >
-      <div className="flex items-center gap-4">
-        <span
-          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${
-            done ? "bg-[#C9F25B] text-[#1B2A21]" : "bg-[#1B2A21] text-[#C9F25B]"
-          }`}
-        >
-          <Icon d={done ? ICONS.trophy : ICONS.star} size={28} fill={!done} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[18px] font-bold leading-snug">
-            {done
-              ? `เยี่ยมมาก! วันนี้โดดไป ${fmtNum(total)} ครั้ง ผ่านเป้าแล้ว`
-              : `${POINT_QUOTA} คนแรกที่โดดถึงเป้า รับ ${POINT_REWARD} point!`}
-          </div>
-          <p
-            className={`mt-1 text-[13px] leading-5 ${
-              done ? "text-white/80" : "text-[#3F5E1F]"
-            }`}
-          >
-            {done
-              ? "เป้าหมายวันนี้สำเร็จ โดดต่อเพื่อไต่อันดับและทำสถิติใหม่ได้เลย"
-              : "ทำเป้าหมายรายวันให้สำเร็จก่อนคนอื่น เซ็ตทุกเที่ยงคืนเวลาไทย"}
-          </p>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -1338,9 +1146,6 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   // เช็กเซสชันเสร็จแล้วหรือยัง ก่อนเช็กจะไม่แสดงหน้าหลัก กันหน้าวาบ
   const [authReady, setAuthReady] = useState(false);
-  const [board, setBoard] = useState<Board | null>(null);
-  const [boardErr, setBoardErr] = useState(false);
-  const [boardNow, setBoardNow] = useState(0);
   // ป๊อปอัพเชิญชวน: แสดงครั้งเดียวต่อการเข้าแอป ถ้าไม่ได้ติ๊ก "ไม่ต้องแสดงอีก"
   const [promoOpen, setPromoOpen] = useState(false);
   const promoShownRef = useRef(false);
@@ -1614,31 +1419,10 @@ export default function Home() {
     setPhase("setup");
   }, []);
 
-  // อันดับวันนี้: โหลดตอนเปิดแท็บ และรีเฟรชทุก 30 วินาที
-  const loadBoard = useCallback(async () => {
-    try {
-      const r = await fetch("/api/leaderboard", { cache: "no-store" });
-      if (!r.ok) throw new Error("load failed");
-      const b = (await r.json()) as Board;
-      setBoard(b);
-      setBoardErr(false);
-      // ซิงก์ point ล่าสุดของตัวเองเข้า user (เช่น ได้ point จากอุปกรณ์อื่น)
-      const pts = b.me?.points;
-      if (typeof pts === "number") {
-        setUser((u) => (u && u.points !== pts ? { ...u, points: pts } : u));
-      }
-    } catch {
-      setBoardErr(true);
-    }
-    setBoardNow(Date.now());
+  // Rank (หน้าวันนี้) ส่ง point ล่าสุดของตัวเองมา เช่น ได้ point จากอุปกรณ์อื่น
+  const handlePoints = useCallback((pts: number) => {
+    setUser((u) => (u && u.points !== pts ? { ...u, points: pts } : u));
   }, []);
-
-  useEffect(() => {
-    if (phase !== "setup" || tab !== "today") return;
-    loadBoard();
-    const t = setInterval(loadBoard, 30000);
-    return () => clearInterval(t);
-  }, [phase, tab, user, loadBoard]);
 
   // เริ่มรอบใหม่: งานที่ต้องทำทันทีที่ผู้ใช้แตะ (ขอสิทธิ์ไจโร เต็มจอ เสียง) ทำผ่าน Pose.prime
   // แล้วสลับไปแสดง Pose ซึ่งโหลดโมเดล เปิดกล้อง สแกนตัว และนับให้เอง
@@ -1987,246 +1771,6 @@ export default function Home() {
       </>
     );
 
-    const leader = board?.entries[0];
-    const leftMs = Math.max(0, (board?.resetAt ?? 0) - boardNow);
-    const resetText = `${Math.floor(leftMs / 3600000)} ชม. ${Math.floor(
-      (leftMs % 3600000) / 60000
-    )} นาที`;
-    const rankBadge = (rank: number) =>
-      rank === 1
-        ? "bg-[#C9F25B] text-[#1B2A21]"
-        : rank === 2
-          ? "bg-[#1B2A21] text-[#C9F25B]"
-          : rank === 3
-            ? "bg-[#3F5E1F] text-white"
-            : "text-[#6B7A6E]";
-
-    // แถวอันดับ 4 ขึ้นไป (3 อันดับแรกอยู่บนแท่นยืน)
-    const boardRow = (e: BoardEntry) => {
-      // ถึงเป้า = เซิร์ฟเวอร์บันทึกว่าถึงเป้าแล้ว หรือยอดรวมทุกรอบของวันถึงเป้าของคนนั้น
-      const reached = e.goalRank != null || e.total >= e.goal;
-      const pct = reached
-        ? 100
-        : Math.min(100, (e.total / Math.max(1, e.goal)) * 100);
-      return (
-        <li
-          key={e.rank}
-          className={`flex items-center gap-3 rounded-3xl px-4 py-3 ${
-            e.me ? "bg-[#E8F5C1]" : "bg-white"
-          }`}
-        >
-          <span
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums ${rankBadge(
-              e.rank
-            )}`}
-          >
-            {e.rank}
-          </span>
-          <Avatar name={e.name} size={40} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-[16px] font-semibold">
-                {e.name}
-              </span>
-              {e.me && (
-                <span className="shrink-0 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
-                  คุณ
-                </span>
-              )}
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <GoalTag goalRank={e.goalRank ?? null} />
-              {e.goalRank != null && (
-                <span className="text-[11px] text-[#6B7A6E]">
-                  ถึงเป้าลำดับที่ {e.goalRank}
-                </span>
-              )}
-            </div>
-            <div
-              className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]"
-              role="progressbar"
-              aria-label="ความคืบหน้าสู่เป้าหมายรายวัน"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(pct)}
-            >
-              <div
-                className="h-full rounded-full transition-[width] duration-500"
-                style={{
-                  width: `${pct}%`,
-                  background: reached ? "#3F5E1F" : "#A9B79A",
-                }}
-              />
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-[18px] font-semibold tabular-nums">
-              {fmtNum(e.total)}
-            </div>
-            <div className="text-[11px] text-[#6B7A6E]">{e.rounds} รอบ</div>
-          </div>
-        </li>
-      );
-    };
-
-    const todayView = (
-      <>
-        <header className="mb-5 flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <p className="min-h-[18px] text-[13px] text-[#6B7A6E]">
-              {board ? `รีเซ็ตใน ${resetText}` : ""}
-            </p>
-            <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
-              อันดับวันนี้
-            </h1>
-          </div>
-          <button
-            onClick={openToday}
-            disabled={todayList.length === 0}
-            className="mb-1 flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#C9F25B] px-5 text-[15px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-95 active:bg-[#B8E348] disabled:opacity-40"
-          >
-            <Icon d={ICONS.trophy} size={18} />
-            ผลวันนี้
-          </button>
-        </header>
-
-
-        {!board && !boardErr && (
-          <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
-            กำลังโหลดอันดับ
-          </p>
-        )}
-
-        {!board && boardErr && (
-          <div className={`${card} px-4 py-6 text-center`}>
-            <p className="text-[14px] text-[#D92D20]">
-              โหลดอันดับไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วลองใหม่
-            </p>
-            <button
-              onClick={loadBoard}
-              className="mt-3 h-10 rounded-full bg-[#C9F25B] px-6 text-[14px] font-semibold text-[#1B2A21] transition-transform active:scale-95"
-            >
-              ลองใหม่
-            </button>
-          </div>
-        )}
-
-        {board && (
-          <div className="space-y-4">
-            <section>
-              <h2 className="mb-2 px-1 text-[16px] font-semibold">ตารางอันดับ</h2>
-              {board.entries.length === 0 ? (
-                <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
-                  ยังไม่มีอันดับ
-                </p>
-              ) : (
-                <>
-                  <Podium entries={board.entries.slice(0, 3)} />
-                  {board.entries.length > 3 && (
-                    <ul className="mt-3 space-y-2">
-                      {board.entries.slice(3).map(boardRow)}
-                    </ul>
-                  )}
-                </>
-              )}
-              <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-                {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุกเที่ยงคืนเวลาไทย
-              </p>
-            </section>
-            <div className="pj-stagger space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
-              <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
-                <div className="flex items-start justify-between gap-3">
-                  <span className="text-[15px] font-semibold">
-                    เจ้าของอันดับ 1 วันนี้
-                  </span>
-                  <span className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-medium text-[#C9F25B]">
-                    {board.count} คนลงสนาม
-                  </span>
-                </div>
-                {leader ? (
-                  <div className="mt-4 flex items-center gap-4">
-                    <span className="pj-float flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
-                      <Icon d={ICONS.trophy} size={32} />
-                    </span>
-                    <div className="min-w-0">
-                      <div className="truncate text-[24px] font-semibold">
-                        {leader.name}
-                      </div>
-                      <div className="mt-1 flex items-baseline gap-2">
-                        <span className="text-[40px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
-                          {fmtNum(leader.total)}
-                        </span>
-                        <span className="text-[14px] text-white/60">ครั้ง</span>
-                      </div>
-                      <p className="mt-1.5 text-[13px] text-white/70">
-                        {leader.me
-                          ? "คุณนำอยู่ รักษาตำแหน่งนี้ไว้ให้ได้"
-                          : `ใครจะแซง ${leader.name} ได้ ลงสนามเลย`}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="mt-4 text-[16px] text-white/80">
-                    ยังไม่มีใครขึ้นแท่น ลงสนามแล้วชิงอันดับ 1 เป็นคนแรก
-                  </p>
-                )}
-              </section>
-
-              <section className="rounded-3xl bg-[#E8F5C1] p-5">
-                <h2 className="text-[16px] font-semibold">อันดับของคุณ</h2>
-                {board.me ? (
-                  <div className="mt-3 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight">
-                        #{board.me.rank}
-                      </div>
-                      <div className="mt-2 text-[14px] text-[#4B5E3A]">
-                        {fmtNum(board.me.total)} ครั้งวันนี้
-                      </div>
-                      <div className="mt-1">
-                        <PointBadge points={board.me.points} />
-                      </div>
-                    </div>
-                    <div className="max-w-[160px] text-right text-[13px] font-medium text-[#3F5E1F]">
-                      {board.me.rank === 1
-                        ? "คุณนำอยู่!"
-                        : `อีก ${fmtNum(board.me.gap)} ครั้งจะแซงอันดับ ${board.me.rank - 1}`}
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <p className="mt-2 text-[14px] text-[#4B5E3A]">
-                      วันนี้คุณยังไม่ได้กระโดด โดดเลยเพื่อติดอันดับ
-                    </p>
-                    <button onClick={startSession} className={`${limeBtn} mt-4`}>
-                      <Icon d={ICONS.play} size={20} fill />
-                      เริ่มกระโดด
-                    </button>
-                  </>
-                )}
-              </section>
-            </div>
-
-            <div>
-            {(() => {
-          const mine = board?.entries.find((e) => e.me);
-          const reached =
-            !!mine && (mine.goalRank != null || mine.total >= mine.goal);
-          return (
-            <div className="mb-4">
-              <PromoBanner
-                status={reached ? "done" : "open"}
-                total={mine?.total ?? 0}
-              />
-            </div>
-          );
-        })()}
-            </div>
-          </div>
-        )}
-      </>
-    );
-
     const historyView = (
       <>
         <h1 className="text-[30px] font-bold tracking-tight lg:text-[36px]">
@@ -2405,7 +1949,15 @@ export default function Home() {
           footer={<SidebarUser user={user} onLogout={logout} />}
         >
           {tab === "home" && homeView}
-          {tab === "today" && todayView}
+          {tab === "today" && (
+            <Rank
+              username={user?.username ?? null}
+              onStart={startSession}
+              onOpenResult={openToday}
+              hasToday={todayList.length > 0}
+              onPoints={handlePoints}
+            />
+          )}
           {tab === "history" && historyView}
           {tab === "settings" && settingsView}
         </Shell>
