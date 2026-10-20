@@ -167,11 +167,14 @@ function CameraModal({
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new Error("unsupported");
         }
+        // ขอสตรีมให้ตรงทิศหน้าจอ กันภาพแนวนอนถูกครอปด้านข้างจนดูซูมและเบลอ
+        const portrait = window.innerHeight >= window.innerWidth;
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: cam,
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            width: { ideal: portrait ? 1080 : 1920 },
+            height: { ideal: portrait ? 1920 : 1080 },
+            aspectRatio: { ideal: window.innerWidth / window.innerHeight },
           },
           audio: false,
         });
