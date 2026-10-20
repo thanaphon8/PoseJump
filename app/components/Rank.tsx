@@ -16,6 +16,8 @@ const fmtNum = (n: number) => n.toLocaleString("en-US");
 type BoardEntry = {
   rank: number;
   name: string;
+  // รูปโปรไฟล์ที่ผู้ใช้ตั้งไว้ (ถ้าไม่มีจะแสดงตัวอักษรแรกของชื่อ)
+  avatarUrl?: string | null;
   total: number;
   rounds: number;
   me: boolean;
@@ -56,7 +58,34 @@ const limeBtn =
 const initialOf = (name: string) =>
   (Array.from(name.trim())[0] ?? "?").toUpperCase();
 
-function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+function Avatar({
+  name,
+  src,
+  size = 40,
+}: {
+  name: string;
+  src?: string | null;
+  size?: number;
+}) {
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [src]);
+
+  if (src && !imgError) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={name}
+        onError={() => setImgError(true)}
+        className="shrink-0 rounded-full object-cover bg-[#1B2A21]"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-full bg-[#1B2A21] font-semibold text-[#C9F25B]"
@@ -240,7 +269,7 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
                       e.me ? "ring-2 ring-[#3F5E1F] ring-offset-2" : ""
                     }`}
                   >
-                    <Avatar name={e.name} size={L.av} />
+                    <Avatar name={e.name} src={e.avatarUrl} size={L.av} />
                   </span>
                   <div className="mt-2 w-full truncate text-center text-[14px] font-semibold">
                     {e.name}
@@ -430,7 +459,7 @@ function RankView(props: RankProps) {
         >
           {e.rank}
         </span>
-        <Avatar name={e.name} size={40} />
+        <Avatar name={e.name} src={e.avatarUrl} size={40} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-[16px] font-semibold">

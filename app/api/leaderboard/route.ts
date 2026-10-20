@@ -16,7 +16,11 @@ const toId = (v: ObjectId | string) =>
   typeof v === "string" && ObjectId.isValid(v) ? new ObjectId(v) : v;
 
 type Row = { _id: ObjectId | string; total: number; rounds: number };
-type UserDoc = { _id: ObjectId | string; nickname?: string };
+type UserDoc = {
+  _id: ObjectId | string;
+  nickname?: string;
+  avatarUrl?: string | null;
+};
 
 export async function GET() {
   await connection();
@@ -56,10 +60,17 @@ export async function GET() {
     const existing = await db
       .collection<UserDoc>("users")
       .find({ _id: { $in: rawRows.map((r) => toId(r._id)) } })
-      .project({ _id: 1, nickname: 1 })
+      .project({ _id: 1, nickname: 1, avatarUrl: 1 })
       .toArray();
     const names = new Map(
       existing.map((u) => [String(u._id), u.nickname as string])
+    );
+    // รูปโปรไฟล์ของแต่ละคน (ไม่มี = null แล้วฝั่งหน้าเว็บแสดงตัวอักษรแรกแทน)
+    const avatars = new Map(
+      existing.map((u) => [
+        String(u._id),
+        (u.avatarUrl as string | null | undefined) ?? null,
+      ])
     );
     const rows = rawRows.filter((r) => names.has(String(r._id)));
 
@@ -90,6 +101,7 @@ export async function GET() {
       return {
         rank: i + 1,
         name: names.get(String(r._id)) ?? "ไม่ระบุชื่อ",
+        avatarUrl: avatars.get(String(r._id)) ?? null,
         total: r.total,
         rounds: r.rounds,
         me: String(r._id) === myId,
