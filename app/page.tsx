@@ -9,6 +9,7 @@ import Pose from "./components/pose/page";
 import Rank from "./components/rank/page";
 import History from "./components/history/page";
 import HomeView from "./components/home/page";
+import Setting from "./components/setting/page";
 import Navbar from "./components/Navbar";
 import type { Tab, NavItem } from "./components/Navbar";
 import type { Session } from "./components/history/page";
@@ -19,7 +20,6 @@ import {
   Logo,
   POINT_QUOTA,
   POINT_REWARD,
-  Segmented,
 } from "./components/auth-shared";
 import type { AuthMode, User } from "./components/auth-shared";
 
@@ -60,7 +60,7 @@ const LIME = "#C9F25B";
 type Phase = "setup" | "session" | "summary";
 type Mode = "time" | "count";
 type EndReason = "time" | "count" | "manual";
-// (ชนิด Tab ย้ายไปอยู่ใน components/navbar/page.tsx)
+// (ชนิด Tab ย้ายไปอยู่ใน components/Navbar.tsx)
 
 type Summary = {
   total: number;
@@ -152,34 +152,6 @@ const STYLES = `
 .pj-stagger > *:nth-child(5) { animation-delay: .24s; }
 @media (prefers-reduced-motion: reduce) { .pj-fade, .pj-pop, .pj-in, .pj-pulse, .pj-float, .pj-glow, .pj-wave, .pj-coin, .pj-stamp, .pj-rise, .pj-stagger > * { animation: none; } .pj-lift { transition: none; } }
 `;
-
-function Switch({
-  on,
-  onChange,
-  label,
-}: {
-  on: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={() => onChange(!on)}
-      className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors duration-200 ${
-        on ? "bg-[#3F5E1F]" : "bg-[#D5DCC8]"
-      }`}
-    >
-      <span
-        className={`absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow transition-all duration-200 ${
-          on ? "left-[22px]" : "left-[2px]"
-        }`}
-      />
-    </button>
-  );
-}
 
 function BarChart({
   bars,
@@ -1207,59 +1179,19 @@ export default function Home() {
   /* ------------------------------ หน้าหลัก ----------------------------- */
 
   if (phase === "setup") {
-    const settingsView = (
-      <>
-        <h1 className="text-[30px] font-bold tracking-tight lg:text-[36px]">
-          ตั้งค่า
-        </h1>
-        <div className="mt-5 space-y-4 lg:max-w-md">
-          <div className="space-y-4">
-          <ul className={`${card} divide-y divide-[#EEF2E4]`}>
-            <li className="flex items-center justify-between gap-3 px-4 py-3">
-              <span className="text-[16px]">กล้อง</span>
-              <div className="w-40">
-                <Segmented<"user" | "environment">
-                  small
-                  value={facing}
-                  onChange={setFacing}
-                  options={
-                    [
-                      ["user", "หน้า"],
-                      ["environment", "หลัง"],
-                    ] as const
-                  }
-                />
-              </div>
-            </li>
-            <li className="flex items-center justify-between gap-3 px-4 py-3">
-              <span className="text-[16px]">เสียงนับและเตือน</span>
-              <Switch on={sound} onChange={setSound} label="เสียงนับและเตือน" />
-            </li>
-          </ul>
-
-          <button
-            onClick={() => {
-              if (window.confirm("ลบประวัติการกระโดดทั้งหมด?")) {
-                setHistory([]);
-                if (user) {
-                  fetch("/api/sessions", { method: "DELETE" }).catch(() => {});
-                } else {
-                  try {
-                    localStorage.removeItem(HISTORY_KEY);
-                  } catch {
-                    // ลบไม่ได้ก็ข้ามไป
-                  }
-                }
-              }
-            }}
-            className="h-12 w-full rounded-full bg-white text-[15px] font-semibold text-[#D92D20] transition-transform active:scale-[0.98]"
-          >
-            ล้างประวัติ
-          </button>
-          </div>
-        </div>
-      </>
-    );
+    // ล้างประวัติทั้งหมด (ผู้ใช้ล็อกอิน: ลบที่เซิร์ฟเวอร์ / ผู้เยี่ยมชม: ลบในเครื่อง)
+    const clearHistory = () => {
+      setHistory([]);
+      if (user) {
+        fetch("/api/sessions", { method: "DELETE" }).catch(() => {});
+      } else {
+        try {
+          localStorage.removeItem(HISTORY_KEY);
+        } catch {
+          // ลบไม่ได้ก็ข้ามไป
+        }
+      }
+    };
 
     return (
       <div style={fontStyle} className="select-none antialiased">
@@ -1300,7 +1232,15 @@ export default function Home() {
           {tab === "history" && (
             <History history={history} now0={now0} dailyGoal={dailyGoal} />
           )}
-          {tab === "settings" && settingsView}
+          {tab === "settings" && (
+            <Setting
+              facing={facing}
+              onFacing={setFacing}
+              sound={sound}
+              onSound={setSound}
+              onClearHistory={clearHistory}
+            />
+          )}
         </Shell>
         {user && promoOpen && tab === "home" && (
           <PromoPopup
