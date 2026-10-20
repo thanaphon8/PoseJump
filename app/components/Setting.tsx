@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ICONS, Icon, Segmented } from "./auth-shared";
 import type { User } from "./auth-shared";
 
@@ -136,6 +137,7 @@ function CameraModal({
   onCapture: (dataUrl: string) => void;
   onClose: () => void;
 }) {
+  const overlayRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [cam, setCam] = useState(initialFacing);
@@ -195,6 +197,26 @@ function CameraModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // ล็อกพื้นหลังไม่ให้เลื่อนระหว่างถ่าย
+  // (ตัวที่เลื่อนจริงคือ div ใน Shell ไม่ใช่ body จึงล็อกทั้งสองที่)
+  useEffect(() => {
+    const els = [
+      document.body,
+      ...Array.from(
+        document.querySelectorAll<HTMLElement>('[class*="overflow-y-auto"]')
+      ).filter((el) => !overlayRef.current?.contains(el)),
+    ];
+    const prev = els.map((el) => el.style.overflow);
+    els.forEach((el) => {
+      el.style.overflow = "hidden";
+    });
+    return () => {
+      els.forEach((el, i) => {
+        el.style.overflow = prev[i];
+      });
+    };
+  }, []);
+
   const mirror = cam === "user";
 
   const snap = () => {
@@ -207,14 +229,21 @@ function CameraModal({
     }
   };
 
-  return (
+  // วาดผ่าน portal ไปที่ body เพื่อให้อยู่กลางจอจริง ไม่ถูก transform ของการ์ดแม่กระทบ
+  return createPortal(
     <div
+      ref={overlayRef}
       role="dialog"
       aria-modal="true"
       aria-label="ถ่ายรูปโปรไฟล์"
-      className="pj-in fixed inset-0 z-50 flex items-center justify-center bg-[#1B2A21]/90 p-5"
+      className="pj-in fixed left-0 top-0 z-50 flex w-full items-center justify-center overflow-hidden overscroll-none bg-[#1B2A21]/90 px-4"
+      style={{
+        height: "100dvh",
+        paddingTop: "max(1rem, env(safe-area-inset-top))",
+        paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+      }}
     >
-      <div className="w-full max-w-sm rounded-[32px] bg-[#F3F6EC] p-5 text-[#1B2A21] shadow-2xl">
+      <div className="max-h-full w-full max-w-sm overflow-y-auto overscroll-contain rounded-[32px] bg-[#F3F6EC] p-4 text-[#1B2A21] shadow-2xl">
         <div className="flex items-center justify-between">
           <h2 className="text-[18px] font-bold">ถ่ายรูปโปรไฟล์</h2>
           <button
@@ -226,7 +255,10 @@ function CameraModal({
           </button>
         </div>
 
-        <div className="relative mx-auto mt-4 aspect-square w-full overflow-hidden rounded-full bg-[#1B2A21]">
+        <div
+          className="relative mx-auto mt-3 aspect-square overflow-hidden rounded-full bg-[#1B2A21]"
+          style={{ width: "min(100%, 46dvh)" }}
+        >
           {shot ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -287,7 +319,8 @@ function CameraModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
