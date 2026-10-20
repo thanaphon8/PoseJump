@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
 import { getUserPoints } from "../../../lib/points";
+import { purgeOrphansThrottled } from "../../../lib/purge-orphans";
 
 // "วันนี้" นับตามเวลาไทย (UTC+7) อันดับจึงรีเซ็ตตอนเที่ยงคืนของไทย
 const TZ_OFFSET = 7 * 3_600_000;
@@ -29,6 +30,10 @@ export async function GET() {
     const myId = user ? String(user.id) : null;
 
     const db = await getDb();
+
+    // ลบข้อมูลของบัญชีที่ไม่มีอยู่แล้วออกจากฐานข้อมูลจริง (รันไม่เกิน 1 ครั้ง/นาที)
+    await purgeOrphansThrottled(db);
+
     const rawRows = (await db
       .collection("jumps")
       .aggregate([
@@ -46,7 +51,8 @@ export async function GET() {
       ])
       .toArray()) as Row[];
 
-    // ตัดบัญชีที่ถูกลบไปแล้ว (ข้อมูล jumps กำพร้า) ออกจากอันดับ
+    // กันไว้อีกชั้น: ตัดบัญชีที่ไม่มีใน users ออกจากอันดับ
+    // (กรณีรอบ purge ยังไม่ถึงเวลา)
     const existing = await db
       .collection<UserDoc>("users")
       .find({ _id: { $in: rawRows.map((r) => toId(r._id)) } })

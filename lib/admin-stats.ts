@@ -1,4 +1,5 @@
 import { ObjectId, type Db } from "mongodb";
+import { purgeOrphansThrottled } from "./purge-orphans";
 
 // ชื่อ collection ที่เก็บรอบกระโดด ดูจาก app/api/sessions/route.ts
 // ห้ามใช้ "sessions" เพราะ lib/auth.ts ใช้เก็บเซสชันล็อกอิน
@@ -80,7 +81,7 @@ async function loadUserMap(db: Db, rows: Row[]) {
 }
 
 // ตัดรอบกระโดดของบัญชีที่ถูกลบไปแล้วออก (ไม่มี doc ใน users)
-// ข้อมูลคนที่ลบแล้วจึงไม่โผล่ในหน้า admin ทั้งรายวัน/สัปดาห์/เดือน
+// เป็นด่านสำรอง เผื่อรอบ purge ยังไม่ถึงเวลา
 const aliveOnly = (rows: Row[], userMap: Map<string, Row>) =>
   rows.filter((r) => userMap.has(String(r.userId)));
 
@@ -130,6 +131,9 @@ function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
 
 // ผลของทุกคนในหนึ่งวัน
 export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
+  // ลบข้อมูลของบัญชีที่ไม่มีอยู่แล้วออกจากฐานข้อมูลจริง (ไม่เกิน 1 ครั้ง/นาที)
+  await purgeOrphansThrottled(db);
+
   const rows = (await db
     .collection(JUMPS_COLLECTION)
     .find({ ts: { $gte: start, $lt: start + DAY_MS } })
@@ -147,6 +151,9 @@ export async function computeRange(
   start: number,
   end: number
 ): Promise<DayEntry[][]> {
+  // ลบข้อมูลของบัญชีที่ไม่มีอยู่แล้วออกจากฐานข้อมูลจริง (ไม่เกิน 1 ครั้ง/นาที)
+  await purgeOrphansThrottled(db);
+
   const n = Math.max(0, Math.round((end - start) / DAY_MS));
   const out: DayEntry[][] = Array.from({ length: n }, () => []);
   if (n === 0) return out;
