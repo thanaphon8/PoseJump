@@ -128,6 +128,8 @@ function Switch({
 /* กล้องถ่ายรูปโปรไฟล์                                                    */
 /* ------------------------------------------------------------------ */
 
+type Shot = { img: HTMLImageElement; w: number; h: number };
+
 function CameraModal({
   initialFacing,
   onCapture,
@@ -140,10 +142,19 @@ function CameraModal({
   const overlayRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const dragRef = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
   const [cam, setCam] = useState(initialFacing);
   const [err, setErr] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [shot, setShot] = useState<string | null>(null);
+  // ภาพเต็มเฟรมที่ถ่ายแล้ว (กลับด้านจากกล้องหน้าไว้แล้ว) รอให้ผู้ใช้เลื่อนเลือกตำแหน่ง
+  const [shot, setShot] = useState<Shot | null>(null);
+  const [off, setOff] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [V, setV] = useState(280); // เส้นผ่านศูนย์กลางวงกลมครอป (px)
+
+  useEffect(() => {
+    setV(Math.round(Math.min(window.innerWidth - 48, window.innerHeight * 0.55, 420)));
+  }, []);
 
   useEffect(() => {
     if (shot) return;
@@ -159,8 +170,8 @@ function CameraModal({
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: cam,
-            width: { ideal: 720 },
-            height: { ideal: 720 },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
           },
           audio: false,
         });
@@ -219,14 +230,79 @@ function CameraModal({
 
   const mirror = cam === "user";
 
+  // ขนาดภาพที่แสดงในวงกลม: ด้านสั้นของภาพเต็มวงกลมพอดี แล้วคูณซูม
+  const s = shot ? (V / Math.min(shot.w, shot.h)) * zoom : 1;
+  const maxX = shot ? Math.max(0, (shot.w * s - V) / 2) : 0;
+  const maxY = shot ? Math.max(0, (shot.h * s - V) / 2) : 0;
+  const clamp = (n: number, m: number) => Math.max(-m, Math.min(m, n));
+  const ox = clamp(off.x, maxX);
+  const oy = clamp(off.y, maxY);
+
   const snap = () => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) return;
-    try {
-      setShot(toAvatar(v, v.videoWidth, v.videoHeight, mirror));
-    } catch {
+    const k = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
+    const w = Math.round(v.videoWidth * k);
+    const h = Math.round(v.videoHeight * k);
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) {
       setErr("ถ่ายรูปไม่สำเร็จ ลองใหม่อีกครั้ง");
+      return;
     }
+    if (mirror) {
+      ctx.translate(w, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(v, 0, 0, w, h);
+    const img = new Image();
+    img.onload = () => {
+      setOff({ x: 0, y: 0 });
+      setZoom(1);
+      setShot({ img, w, h });
+    };
+    img.src = c.toDataURL("image/jpeg", 0.92);
+  };
+
+  const confirm = () => {
+    if (!shot) return;
+    const r = AVATAR_SIZE / V;
+    const dw = shot.w * s * r;
+    const dh = shot.h * s * r;
+    const c = document.createElement("canvas");
+    c.width = AVATAR_SIZE;
+    c.height = AVATAR_SIZE;
+    const ctx = c.getContext("2d");
+    if (!ctx) {
+      setErr("บันทึกรูปไม่สำเร็จ ลองใหม่อีกครั้ง");
+      return;
+    }
+    ctx.drawImage(
+      shot.img,
+      AVATAR_SIZE / 2 + ox * r - dw / 2,
+      AVATAR_SIZE / 2 + oy * r - dh / 2,
+      dw,
+      dh
+    );
+    onCapture(c.toDataURL("image/jpeg", 0.85));
+  };
+
+  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { px: e.clientX, py: e.clientY, ox, oy };
+  };
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d) return;
+    setOff({
+      x: clamp(d.ox + e.clientX - d.px, maxX),
+      y: clamp(d.oy + e.clientY - d.py, maxY),
+    });
+  };
+  const onUp = () => {
+    dragRef.current = null;
   };
 
   // วาดผ่าน portal ไปที่ body เพื่อให้อยู่กลางจอจริง ไม่ถูก transform ของการ์ดแม่กระทบ
@@ -236,89 +312,142 @@ function CameraModal({
       role="dialog"
       aria-modal="true"
       aria-label="ถ่ายรูปโปรไฟล์"
-      className="pj-in fixed left-0 top-0 z-50 flex w-full items-center justify-center overflow-hidden overscroll-none bg-[#1B2A21]/90 px-4"
-      style={{
-        height: "100dvh",
-        paddingTop: "max(1rem, env(safe-area-inset-top))",
-        paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
-      }}
+      className="pj-in fixed left-0 top-0 z-50 w-full overflow-hidden overscroll-none bg-black text-white"
+      style={{ height: "100dvh" }}
     >
-      <div className="max-h-full w-full max-w-sm overflow-y-auto overscroll-contain rounded-[32px] bg-[#F3F6EC] p-4 text-[#1B2A21] shadow-2xl">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[18px] font-bold">ถ่ายรูปโปรไฟล์</h2>
-          <button
-            onClick={onClose}
-            aria-label="ปิด"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white transition-transform active:scale-90"
-          >
-            <Icon d={ICONS.close} size={16} />
-          </button>
-        </div>
-
+      {shot ? (
+        /* ขั้นเลื่อนเลือกตำแหน่งในวงกลม */
         <div
-          className="relative mx-auto mt-3 aspect-square overflow-hidden rounded-full bg-[#1B2A21]"
-          style={{ width: "min(100%, 46dvh)" }}
+          className="flex h-full w-full flex-col items-center justify-center gap-5 px-6"
+          style={{
+            paddingTop: "max(1rem, env(safe-area-inset-top))",
+            paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+          }}
         >
-          {shot ? (
-            // eslint-disable-next-line @next/next/no-img-element
+          <div
+            className="relative touch-none select-none overflow-hidden rounded-full bg-[#1B2A21] ring-4 ring-[#C9F25B]"
+            style={{ width: V, height: V, cursor: "grab" }}
+            onPointerDown={onDown}
+            onPointerMove={onMove}
+            onPointerUp={onUp}
+            onPointerCancel={onUp}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={shot}
+              src={shot.img.src}
               alt="ตัวอย่างรูปโปรไฟล์"
-              className="h-full w-full object-cover"
+              draggable={false}
+              className="pointer-events-none absolute max-w-none"
+              style={{
+                width: shot.w * s,
+                height: shot.h * s,
+                left: V / 2 - (shot.w * s) / 2 + ox,
+                top: V / 2 - (shot.h * s) / 2 + oy,
+              }}
             />
-          ) : (
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className="h-full w-full object-cover"
-              style={{ transform: mirror ? "scaleX(-1)" : undefined }}
-            />
-          )}
-          {!shot && !ready && !err && (
-            <div className="pj-pulse absolute inset-0 flex items-center justify-center text-[13px] text-white/70">
-              กำลังเปิดกล้อง
-            </div>
-          )}
-        </div>
+          </div>
 
-        {err && (
-          <p className="mt-3 text-center text-[13px] text-[#D92D20]">{err}</p>
-        )}
+          <p className="text-[13px] text-white/70">ลากเพื่อเลื่อนหาตำแหน่งที่ต้องการ</p>
 
-        {shot ? (
-          <div className="mt-4 flex gap-2">
+          <input
+            type="range"
+            min={1}
+            max={3}
+            step={0.01}
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+            aria-label="ซูม"
+            className="w-full max-w-xs accent-[#C9F25B]"
+          />
+
+          {err && <p className="text-center text-[13px] text-[#FF8A80]">{err}</p>}
+
+          <div className="flex w-full max-w-xs gap-2">
             <button
               onClick={() => setShot(null)}
-              className="h-12 flex-1 rounded-full bg-white text-[15px] font-semibold transition-transform active:scale-[0.98]"
+              className="h-12 flex-1 rounded-full bg-white/15 text-[15px] font-semibold transition-transform active:scale-[0.98]"
             >
               ถ่ายใหม่
             </button>
             <button
-              onClick={() => onCapture(shot)}
-              className="h-12 flex-1 rounded-full bg-[#C9F25B] text-[15px] font-semibold transition-all active:scale-[0.98] active:bg-[#B8E348]"
+              onClick={confirm}
+              className="h-12 flex-1 rounded-full bg-[#C9F25B] text-[15px] font-semibold text-[#1B2A21] transition-all active:scale-[0.98] active:bg-[#B8E348]"
             >
               ใช้รูปนี้
             </button>
           </div>
-        ) : (
-          <div className="mt-4 flex gap-2">
-            <button
-              onClick={() => setCam((c) => (c === "user" ? "environment" : "user"))}
-              className="h-12 rounded-full bg-white px-5 text-[15px] font-semibold transition-transform active:scale-[0.98]"
-            >
-              สลับกล้อง
-            </button>
+        </div>
+      ) : (
+        /* ขั้นถ่าย: กล้องเต็มจอ */
+        <>
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{ transform: mirror ? "scaleX(-1)" : undefined }}
+          />
+
+          {!ready && !err && (
+            <div className="pj-pulse absolute inset-0 flex items-center justify-center text-[13px] text-white/70">
+              กำลังเปิดกล้อง
+            </div>
+          )}
+          {err && (
+            <p className="absolute inset-x-6 top-1/2 -translate-y-1/2 text-center text-[14px] text-[#FF8A80]">
+              {err}
+            </p>
+          )}
+
+          <button
+            onClick={onClose}
+            aria-label="ปิด"
+            className="absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur transition-transform active:scale-90"
+            style={{ top: "max(1rem, env(safe-area-inset-top))" }}
+          >
+            <Icon d={ICONS.close} size={16} />
+          </button>
+
+          <div
+            className="absolute inset-x-0 bottom-0 flex items-center justify-center px-8"
+            style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}
+          >
+            {/* ปุ่มชัตเตอร์วงกลม */}
             <button
               onClick={snap}
               disabled={!ready}
-              className="h-12 flex-1 rounded-full bg-[#C9F25B] text-[15px] font-semibold transition-all active:scale-[0.98] active:bg-[#B8E348] disabled:opacity-40"
+              aria-label="ถ่ายรูป"
+              className="flex h-[76px] w-[76px] items-center justify-center rounded-full border-4 border-white transition-transform active:scale-90 disabled:opacity-40"
             >
-              ถ่ายรูป
+              <span className="block h-[58px] w-[58px] rounded-full bg-white" />
+            </button>
+
+            {/* ปุ่มสลับกล้อง (ไอคอน) */}
+            <button
+              onClick={() => setCam((c) => (c === "user" ? "environment" : "user"))}
+              aria-label="สลับกล้อง"
+              className="absolute right-8 flex h-12 w-12 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur transition-transform active:scale-90"
+            >
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" />
+                <path d="M3 21v-5h5" />
+              </svg>
             </button>
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>,
     document.body
   );
@@ -451,7 +580,7 @@ function ProfileCard({
             <Avatar
               name={user.name}
               src={draftAvatar ?? savedAvatar ?? user.avatarUrl}
-              size={96}
+              size={144}
             />
           </span>
         </div>

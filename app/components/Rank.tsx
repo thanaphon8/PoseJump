@@ -241,9 +241,9 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
     { place: 3, e: entries[2] },
   ];
   const look = {
-    1: { h: 128, step: "bg-[#C9F25B] text-[#1B2A21]", av: 60, delay: "0s" },
-    2: { h: 96, step: "bg-[#1B2A21] text-[#C9F25B]", av: 48, delay: ".12s" },
-    3: { h: 72, step: "bg-[#3F5E1F] text-white", av: 48, delay: ".24s" },
+    1: { h: 128, step: "bg-[#C9F25B] text-[#1B2A21]", av: 84, delay: "0s" },
+    2: { h: 96, step: "bg-[#1B2A21] text-[#C9F25B]", av: 68, delay: ".12s" },
+    3: { h: 72, step: "bg-[#3F5E1F] text-white", av: 68, delay: ".24s" },
   } as const;
 
   return (
