@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { FormEvent } from "react";
+import { useState, useRef } from "react";
+import type { FormEvent, ChangeEvent } from "react";
 import {
   AuthShell,
   EyeButton,
@@ -15,8 +15,6 @@ import type {
   User,
 } from "./auth-shared";
 
-// หน้าสมัครสมาชิก (เชื่อมต่อ MongoDB ผ่าน /api/auth/register)
-// ใช้เป็นคอมโพเนนต์ใน app/page.tsx: <RegisterForm onAuthed={...} onSwitch={...} />
 export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
   const [nickname, setNickname] = useState("");
   const [username, setUsername] = useState("");
@@ -26,11 +24,30 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
   const [errors, setErrors] = useState<AuthErrors>({});
   const [busy, setBusy] = useState(false);
 
+  // สถานะสำหรับไฟล์รูปภาพและรูปพรีวิว
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const edit =
     (key: keyof AuthErrors, set: (v: string) => void) => (v: string) => {
       set(v);
       setErrors((p) => ({ ...p, [key]: undefined, form: undefined }));
     };
+
+  // จัดการเมื่อผู้ใช้เลือกไฟล์รูปภาพ
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setErrors((p) => ({ ...p, form: "ขนาดไฟล์รูปภาพต้องไม่เกิน 5MB" }));
+        return;
+      }
+      setAvatarFile(file);
+      setAvatarPreview(URL.createObjectURL(file));
+      setErrors((p) => ({ ...p, form: undefined }));
+    }
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -55,11 +72,20 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
 
     setBusy(true);
     try {
+      // ใช้ FormData ในการส่งข้อมูลตัวอักษรพร้อมกับไฟล์รูปภาพ
+      const formData = new FormData();
+      formData.append("nickname", nick);
+      formData.append("username", uname);
+      formData.append("password", password);
+      if (avatarFile) {
+        formData.append("avatar", avatarFile);
+      }
+
       const res = await fetch("/api/auth/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname: nick, username: uname, password }),
+        body: formData,
       });
+
       const data = (await res.json().catch(() => ({}))) as {
         user?: User;
         errors?: AuthErrors;
@@ -110,7 +136,51 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
           />
         </div>
 
-        <div className="mt-5 space-y-4">
+        {/* ส่วนเลือกและพรีวิวรูปโปรไฟล์ */}
+        <div className="mt-5 flex flex-col items-center">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept="image/*"
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="group relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-white/40 bg-white/10 transition-all hover:border-[#C9F25B] lg:border-[#6B7A6E]"
+          >
+            {avatarPreview ? (
+              <img
+                src={avatarPreview}
+                alt="Profile Preview"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex flex-col items-center text-xs text-white/70 group-hover:text-[#C9F25B] lg:text-[#6B7A6E]">
+                <svg
+                  className="mb-1 h-6 w-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                  />
+                </svg>
+                <span>รูปโปรไฟล์</span>
+              </div>
+            )}
+          </button>
+          <span className="mt-1 text-[12px] text-white/60 lg:text-[#6B7A6E]">
+            คลิกเพื่อเลือกรูปโปรไฟล์ (ไม่จำเป็น)
+          </span>
+        </div>
+
+        <div className="mt-4 space-y-4">
           <Field
             label="ชื่อเล่น"
             value={nickname}
@@ -139,7 +209,9 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
             autoComplete="new-password"
             placeholder="อย่างน้อย 6 ตัวอักษร"
             error={errors.password}
-            trailing={<EyeButton show={show} onToggle={() => setShow((v) => !v)} />}
+            trailing={
+              <EyeButton show={show} onToggle={() => setShow((v) => !v)} />
+            }
           />
           <Field
             label="ยืนยันรหัสผ่าน"

@@ -5,18 +5,23 @@ import { createSession } from "../../../../lib/auth";
 
 export async function POST(req: Request) {
   try {
-    let body: Record<string, unknown>;
+    let formData: FormData;
     try {
-      body = (await req.json()) as Record<string, unknown>;
+      formData = await req.formData();
     } catch {
       return NextResponse.json({ error: "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
     }
 
+    const nicknameRaw = formData.get("nickname");
+    const usernameRaw = formData.get("username");
+    const passwordRaw = formData.get("password");
+    const avatarFile = formData.get("avatar") as File | null;
+
     const nickname =
-      typeof body.nickname === "string" ? body.nickname.trim().slice(0, 20) : "";
+      typeof nicknameRaw === "string" ? nicknameRaw.trim().slice(0, 20) : "";
     const display =
-      typeof body.username === "string" ? body.username.trim() : "";
-    const password = typeof body.password === "string" ? body.password : "";
+      typeof usernameRaw === "string" ? usernameRaw.trim() : "";
+    const password = typeof passwordRaw === "string" ? passwordRaw : "";
 
     const errors: Record<string, string> = {};
     if (!nickname) errors.nickname = "กรอกชื่อเล่น";
@@ -28,6 +33,45 @@ export async function POST(req: Request) {
       return NextResponse.json({ errors }, { status: 400 });
     }
 
+    let avatarUrl = "";
+    let driveFileId = "";
+
+    // หากมีรูปโปรไฟล์ ให้ส่งแปลงเป็น Base64 แล้วส่งให้ Google Apps Script บันทึก
+    if (avatarFile && avatarFile.size > 0) {
+      try {
+        const arrayBuffer = await avatarFile.arrayBuffer();
+        const fileBase64 = Buffer.from(arrayBuffer).toString("base64");
+        const ext = avatarFile.name.split(".").pop() || "jpg";
+        const fileName = `avatar_${display}_${Date.now()}.${ext}`;
+
+        const GAS_URL = process.env.GOOGLE_APPS_SCRIPT_URL;
+
+        if (GAS_URL) {
+          const gasResponse = await fetch(GAS_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "text/plain;charset=utf-8",
+            },
+            redirect: "follow",
+            body: JSON.stringify({
+              fileBase64,
+              fileName,
+              fileType: avatarFile.type,
+            }),
+          });
+
+          const gasResult = await gasResponse.json();
+
+          if (gasResult.success) {
+            avatarUrl = gasResult.imageUrl;
+            driveFileId = gasResult.fileId;
+          }
+        }
+      } catch (uploadError) {
+        console.error("Failed to upload via Apps Script:", uploadError);
+      }
+    }
+
     const db = await getDb();
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -37,13 +81,23 @@ export async function POST(req: Request) {
         display,
         nickname,
         passwordHash,
-        // point เก็บในเอกสาร user โดยตรง (เริ่มที่ 0)
+        avatarUrl,
+        driveFileId,
         points: 0,
         createdAt: new Date(),
       });
+
       await createSession(r.insertedId);
+
       return NextResponse.json(
-        { user: { name: nickname, username: display, points: 0 } },
+        {
+          user: {
+            name: nickname,
+            username: display,
+            avatarUrl,
+            points: 0,
+          },
+        },
         { status: 201 }
       );
     } catch (e) {
@@ -59,4 +113,4 @@ export async function POST(req: Request) {
     console.error("register failed", e);
     return NextResponse.json({ error: "เซิร์ฟเวอร์ผิดพลาด" }, { status: 500 });
   }
-}
+} 

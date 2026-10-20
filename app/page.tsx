@@ -37,10 +37,6 @@ const FONT = `${prompt.style.fontFamily}, -apple-system, BlinkMacSystemFont, "No
 /* ค่าคงที่                                                             */
 /* ------------------------------------------------------------------ */
 
-// (ค่าคงที่และฟังก์ชันของการสแกนตัว/นับกระโดด ย้ายไปอยู่ใน components/pose/page.tsx)
-// (หน้าประวัติ + ปฏิทิน + ตัวแบ่งหน้า ย้ายไปอยู่ใน components/History.tsx)
-// (หน้าหลัก + วงแหวนเป้าหมาย + กติกาการเล่น + รอบล่าสุด ย้ายไปอยู่ใน components/HomeView.tsx)
-
 const STORAGE_KEY = "pose-jump-settings";
 const HISTORY_KEY = "pose-jump-history";
 const SHOTS_KEY = "pose-jump-shots";
@@ -49,19 +45,14 @@ const PROMO_KEY = "pose-jump-promo-hide";
 const KCAL_PER_JUMP = 0.1;
 const DAY = 864e5;
 
-// point: 100 คนแรกของวันที่ทำเป้าหมายรายวันสำเร็จ ได้ 50 point (คำนวณฝั่งเซิร์ฟเวอร์)
-// เป้าหมายรายวันคงที่ ไม่ให้ผู้ใช้ปรับ
-// (POINT_QUOTA / POINT_REWARD ย้ายไปอยู่ใน components/auth-shared.tsx เพราะหน้า login/register ใช้ด้วย)
 const DAILY_GOAL = 100;
 
 // สี
 const LIME = "#C9F25B";
 
-// setup = หน้าหลัก/ตั้งค่า, session = กำลังสแกนตัวและกระโดด (คอมโพเนนต์ Pose), summary = หน้าสรุปผล
 type Phase = "setup" | "session" | "summary";
 type Mode = "time" | "count";
 type EndReason = "time" | "count" | "manual";
-// (ชนิด Tab ย้ายไปอยู่ใน components/Navbar.tsx)
 
 type Summary = {
   total: number;
@@ -74,8 +65,6 @@ type Summary = {
   record: boolean;
 };
 
-// (ชนิด Session ย้ายไปอยู่ใน components/History.tsx)
-
 type Settings = {
   mode: Mode;
   seconds: number;
@@ -85,11 +74,9 @@ type Settings = {
   sound: boolean;
 };
 
-// ภาพยืนยันของวันนี้: ภาพแรกของวัน (ครั้งเดียว) + ภาพตอนใกล้ถึงเป้าประจำวัน (ครั้งเดียว)
 type DayShots = { day: string; start: string | null; end: string | null };
 const EMPTY_SHOTS: DayShots = { day: "", start: null, end: null };
 
-// ใช้เทียบว่าค่าตั้งค่าเปลี่ยนจากที่ซิงก์ไว้ล่าสุดไหม
 const settingsKey = (v: Settings) =>
   JSON.stringify({
     mode: v.mode,
@@ -193,7 +180,34 @@ function BarChart({
 const initialOf = (name: string) =>
   (Array.from(name.trim())[0] ?? "?").toUpperCase();
 
-function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+function Avatar({
+  name,
+  src,
+  size = 40,
+}: {
+  name: string;
+  src?: string | null;
+  size?: number;
+}) {
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [src]);
+
+  if (src && !imgError) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={name}
+        onError={() => setImgError(true)}
+        className="shrink-0 rounded-full object-cover bg-[#1B2A21]"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-full bg-[#1B2A21] font-semibold text-[#C9F25B]"
@@ -205,7 +219,6 @@ function Avatar({ name, size = 40 }: { name: string; size?: number }) {
   );
 }
 
-// ป้าย point รวมของบัญชี
 function PointBadge({ points }: { points: number }) {
   return (
     <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#3F5E1F]">
@@ -215,7 +228,6 @@ function PointBadge({ points }: { points: number }) {
   );
 }
 
-// ตัวเลขนับขึ้นจาก 0 (ไม่นับถ้าผู้ใช้ตั้งค่าลดการเคลื่อนไหว)
 function CountUp({ value, ms = 700 }: { value: number; ms?: number }) {
   const [v, setV] = useState(0);
   useEffect(() => {
@@ -237,7 +249,6 @@ function CountUp({ value, ms = 700 }: { value: number; ms?: number }) {
   return <>{fmtNum(v)}</>;
 }
 
-// มุมขวาบน: รูปโปรไฟล์ + เมนูออกจากระบบ (ยังไม่ล็อกอินจะเห็นหน้า login แทน)
 function ProfileMenu({
   user,
   onLogout,
@@ -278,7 +289,7 @@ function ProfileMenu({
           aria-expanded={menu}
           className="flex items-center gap-2 rounded-full bg-white p-1 pr-3 shadow-sm transition-transform active:scale-95"
         >
-          <Avatar name={user.name} size={36} />
+          <Avatar name={user.name} src={user.avatarUrl} size={36} />
           <span className="max-w-[96px] truncate text-[14px] font-semibold">
             {user.name}
           </span>
@@ -294,7 +305,7 @@ function ProfileMenu({
           />
           <div className="pj-in absolute right-0 top-12 z-30 w-64 rounded-3xl bg-white p-2 shadow-xl ring-1 ring-[#E3EAD6]">
             <div className="flex items-center gap-3 px-3 py-3">
-              <Avatar name={user.name} size={44} />
+              <Avatar name={user.name} src={user.avatarUrl} size={44} />
               <div className="min-w-0">
                 <div className="truncate text-[15px] font-semibold">
                   {user.name}
@@ -324,8 +335,6 @@ function ProfileMenu({
   );
 }
 
-// พลุกระดาษมินิมอล: ยิงจากกลางการ์ดตัวเลข สีตามธีม จางหายใน ~2.6 วิ
-// ไม่ยิงถ้าผู้ใช้ตั้งค่าลดการเคลื่อนไหว
 function Confetti({
   count = 70,
   colors = [LIME, "#E8F5C1", "#FFFFFF", "#8FB54A"],
@@ -392,7 +401,6 @@ function Confetti({
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(p.rot);
-        // พลิกแกนให้ดูเป็นกระดาษที่ร่วงหมุน
         ctx.scale(1, Math.cos(p.rot * 2));
         ctx.fillStyle = p.color;
         if (p.round) {
@@ -409,7 +417,6 @@ function Confetti({
       else ctx.clearRect(0, 0, w, h);
     };
 
-    // หน่วงเล็กน้อยให้ตัวเลขเด้งขึ้นก่อน
     const timer = setTimeout(() => {
       raf = requestAnimationFrame(tick);
     }, 180);
@@ -417,8 +424,6 @@ function Confetti({
       clearTimeout(timer);
       cancelAnimationFrame(raf);
     };
-    // ยิงครั้งเดียวตอนเมานต์ ไม่ยิงซ้ำเมื่อ colors (array ใหม่ทุกเรนเดอร์) เปลี่ยน
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count]);
 
   return (
@@ -430,7 +435,6 @@ function Confetti({
   );
 }
 
-// หน้าแสดงความยินดี: ได้ point จากการเข้า 100 คนแรก มี point ร่วง พลุกระดาษ และปุ่มชวนเพื่อน
 function RewardModal({
   name,
   gain,
@@ -455,9 +459,7 @@ function RewardModal({
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }
-    } catch {
-      // ยกเลิกแชร์ก็ข้ามไป
-    }
+    } catch {}
   };
 
   return (
@@ -467,7 +469,6 @@ function RewardModal({
       aria-label="ยินดีด้วย"
       className="pj-in fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-[#1B2A21]/95 p-5"
     >
-      {/* point หล่นเป็นสายฝน */}
       {Array.from({ length: 16 }, (_, i) => (
         <span
           key={i}
@@ -528,7 +529,6 @@ function RewardModal({
   );
 }
 
-// แถบผู้ใช้ท้าย sidebar (เดสก์ท็อป)
 function SidebarUser({
   user,
   onLogout,
@@ -539,7 +539,7 @@ function SidebarUser({
   if (!user) return null;
   return (
     <div className="flex items-center gap-3 rounded-3xl bg-white p-3 shadow-sm">
-      <Avatar name={user.name} size={44} />
+      <Avatar name={user.name} src={user.avatarUrl} size={44} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[15px] font-semibold">{user.name}</div>
         {user.username && (
@@ -560,12 +560,6 @@ function SidebarUser({
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/* หน้าเข้าสู่ระบบ / สมัครสมาชิก                                          */
-/* ฟอร์มจริงแยกอยู่ที่ components/LoginForm.tsx และ components/RegisterForm.tsx */
-/* ตรงนี้เก็บแค่สถานะสลับโหมด                                              */
-/* ------------------------------------------------------------------ */
 
 function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
   const [mode, setMode] = useState<AuthMode>("login");
@@ -643,10 +637,6 @@ function Shell({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* หน้าหลัก                                                              */
-/* ------------------------------------------------------------------ */
-
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("setup");
   const [tab, setTab] = useState<Tab>("home");
@@ -658,28 +648,20 @@ export default function Home() {
   const [now0, setNow0] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
-  // ได้ point จากการเข้า 100 คนแรก: แสดงหน้าแสดงความยินดี
   const [reward, setReward] = useState<{ gain: number; total: number } | null>(
     null
   );
-  // ภาพยืนยันของวันนี้ (เก็บใน localStorage ของเครื่องนี้ ไม่อัปโหลด)
   const [shots, setShots] = useState<DayShots>(EMPTY_SHOTS);
-  // true = หน้าสรุปผลกำลังแสดง "ผลวันนี้" รวมทุกรอบ (เปิดจากหน้าประวัติ)
   const [dayMode, setDayMode] = useState(false);
   const [facing, setFacing] = useState<"user" | "environment">("user");
   const [sound, setSound] = useState(true);
-  // สัดส่วนภาพกล้อง (Pose รายงานกลับมา) ใช้กำหนดกรอบภาพยืนยันในหน้าสรุป
   const [vdim, setVdim] = useState({ w: 9, h: 16 });
-  // เปลี่ยนทุกครั้งที่เริ่มรอบใหม่ เพื่อให้ Pose เริ่มสถานะใหม่หมด
   const [sessionKey, setSessionKey] = useState(0);
-  // สิทธิ์ไจโรที่ขอตอนแตะปุ่มเริ่ม (Pose.prime) ส่งต่อให้ Pose
   const [gyroPromise, setGyroPromise] = useState<Promise<boolean>>(() =>
     Promise.resolve(false)
   );
   const [user, setUser] = useState<User | null>(null);
-  // เช็กเซสชันเสร็จแล้วหรือยัง ก่อนเช็กจะไม่แสดงหน้าหลัก กันหน้าวาบ
   const [authReady, setAuthReady] = useState(false);
-  // ป๊อปอัพเชิญชวน: แสดงครั้งเดียวต่อการเข้าแอป ถ้าไม่ได้ติ๊ก "ไม่ต้องแสดงอีก"
   const [promoOpen, setPromoOpen] = useState(false);
   const promoShownRef = useRef(false);
 
@@ -689,7 +671,6 @@ export default function Home() {
   const settingsRef = useRef({ mode, seconds, target, dailyGoal, facing, sound });
   const historyRef = useRef<Session[]>([]);
 
-  // ซิงก์กับ MongoDB (ใช้เมื่อล็อกอินแล้วเท่านั้น)
   const [remoteReady, setRemoteReady] = useState(false);
   const userRef = useRef<User | null>(null);
   const syncedRef = useRef("");
@@ -715,16 +696,12 @@ export default function Home() {
           setSound(v.sound);
           syncedRef.current = settingsKey(v);
         } else {
-          // ผู้ใช้ใหม่ ยังไม่มีค่าบนเซิร์ฟเวอร์ ตั้งกล้องหน้าเป็นค่าเริ่มต้น แล้วส่งขึ้นไป
-          // (กันค่ากล้องหลังที่ค้างจากผู้เยี่ยมชมหรือบัญชีก่อนหน้าบนเครื่องเดียวกัน)
           setFacing("user");
           syncedRef.current = "";
         }
       }
       setRemoteReady(true);
-    } catch {
-      // ออฟไลน์หรือเชื่อมต่อไม่ได้ ใช้ข้อมูลในเครื่องไปก่อน
-    }
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -739,7 +716,6 @@ export default function Home() {
     historyRef.current = history;
   }, [history]);
 
-  // เข้าแอปแล้วแสดงป๊อปอัพ (เฉพาะผู้ที่ล็อกอินแล้ว และไม่ได้ติ๊กไม่ต้องแสดงอีก)
   useEffect(() => {
     if (!authReady) return;
     if (!user) {
@@ -750,13 +726,10 @@ export default function Home() {
     promoShownRef.current = true;
     try {
       if (localStorage.getItem(PROMO_KEY) === "1") return;
-    } catch {
-      // อ่านค่าไม่ได้ก็แสดงตามปกติ
-    }
+    } catch {}
     setPromoOpen(true);
   }, [authReady, user]);
 
-  // โหลดภาพยืนยันของวันนี้ (แยกตามผู้ใช้ ข้ามวันแล้วรีเซ็ต)
   useEffect(() => {
     if (!authReady) return;
     let v: DayShots = EMPTY_SHOTS;
@@ -768,14 +741,11 @@ export default function Home() {
           v = { day: d.day, start: d.start ?? null, end: d.end ?? null };
         }
       }
-    } catch {
-      // อ่านภาพเดิมไม่ได้ก็เริ่มใหม่
-    }
+    } catch {}
     shotsRef.current = v;
     setShots(v);
   }, [authReady, user]);
 
-  // โหลดค่าที่ตั้งไว้และประวัติ
   useEffect(() => {
     setNow0(Date.now());
     try {
@@ -794,11 +764,8 @@ export default function Home() {
         const arr = JSON.parse(h);
         if (Array.isArray(arr)) setHistory(arr);
       }
-    } catch {
-      // อ่านค่าเดิมไม่ได้ก็ใช้ค่าเริ่มต้น
-    }
+    } catch {}
 
-    // มีเซสชันค้างอยู่ในคุกกี้ไหม ถ้ามีดึงข้อมูลจาก MongoDB ถ้าไม่มี user เป็น null และหน้า login จะขึ้นเอง
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { user?: User | null } | null) => {
@@ -811,15 +778,12 @@ export default function Home() {
       .finally(() => setAuthReady(true));
   }, [loadRemote]);
 
-  // ผู้เยี่ยมชม: เก็บในเครื่อง / ผู้ใช้ที่ล็อกอิน: ส่งขึ้น MongoDB (หน่วง 0.6 วิ)
   useEffect(() => {
     const cur: Settings = { mode, seconds, target, dailyGoal, facing, sound };
     if (!user) {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(cur));
-      } catch {
-        // บันทึกไม่ได้ก็ข้ามไป
-      }
+      } catch {}
       return;
     }
     if (!remoteReady) return;
@@ -850,13 +814,11 @@ export default function Home() {
     meta.setAttribute("content", "#F3F6EC");
     document.documentElement.style.backgroundColor = "#F3F6EC";
     document.documentElement.style.colorScheme = "light";
-    // กันเลื่อนซ้าย-ขวา
     document.documentElement.style.overflowX = "hidden";
     document.body.style.overflowX = "hidden";
     document.body.style.overscrollBehaviorX = "none";
   }, []);
 
-  // บันทึกภาพของวันนี้ลงเครื่อง (ต่อกันได้หลายรอบในวันเดียวกัน) Pose เรียกผ่าน onShot
   const commitShot = useCallback((kind: "start" | "end", img: string | null) => {
     if (!img) return;
     const dk = dayKey(Date.now());
@@ -872,12 +834,9 @@ export default function Home() {
         `${SHOTS_KEY}:${userRef.current?.username ?? "guest"}`,
         JSON.stringify(next)
       );
-    } catch {
-      // พื้นที่เต็มก็ข้ามไป ภาพยังอยู่ในหน้านี้
-    }
+    } catch {}
   }, []);
 
-  // ยอดรวมวันนี้ก่อนเริ่มรอบนี้ ใช้ตัดสินว่าเมื่อไรใกล้ถึงเป้าประจำวัน (Pose เรียกตอนเริ่ม)
   const getTodayBase = useCallback(() => {
     const dk0 = dayKey(Date.now());
     return historyRef.current.reduce(
@@ -886,9 +845,7 @@ export default function Home() {
     );
   }, []);
 
-  // Pose จบรอบ (ครบเวลา/ครบจำนวน/กดจบเอง) ส่งผลสรุปมา: บันทึกประวัติ ส่งเซิร์ฟเวอร์ แล้วแสดงหน้าสรุป
   const handleFinish = useCallback((result: Summary) => {
-    // สถิติใหม่ = มากกว่าทุกรอบก่อนหน้า (ต้องมีประวัติเดิมอยู่แล้ว)
     const prev = historyRef.current;
     result.record =
       result.total > 0 &&
@@ -914,14 +871,11 @@ export default function Home() {
         if (!loggedIn) {
           try {
             localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-          } catch {
-            // บันทึกไม่ได้ก็ข้ามไป
-          }
+          } catch {}
         }
         return next;
       });
       if (loggedIn) {
-        // เซิร์ฟเวอร์ตัดสินว่าได้ point ไหม แล้วส่งยอด point รวมกลับมา
         const before = userRef.current?.points ?? 0;
         fetch("/api/sessions", {
           method: "POST",
@@ -932,7 +886,6 @@ export default function Home() {
           .then((d: { points?: number } | null) => {
             const pts = d?.points;
             if (typeof pts === "number") {
-              // point เพิ่มขึ้น = เข้า 100 คนแรก แสดงหน้าแสดงความยินดี
               if (pts > before) setReward({ gain: POINT_REWARD, total: pts });
               setUser((u) => (u ? { ...u, points: pts } : u));
             }
@@ -945,20 +898,16 @@ export default function Home() {
     setPhase("summary");
   }, []);
 
-  // Pose เริ่มไม่สำเร็จ (กล้อง/อินเทอร์เน็ต) กลับหน้าหลักพร้อมข้อความ
   const handleError = useCallback((message: string) => {
     setError(message);
     setTab("home");
     setPhase("setup");
   }, []);
 
-  // Rank (หน้าวันนี้) ส่ง point ล่าสุดของตัวเองมา เช่น ได้ point จากอุปกรณ์อื่น
   const handlePoints = useCallback((pts: number) => {
     setUser((u) => (u && u.points !== pts ? { ...u, points: pts } : u));
   }, []);
 
-  // เริ่มรอบใหม่: งานที่ต้องทำทันทีที่ผู้ใช้แตะ (ขอสิทธิ์ไจโร เต็มจอ เสียง) ทำผ่าน Pose.prime
-  // แล้วสลับไปแสดง Pose ซึ่งโหลดโมเดล เปิดกล้อง สแกนตัว และนับให้เอง
   const startSession = useCallback(() => {
     setGyroPromise(Pose.prime(facing, audioRef));
     setError(null);
@@ -973,9 +922,7 @@ export default function Home() {
     if (hide) {
       try {
         localStorage.setItem(PROMO_KEY, "1");
-      } catch {
-        // บันทึกไม่ได้ก็ข้ามไป
-      }
+      } catch {}
     }
   }, []);
 
@@ -994,7 +941,6 @@ export default function Home() {
     setUser(null);
     setRemoteReady(false);
     syncedRef.current = "";
-    // กลับไปใช้ประวัติของผู้เยี่ยมชมที่เก็บในเครื่อง
     try {
       const h = localStorage.getItem(HISTORY_KEY);
       const arr = h ? JSON.parse(h) : [];
@@ -1003,8 +949,6 @@ export default function Home() {
       setHistory([]);
     }
   };
-
-  /* ---------------------- ข้อมูลสรุปจากประวัติ ---------------------- */
 
   const todayList = now0
     ? history.filter((s) => dayKey(s.ts) === dayKey(now0))
@@ -1025,7 +969,6 @@ export default function Home() {
     }
   }
 
-  // เปิดหน้าสรุปผลของวันนี้ รวมทุกรอบ (ใช้หน้าเดียวกับตอนโดดจบ)
   const openToday = () => {
     if (todayList.length === 0) return;
     const rounds = [...todayList].sort((a, b) => a.ts - b.ts);
@@ -1050,20 +993,14 @@ export default function Home() {
     setPhase("setup");
   };
 
-  /* ---------------------------- ตั้งค่ารอบ ---------------------------- */
-
   const fontStyle = { fontFamily: FONT, touchAction: "manipulation" as const };
   const card = "rounded-3xl bg-white pj-lift";
   const limeBtn =
     "flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348]";
 
-  /* ------------------------ รอเช็กเซสชันก่อนแสดงหน้า ------------------------ */
-
   if (!authReady) {
     return <div className="min-h-dvh bg-[#F3F6EC]" />;
   }
-
-  /* ------------------- หน้าสแกนตัว + นับกระโดด (Pose) ------------------- */
 
   if (phase === "session") {
     return (
@@ -1086,10 +1023,7 @@ export default function Home() {
     );
   }
 
-  /* ------------------------------ หน้าหลัก ----------------------------- */
-
   if (phase === "setup") {
-    // ล้างประวัติทั้งหมด (ผู้ใช้ล็อกอิน: ลบที่เซิร์ฟเวอร์ / ผู้เยี่ยมชม: ลบในเครื่อง)
     const clearHistory = () => {
       setHistory([]);
       if (user) {
@@ -1097,9 +1031,7 @@ export default function Home() {
       } else {
         try {
           localStorage.removeItem(HISTORY_KEY);
-        } catch {
-          // ลบไม่ได้ก็ข้ามไป
-        }
+        } catch {}
       }
     };
 
@@ -1109,9 +1041,7 @@ export default function Home() {
         <Shell
           tab={tab}
           onTab={setTab}
-          profile={
-            <ProfileMenu user={user} onLogout={logout} />
-          }
+          profile={<ProfileMenu user={user} onLogout={logout} />}
           footer={<SidebarUser user={user} onLogout={logout} />}
         >
           {tab === "home" && (
@@ -1165,8 +1095,6 @@ export default function Home() {
       </div>
     );
   }
-
-  /* ----------------------------- หน้าสรุปผล ---------------------------- */
 
   const reached = todayTotal >= dailyGoal;
   const title = dayMode

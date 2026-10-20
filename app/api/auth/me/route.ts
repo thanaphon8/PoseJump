@@ -9,7 +9,14 @@ export async function GET() {
     const points = u ? await getUserPoints(u.id) : 0;
     return NextResponse.json(
       {
-        user: u ? { name: u.nickname, username: u.username, points } : null,
+        user: u
+          ? {
+              name: u.nickname,
+              username: u.username,
+              avatarUrl: u.avatarUrl,
+              points,
+            }
+          : null,
       },
       { headers: { "Cache-Control": "no-store" } }
     );

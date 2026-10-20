@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 /* ------------------------------------------------------------------ */
-/* ของที่ใช้ร่วมกันระหว่าง page.tsx / login / register                    */
+/* ของที่ใช้ร่วมกันระหว่าง page.tsx / login / register                  */
 /* ------------------------------------------------------------------ */
 
 export const APP_NAME = "Pose Jump";
@@ -16,6 +16,7 @@ export const POINT_REWARD = 50;
 export type User = {
   name: string;
   username?: string;
+  avatarUrl?: string; // เพิ่มฟิลด์รูปโปรไฟล์สำหรับแสดงผล
   points?: number;
 };
 
@@ -242,7 +243,6 @@ export function EyeButton({
 }
 
 // โครงหน้า login/register: พื้นหลัง + แผงแบรนด์ (เดสก์ท็อป) + โลโก้ (มือถือ)
-// ฟอร์มจริงส่งเข้ามาทาง children
 export function AuthShell({
   isReg,
   children,
@@ -266,7 +266,6 @@ export function AuthShell({
       aria-label={isReg ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
       className="pj-in fixed inset-0 z-50 overflow-y-auto overflow-x-hidden bg-gradient-to-t from-[#1B2A21] to-[#8FB54A] text-white lg:grid lg:grid-cols-[1fr_1fr] lg:bg-none lg:bg-[#F3F6EC] lg:text-[#1B2A21]"
     >
-      {/* พื้นหลังมือถือ: รูปเต็มจอ + ไล่สีเขียวเข้มล่าง→จางบน เหมือนการ์ดกติกา */}
       <div className="pointer-events-none fixed inset-0 lg:hidden" aria-hidden>
         {imgOk && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -281,7 +280,6 @@ export function AuthShell({
         <div className="absolute inset-0 bg-gradient-to-t from-[#1B2A21] via-[#1B2A21]/90 via-50% to-[#3F5E1F]/10" />
       </div>
 
-      {/* แผงแบรนด์ (เดสก์ท็อป) */}
       <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
         <div className="flex items-center gap-4 text-[22px] font-bold tracking-tight">
           <AuthLogo size={96} />
@@ -309,7 +307,6 @@ export function AuthShell({
         </p>
       </aside>
 
-      {/* ฟอร์ม */}
       <div className="relative flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
         <div className="flex flex-col items-center gap-3 pt-4 lg:hidden">
           <AuthLogo size={168} src="/img/com7logo.png" />

@@ -34,13 +34,13 @@ export async function POST(req: Request) {
 
     await createSession(u._id);
 
-    // point เก็บใน users.points (user เก่าที่ยังไม่มี field = 0)
     const points = typeof u.points === "number" ? u.points : 0;
 
     return NextResponse.json({
       user: {
         name: u.nickname as string,
         username: u.display as string,
+        avatarUrl: u.avatarUrl as string,
         points,
       },
     });
