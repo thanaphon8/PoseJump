@@ -9,6 +9,8 @@ import Pose from "./components/pose/page";
 import Rank from "./components/rank/page";
 import History from "./components/history/page";
 import HomeView from "./components/home/page";
+import Navbar from "./components/Navbar";
+import type { Tab, NavItem } from "./components/Navbar";
 import type { Session } from "./components/history/page";
 import {
   APP_NAME,
@@ -58,7 +60,7 @@ const LIME = "#C9F25B";
 type Phase = "setup" | "session" | "summary";
 type Mode = "time" | "count";
 type EndReason = "time" | "count" | "manual";
-type Tab = "home" | "today" | "history" | "settings";
+// (ชนิด Tab ย้ายไปอยู่ใน components/navbar/page.tsx)
 
 type Summary = {
   total: number;
@@ -705,7 +707,7 @@ function Shell({
   footer: ReactNode;
   children: ReactNode;
 }) {
-  const items: [Tab, string, string][] = [
+  const items: NavItem[] = [
     ["home", "หน้าหลัก", ICONS.home],
     ["today", "วันนี้", ICONS.trophy],
     ["history", "ประวัติ", ICONS.chart],
@@ -754,24 +756,7 @@ function Shell({
       </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-10 flex justify-around border-t border-[#E3EAD6] bg-white/90 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl lg:hidden">
-        {items.map(([t, label, d]) => (
-          <button
-            key={t}
-            onClick={() => onTab(t)}
-            className="flex flex-col items-center gap-0.5 text-[11px] font-semibold"
-          >
-            <span
-              className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors ${
-                tab === t ? "bg-[#C9F25B]" : "text-[#6B7A6E]"
-              }`}
-            >
-              <Icon d={d} size={20} />
-            </span>
-            <span className={tab === t ? "" : "text-[#6B7A6E]"}>{label}</span>
-          </button>
-        ))}
-      </nav>
+      <Navbar tab={tab} onTab={onTab} items={items} />
     </div>
   );
 }
