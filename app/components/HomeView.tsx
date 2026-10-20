@@ -7,9 +7,9 @@ import {
   Icon,
   POINT_QUOTA,
   POINT_REWARD,
-} from "../auth-shared";
-import type { User } from "../auth-shared";
-import type { Session } from "../history/page";
+} from "./auth-shared";
+import type { User } from "./auth-shared";
+import type { Session } from "./History";
 
 /* ------------------------------------------------------------------ */
 /* หน้าหลัก (แท็บ "หน้าหลัก")                                            */

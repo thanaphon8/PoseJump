@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ICONS, Icon, POINT_QUOTA, POINT_REWARD } from "../auth-shared";
+import { ICONS, Icon, POINT_QUOTA, POINT_REWARD } from "./auth-shared";
 
 /* ------------------------------------------------------------------ */
 /* ค่าคงที่และชนิดข้อมูล (ซ้ำกับ app/page.tsx เพราะไฟล์ page.tsx export ได้แค่ default) */

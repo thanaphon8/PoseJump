@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ICONS, Icon, Segmented } from "../auth-shared";
+import { ICONS, Icon, Segmented } from "./auth-shared";
 
 /* ------------------------------------------------------------------ */
 /* หน้าประวัติ (แท็บ "ประวัติ")                                          */

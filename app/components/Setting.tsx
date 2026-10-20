@@ -1,6 +1,6 @@
 "use client";
 
-import { Segmented } from "../auth-shared";
+import { Segmented } from "./auth-shared";
 
 /* ------------------------------------------------------------------ */
 /* หน้าตั้งค่า (แท็บ "ตั้งค่า")                                          */

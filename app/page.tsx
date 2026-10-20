@@ -5,15 +5,15 @@ import type { ReactNode } from "react";
 import { Prompt } from "next/font/google";
 import LoginForm from "./components/LoginForm";
 import RegisterForm from "./components/RegisterForm";
-import Pose from "./components/pose/page";
-import Rank from "./components/rank/page";
-import History from "./components/history/page";
-import HomeView from "./components/home/page";
+import Pose from "./components/Pose";
+import Rank from "./components/Rank";
+import History from "./components/History";
+import HomeView from "./components/HomeView";
 import PromoPopup from "./components/PromoPopup";
-import Setting from "./components/setting/page";
+import Setting from "./components/Setting";
 import Navbar from "./components/Navbar";
 import type { Tab, NavItem } from "./components/Navbar";
-import type { Session } from "./components/history/page";
+import type { Session } from "./components/History";
 import {
   APP_NAME,
   ICONS,
@@ -38,8 +38,8 @@ const FONT = `${prompt.style.fontFamily}, -apple-system, BlinkMacSystemFont, "No
 /* ------------------------------------------------------------------ */
 
 // (ค่าคงที่และฟังก์ชันของการสแกนตัว/นับกระโดด ย้ายไปอยู่ใน components/pose/page.tsx)
-// (หน้าประวัติ + ปฏิทิน + ตัวแบ่งหน้า ย้ายไปอยู่ใน components/history/page.tsx)
-// (หน้าหลัก + วงแหวนเป้าหมาย + กติกาการเล่น + รอบล่าสุด ย้ายไปอยู่ใน components/home/page.tsx)
+// (หน้าประวัติ + ปฏิทิน + ตัวแบ่งหน้า ย้ายไปอยู่ใน components/History.tsx)
+// (หน้าหลัก + วงแหวนเป้าหมาย + กติกาการเล่น + รอบล่าสุด ย้ายไปอยู่ใน components/HomeView.tsx)
 
 const STORAGE_KEY = "pose-jump-settings";
 const HISTORY_KEY = "pose-jump-history";
@@ -74,7 +74,7 @@ type Summary = {
   record: boolean;
 };
 
-// (ชนิด Session ย้ายไปอยู่ใน components/history/page.tsx)
+// (ชนิด Session ย้ายไปอยู่ใน components/History.tsx)
 
 type Settings = {
   mode: Mode;

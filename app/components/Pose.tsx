@@ -6,7 +6,7 @@ import type {
   NormalizedLandmark,
   PoseLandmarker,
 } from "@mediapipe/tasks-vision";
-import { APP_NAME, ICONS, Icon, Logo } from "../auth-shared";
+import { APP_NAME, ICONS, Icon, Logo } from "./auth-shared";
 
 /* ------------------------------------------------------------------ */
 /* ค่าคงที่                                                             */
