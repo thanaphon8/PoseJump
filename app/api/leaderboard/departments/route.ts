@@ -1,7 +1,7 @@
 import { NextResponse, connection } from "next/server";
 import { currentUser } from "../../../../lib/auth";
 import { getDb } from "../../../../lib/mongodb";
-import { DEPARTMENTS } from "../../../components/departments";
+import { DEPARTMENTS, getCompany } from "../../../components/departments";
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
@@ -55,8 +55,11 @@ export async function GET() {
 
     const ranked = DEPARTMENTS.map((d) => ({
       id: d.id,
-      name: d.th,
-      en: d.en,
+      name: d.name,
+      // Department ไม่มี th/en แล้ว (ชื่อรวมเป็น name) คง en ไว้กันโค้ดฝั่ง UI ที่ยังอ่านอยู่
+      en: d.name,
+      // ชื่อบริษัทของแผนก (ชื่อแผนกซ้ำข้ามบริษัทได้ เช่น Accounting)
+      company: getCompany(d.companyId)?.name ?? null,
       total: sum.get(d.id)?.total ?? 0,
       active: sum.get(d.id)?.active ?? 0,
     }))

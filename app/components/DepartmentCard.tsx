@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { getDepartment } from "./departments";
+import { getCompany, getDepartment } from "./departments";
+import { branchLabel, getBranch } from "./branches";
 import { ICONS, Icon } from "./auth-shared";
 
 type Member = {
@@ -59,19 +60,38 @@ function Avatar({
 }
 
 export default function DepartmentCard({
+  companyId,
   departmentId,
+  branchId,
   myUsername,
 }: {
+  companyId?: number | null;
   departmentId?: number | null;
+  branchId?: number | null;
   myUsername?: string;
 }) {
+  const company = getCompany(companyId);
   const dept = getDepartment(departmentId);
+  const branch = getBranch(branchId);
+
+  // กลุ่ม = แผนก ถ้ามี ไม่งั้นใช้สาขา (ตรงกับ /api/departments/members)
+  const kind = dept ? "แผนก" : "สาขา";
+  const title = dept ? dept.name : branch ? branchLabel(branch) : "";
+  const sub = dept
+    ? [company?.name, branch ? branchLabel(branch) : null]
+        .filter(Boolean)
+        .join(" · ")
+    : (company?.name ?? "");
+  const hasGroup = !!(dept || branch);
+  // ยอดรวมรายสัปดาห์มีเฉพาะกลุ่มแผนก (dept_jumps เก็บตามแผนก)
+  const showTotal = !!dept;
+
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (!dept) return;
+    if (!hasGroup) return;
     let alive = true;
     const load = () =>
       fetch("/api/departments/members", { cache: "no-store" })
@@ -91,7 +111,7 @@ export default function DepartmentCard({
       alive = false;
       clearInterval(t);
     };
-  }, [dept]);
+  }, [hasGroup, departmentId, branchId]);
 
   useEffect(() => {
     if (!open) return;
@@ -102,7 +122,7 @@ export default function DepartmentCard({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  if (!dept) return null;
+  if (!hasGroup) return null;
 
   const members = data?.members ?? [];
   const shown = members.slice(0, STACK_MAX);
@@ -118,12 +138,10 @@ export default function DepartmentCard({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[12px] text-[#6B7A6E]">แผนกของคุณ</div>
-            <h2 className="truncate text-[17px] font-bold">{dept.th}</h2>
-            {dept.en !== dept.th && (
-              <div className="truncate text-[12px] text-[#6B7A6E]">
-                {dept.en}
-              </div>
+            <div className="text-[12px] text-[#6B7A6E]">{kind}ของคุณ</div>
+            <h2 className="truncate text-[17px] font-bold">{title}</h2>
+            {sub && (
+              <div className="truncate text-[12px] text-[#6B7A6E]">{sub}</div>
             )}
           </div>
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#E8F5C1] text-[#3F5E1F]">
@@ -131,22 +149,24 @@ export default function DepartmentCard({
           </span>
         </div>
 
-        <div className="mt-3 flex items-center gap-3 rounded-2xl bg-[#1B2A21] px-4 py-3 text-white">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
-            <Icon d={ICONS.bolt} size={20} />
-          </span>
-          <div className="min-w-0">
-            <div className="text-[12px] text-white/60">
-              คะแนนรวมแผนกสัปดาห์นี้
-            </div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-[28px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
-                {data ? fmtNum(data.weekTotal) : "-"}
-              </span>
-              <span className="text-[13px] text-white/60">ครั้ง</span>
+        {showTotal && (
+          <div className="mt-3 flex items-center gap-3 rounded-2xl bg-[#1B2A21] px-4 py-3 text-white">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
+              <Icon d={ICONS.bolt} size={20} />
+            </span>
+            <div className="min-w-0">
+              <div className="text-[12px] text-white/60">
+                คะแนนรวมแผนกสัปดาห์นี้
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[28px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
+                  {data ? fmtNum(data.weekTotal) : "-"}
+                </span>
+                <span className="text-[13px] text-white/60">ครั้ง</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="mt-3 flex items-center justify-between gap-3">
           {failed ? (
@@ -190,7 +210,7 @@ export default function DepartmentCard({
           <div
             role="dialog"
             aria-modal="true"
-            aria-label={`สมาชิกแผนก ${dept.th}`}
+            aria-label={`สมาชิก${kind} ${title}`}
             className="pj-in fixed inset-0 z-50 flex items-end justify-center bg-[#1B2A21]/70 p-0 sm:items-center sm:p-5"
             onClick={() => setOpen(false)}
           >
@@ -200,16 +220,24 @@ export default function DepartmentCard({
             >
               <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
                 <div className="min-w-0">
-                  <div className="text-[12px] text-[#6B7A6E]">สมาชิกแผนก</div>
+                  <div className="text-[12px] text-[#6B7A6E]">
+                    สมาชิก{kind}
+                  </div>
                   <h3 className="truncate text-[20px] font-bold leading-tight">
-                    {dept.th}
+                    {title}
                   </h3>
                   <div className="mt-1 text-[13px] text-[#3F5E1F]">
-                    {members.length} คน · รวม{" "}
-                    <span className="font-semibold tabular-nums">
-                      {fmtNum(data?.weekTotal ?? 0)}
-                    </span>{" "}
-                    ครั้งสัปดาห์นี้
+                    {members.length} คน
+                    {showTotal && (
+                      <>
+                        {" "}
+                        · รวม{" "}
+                        <span className="font-semibold tabular-nums">
+                          {fmtNum(data?.weekTotal ?? 0)}
+                        </span>{" "}
+                        ครั้งสัปดาห์นี้
+                      </>
+                    )}
                   </div>
                 </div>
                 <button

@@ -35,6 +35,7 @@ export async function POST(req: Request) {
     await createSession(u._id);
 
     const points = typeof u.points === "number" ? u.points : 0;
+    const num = (v: unknown) => (typeof v === "number" ? v : null);
 
     return NextResponse.json({
       user: {
@@ -42,6 +43,9 @@ export async function POST(req: Request) {
         username: u.display as string,
         avatarUrl: u.avatarUrl as string,
         points,
+        companyId: num(u.companyId),
+        departmentId: num(u.departmentId),
+        branchId: num(u.branchId),
       },
     });
   } catch (e) {

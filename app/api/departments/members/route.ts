@@ -18,6 +18,7 @@ function weekRange(now = Date.now()) {
 
 // GET /api/departments/members
 // → สมาชิกแผนกเดียวกับผู้ใช้ที่ล็อกอิน + คะแนนรวมแผนกสัปดาห์นี้ (ครั้งกระโดด)
+// ผู้ใช้ที่ไม่มีแผนก (บริษัทที่มีแต่สาขา) ใช้สมาชิกสาขาเดียวกันแทน
 export async function GET() {
   await connection();
   try {
@@ -25,12 +26,19 @@ export async function GET() {
     if (!me) {
       return NextResponse.json({ error: "ยังไม่ได้เข้าสู่ระบบ" }, { status: 401 });
     }
-    if (me.departmentId == null) {
+
+    // กลุ่ม = แผนก ถ้ามี ไม่งั้นใช้สาขา (id แผนก/สาขาไม่ซ้ำข้ามบริษัท)
+    const byDept = me.departmentId != null;
+    const byBranch = !byDept && me.branchId != null;
+    if (!byDept && !byBranch) {
       return NextResponse.json(
         { members: [], weekTotal: 0 },
         { headers: { "Cache-Control": "no-store" } }
       );
     }
+    const groupFilter = byDept
+      ? { departmentId: me.departmentId }
+      : { branchId: me.branchId };
 
     const db = await getDb();
     const { weekStart, resetAt } = weekRange();
@@ -38,32 +46,32 @@ export async function GET() {
     const [docs, agg] = await Promise.all([
       db
         .collection("users")
-        .find(
-          { departmentId: me.departmentId },
-          {
-            projection: {
-              display: 1,
-              username: 1,
-              nickname: 1,
-              avatarUrl: 1,
-            },
-          }
-        )
+        .find(groupFilter, {
+          projection: {
+            display: 1,
+            username: 1,
+            nickname: 1,
+            avatarUrl: 1,
+          },
+        })
         .sort({ createdAt: 1 })
         .limit(500)
         .toArray(),
-      db
-        .collection("dept_jumps")
-        .aggregate<{ _id: null; total: number }>([
-          {
-            $match: {
-              departmentId: me.departmentId,
-              ts: { $gte: weekStart, $lt: resetAt },
-            },
-          },
-          { $group: { _id: null, total: { $sum: "$total" } } },
-        ])
-        .toArray(),
+      // dept_jumps เก็บตาม departmentId เท่านั้น กลุ่มสาขายังไม่มียอดรวม (ได้ 0)
+      byDept
+        ? db
+            .collection("dept_jumps")
+            .aggregate<{ _id: null; total: number }>([
+              {
+                $match: {
+                  departmentId: me.departmentId,
+                  ts: { $gte: weekStart, $lt: resetAt },
+                },
+              },
+              { $group: { _id: null, total: { $sum: "$total" } } },
+            ])
+            .toArray()
+        : Promise.resolve([] as { _id: null; total: number }[]),
     ]);
 
     // ตัวเองขึ้นก่อน ที่เหลือเรียงตามเวลาสมัคร

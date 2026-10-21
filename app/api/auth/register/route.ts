@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { getDb } from "../../../../lib/mongodb";
 import { createSession } from "../../../../lib/auth";
-import { getDepartment } from "../../../components/departments";
+import { validateOrg } from "../../../components/branches";
 
 export async function POST(req: Request) {
   try {
@@ -16,7 +16,9 @@ export async function POST(req: Request) {
     const nicknameRaw = formData.get("nickname");
     const usernameRaw = formData.get("username");
     const passwordRaw = formData.get("password");
+    const companyRaw = formData.get("companyId");
     const departmentRaw = formData.get("departmentId");
+    const branchRaw = formData.get("branchId");
     const avatarFile = formData.get("avatar") as File | null;
 
     const nickname =
@@ -24,9 +26,18 @@ export async function POST(req: Request) {
     const display =
       typeof usernameRaw === "string" ? usernameRaw.trim() : "";
     const password = typeof passwordRaw === "string" ? passwordRaw : "";
+    const companyId =
+      typeof companyRaw === "string" && /^\d{1,3}$/.test(companyRaw)
+        ? Number(companyRaw)
+        : null;
+    // แผนก/สาขาไม่บังคับที่ระดับ parse (validateOrg ตรวจกติกาตามบริษัทให้)
     const departmentId =
-      typeof departmentRaw === "string" && /^\d{1,3}$/.test(departmentRaw)
+      typeof departmentRaw === "string" && /^\d{1,4}$/.test(departmentRaw)
         ? Number(departmentRaw)
+        : null;
+    const branchId =
+      typeof branchRaw === "string" && /^\d{1,5}$/.test(branchRaw)
+        ? Number(branchRaw)
         : null;
 
     const errors: Record<string, string> = {};
@@ -35,8 +46,8 @@ export async function POST(req: Request) {
       errors.username = "3-20 ตัว ใช้ a-z 0-9 และ _ เท่านั้น";
     if (password.length < 6 || password.length > 72)
       errors.password = "รหัสผ่านต้องยาว 6-72 ตัวอักษร";
-    if (!departmentId || !getDepartment(departmentId))
-      errors.departmentId = "เลือกแผนก";
+    if (!companyId) errors.companyId = "เลือกบริษัท";
+    else Object.assign(errors, validateOrg(companyId, departmentId, branchId));
     if (Object.keys(errors).length > 0) {
       return NextResponse.json({ errors }, { status: 400 });
     }
@@ -91,7 +102,9 @@ export async function POST(req: Request) {
         passwordHash,
         avatarUrl,
         driveFileId,
+        companyId,
         departmentId,
+        branchId,
         points: 0,
         createdAt: new Date(),
       });
@@ -105,7 +118,9 @@ export async function POST(req: Request) {
             username: display,
             avatarUrl,
             points: 0,
+            companyId,
             departmentId,
+            branchId,
           },
         },
         { status: 201 }

@@ -15,7 +15,9 @@ export type AuthUser = {
   display: string;
   nickname: string;
   avatarUrl?: string; // รูปโปรไฟล์
+  companyId?: number | null; // รหัสบริษัท (ดู departments.ts)
   departmentId?: number | null; // รหัสแผนก (ดู departments.ts)
+  branchId?: number | null; // รหัสสาขา (ดู branches.ts)
 };
 
 export async function createSession(userId: ObjectId) {
@@ -66,7 +68,10 @@ export async function currentUser(): Promise<AuthUser | null> {
     display: u.display as string,
     nickname: u.nickname as string,
     avatarUrl: u.avatarUrl as string,
+    companyId:
+      typeof u.companyId === "number" ? (u.companyId as number) : null,
     departmentId:
       typeof u.departmentId === "number" ? (u.departmentId as number) : null,
+    branchId: typeof u.branchId === "number" ? (u.branchId as number) : null,
   };
 }

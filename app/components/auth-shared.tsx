@@ -18,14 +18,23 @@ export type User = {
   username?: string;
   avatarUrl?: string; // เพิ่มฟิลด์รูปโปรไฟล์สำหรับแสดงผล
   points?: number;
+  companyId?: number | null; // รหัสบริษัท (ดู departments.ts)
   departmentId?: number | null; // รหัสแผนก (ดู departments.ts)
+  branchId?: number | null; // รหัสสาขา (ดู branches.ts)
 };
 
 export type AuthMode = "login" | "register";
 
 export type AuthErrors = Partial<
   Record<
-    "nickname" | "username" | "password" | "confirm" | "departmentId" | "form",
+    | "nickname"
+    | "username"
+    | "password"
+    | "confirm"
+    | "companyId"
+    | "departmentId"
+    | "branchId"
+    | "form",
     string
   >
 >;

@@ -1,30 +1,47 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent, KeyboardEvent, ReactNode } from "react";
+import type {
+  ChangeEvent,
+  FormEvent,
+  KeyboardEvent,
+  ReactNode,
+  Ref,
+} from "react";
 import { EyeButton, Field } from "./auth-shared";
 import type {
   AuthErrors,
   AuthFormProps,
   User,
 } from "./auth-shared";
-import { DEPARTMENTS } from "./departments";
+import { COMPANIES, DEPARTMENTS, departmentsOf, getCompany } from "./departments";
+import { branchesOf, branchLabel, getBranch } from "./branches";
 
 /* ------------------------------------------------------------------ */
 /* ค่าคงที่ / ตัวช่วย                                                    */
 /* ------------------------------------------------------------------ */
 
-const STEPS = ["ชื่อเล่น", "แผนก", "บัญชี", "โปรไฟล์"] as const;
+const STEPS = ["ชื่อเล่น", "บริษัท", "แผนก", "สาขา", "บัญชี", "โปรไฟล์"] as const;
 // ข้อความใต้วงกลมแต่ละขั้น: บอกว่าผู้ใช้ต้องทำอะไร
-const STEP_LABELS = ["ใส่ชื่อเล่น", "เลือกแผนก", "ตั้งรหัสผ่าน", "เพิ่มรูปโปรไฟล์"] as const;
-const LAST_STEP = STEPS.length - 1; // 3 = หน้าตั้งค่าโปรไฟล์
-const WELCOME = STEPS.length; // 4 = หน้า welcome
+const STEP_LABELS = [
+  "ใส่ชื่อเล่น",
+  "เลือกบริษัท",
+  "เลือกแผนก",
+  "เลือกสาขา",
+  "ตั้งรหัสผ่าน",
+  "เพิ่มรูป",
+] as const;
+const LAST_STEP = STEPS.length - 1; // 5 = หน้าตั้งค่าโปรไฟล์
+const WELCOME = STEPS.length; // 6 = หน้า welcome
 
-type Dept = (typeof DEPARTMENTS)[number];
+// สาขาที่แสดงก่อนพิมพ์ค้นหา (Com7 มี 1,000+ สาขา)
+const BRANCH_PREVIEW = 80;
+
 type Mate = { name: string; username: string; avatarUrl: string | null };
 type Mates = { count: number; members: Mate[] };
+// รายการเลือก (บริษัท / แผนก / สาขา ใช้โครงเดียวกัน)
+type Item = { id: number; label: string; sub?: string };
 
-const deptLabel = (d: Dept) => (d.th === d.en ? d.en : d.th);
 const fold = (s: string) => s.toLowerCase().replace(/\s+/g, "");
 
 // ตัวอักษรของ q เรียงอยู่ใน h ตามลำดับ (พิมพ์ย่อก็เจอ เช่น "acc" → "accounting")
@@ -35,9 +52,10 @@ const isSubseq = (q: string, h: string) => {
 };
 
 // คะแนนความใกล้เคียง: 0 ขึ้นต้นตรง, 1 มีคำนี้อยู่ข้างใน, 2 พิมพ์ย่อ, -1 ไม่ตรง
-function matchScore(q: string, d: Dept): number {
+function matchScore(q: string, texts: string[]): number {
   let best = -1;
-  for (const h of [fold(d.th), fold(d.en)]) {
+  for (const raw of texts) {
+    const h = fold(raw);
     let s = -1;
     if (h.startsWith(q)) s = 0;
     else if (h.includes(q)) s = 1;
@@ -47,28 +65,30 @@ function matchScore(q: string, d: Dept): number {
   return best;
 }
 
-// กรอง + เรียงแผนกตามที่พิมพ์ (ใกล้เคียงที่สุดขึ้นก่อน)
-function searchDepts(query: string): Dept[] {
+// กรอง + เรียงรายการตามที่พิมพ์ (ใกล้เคียงที่สุดขึ้นก่อน)
+function searchItems(query: string, list: Item[]): Item[] {
   const q = fold(query);
-  if (!q) return [...DEPARTMENTS];
-  return DEPARTMENTS.map((d) => ({ d, s: matchScore(q, d) }))
-    .filter((x) => x.s >= 0)
-    .sort(
-      (a, b) =>
-        a.s - b.s || deptLabel(a.d).length - deptLabel(b.d).length
-    )
-    .map((x) => x.d);
+  if (!q) return list;
+  return list
+    .map((x) => ({ x, s: matchScore(q, [x.label, x.sub ?? ""]) }))
+    .filter((r) => r.s >= 0)
+    .sort((a, b) => a.s - b.s || a.x.label.length - b.x.label.length)
+    .map((r) => r.x);
 }
 
 // step ที่มี error ของฟิลด์นั้นอยู่ (ไว้เด้งกลับไปแก้เมื่อเซิร์ฟเวอร์ตีกลับ)
 const stepOfErrors = (e: AuthErrors): number | null =>
   e.nickname
     ? 0
-    : e.departmentId
+    : e.companyId
       ? 1
-      : e.username || e.password || e.confirm
+      : e.departmentId
         ? 2
-        : null;
+        : e.branchId
+          ? 3
+          : e.username || e.password || e.confirm
+            ? 4
+            : null;
 
 /* ------------------------------------------------------------------ */
 /* ส่วนประกอบย่อย                                                        */
@@ -105,6 +125,91 @@ function Avatar({
     >
       {(Array.from(name.trim())[0] ?? "?").toUpperCase()}
     </span>
+  );
+}
+
+// รายการให้เลือก (ใช้ร่วมกันทั้งบริษัท / แผนก / สาขา)
+function PickList({
+  items,
+  selectedId,
+  hi,
+  onHover,
+  onPick,
+  listRef,
+  limit,
+  label,
+}: {
+  items: Item[];
+  selectedId: string;
+  hi: number;
+  onHover: (i: number) => void;
+  onPick: (id: number) => void;
+  listRef?: Ref<HTMLDivElement>;
+  limit?: number;
+  label: string;
+}) {
+  const shown = limit ? items.slice(0, limit) : items;
+  return (
+    <div
+      ref={listRef}
+      role="listbox"
+      aria-label={label}
+      className="relative -mx-2 mt-3 max-h-[min(52dvh,460px)] overflow-y-auto rounded-2xl bg-white text-[#1B2A21] shadow-lg ring-1 ring-black/5 sm:-mx-3"
+    >
+      {shown.length === 0 ? (
+        <p className="px-4 py-5 text-center text-[14px] text-[#6B7A6E]">
+          ไม่พบรายการที่ตรงกัน ลองพิมพ์คำอื่น
+        </p>
+      ) : (
+        shown.map((it, i) => {
+          const selected = String(it.id) === selectedId;
+          return (
+            <button
+              key={it.id}
+              type="button"
+              role="option"
+              aria-selected={selected}
+              data-hi={i === hi ? "true" : undefined}
+              onMouseEnter={() => onHover(i)}
+              onClick={() => onPick(it.id)}
+              className={`flex min-h-12 w-full items-center justify-between gap-3 px-5 py-3 text-left transition-colors ${
+                selected ? "bg-[#C9F25B]" : i === hi ? "bg-[#E8F5C1]" : ""
+              }`}
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-[16px] font-semibold">
+                  {it.label}
+                </span>
+                {it.sub && (
+                  <span className="block truncate text-[12px] text-[#6B7A6E]">
+                    {it.sub}
+                  </span>
+                )}
+              </span>
+              {selected && (
+                <svg
+                  className="h-5 w-5 shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={3}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M5 12l5 5 9-10" />
+                </svg>
+              )}
+            </button>
+          );
+        })
+      )}
+      {items.length > shown.length && (
+        <p className="px-4 py-3 text-center text-[12px] text-[#6B7A6E]">
+          พิมพ์ค้นหาเพื่อดูอีก {items.length - shown.length} รายการ
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -450,9 +555,12 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
   const [step, setStep] = useState(0);
 
   const [nickname, setNickname] = useState("");
-  const [deptQuery, setDeptQuery] = useState(""); // คำค้นหา (ใช้กรองรายการแผนก)
+  const [companyId, setCompanyId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
-  const [hi, setHi] = useState(-1); // แถวที่ไฮไลต์ในรายการแผนก (-1 = ไม่มี)
+  const [branchId, setBranchId] = useState("");
+  const [deptQuery, setDeptQuery] = useState(""); // คำค้นหา (ใช้กรองรายการแผนก)
+  const [branchQuery, setBranchQuery] = useState(""); // คำค้นหา (ใช้กรองรายการสาขา)
+  const [hi, setHi] = useState(-1); // แถวที่ไฮไลต์ในรายการ (-1 = ไม่มี)
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -464,7 +572,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const deptListRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [camOpen, setCamOpen] = useState(false);
   const [canCam, setCanCam] = useState(false); // เช็กฝั่งไคลเอนต์ (ต้องเป็น https / localhost)
   useEffect(() => {
@@ -482,18 +590,58 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     [avatarPreview]
   );
 
-  // รายการแผนกที่แสดง: ยังไม่พิมพ์ = ทุกแผนก / พิมพ์แล้ว = กรองและเรียงตามความใกล้เคียง
-  const visible = useMemo(() => searchDepts(deptQuery), [deptQuery]);
+  // เปลี่ยนขั้น = ล้างแถวที่ไฮไลต์
+  useEffect(() => {
+    setHi(-1);
+  }, [step]);
 
+  // รายการบริษัท / แผนก / สาขา (แผนกและสาขาขึ้นกับบริษัทที่เลือก)
+  const companyItems = useMemo<Item[]>(
+    () => COMPANIES.map((c) => ({ id: c.id, label: c.name })),
+    []
+  );
+  const deptItems = useMemo<Item[]>(
+    () =>
+      departmentsOf(Number(companyId)).map((d) => ({ id: d.id, label: d.name })),
+    [companyId]
+  );
+  const branchItems = useMemo<Item[]>(
+    () =>
+      branchesOf(Number(companyId)).map((b) => ({
+        id: b.id,
+        label: branchLabel(b),
+        sub: b.province?.split("/")[0],
+      })),
+    [companyId]
+  );
+
+  // ยังไม่พิมพ์ = ทุกรายการ / พิมพ์แล้ว = กรองและเรียงตามความใกล้เคียง
+  const visibleDepts = useMemo(
+    () => searchItems(deptQuery, deptItems),
+    [deptQuery, deptItems]
+  );
+  const visibleBranches = useMemo(
+    () => searchItems(branchQuery, branchItems),
+    [branchQuery, branchItems]
+  );
+
+  const selectedCompany = useMemo(
+    () => getCompany(Number(companyId)),
+    [companyId]
+  );
   const selectedDept = useMemo(
     () => DEPARTMENTS.find((d) => String(d.id) === departmentId) ?? null,
     [departmentId]
   );
+  const selectedBranch = useMemo(
+    () => (branchId ? getBranch(Number(branchId)) : null),
+    [branchId]
+  );
 
   // เลื่อนรายการให้เห็นแถวที่ไฮไลต์ (เลื่อนในกล่องรายการเท่านั้น ไม่เลื่อนทั้งหน้า)
   useEffect(() => {
-    if (step !== 1 || hi < 0) return;
-    const box = deptListRef.current;
+    if ((step !== 2 && step !== 3) || hi < 0) return;
+    const box = listRef.current;
     const el = box?.querySelector<HTMLElement>('[data-hi="true"]');
     if (!box || !el) return;
     const top = el.offsetTop;
@@ -512,7 +660,30 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       clearErr(key);
     };
 
-  /* ---------------- แผนก: เลือกจากรายการ หรือพิมพ์ค้นหา ---------------- */
+  /* ---------------- บริษัท / แผนก / สาขา: เลือกจากรายการ หรือพิมพ์ค้นหา ---------------- */
+
+  // เปลี่ยนบริษัท = ล้างแผนกและสาขาที่เลือกไว้ (เพราะเป็นของบริษัทเดิม)
+  const pickCompany = (id: number) => {
+    if (String(id) !== companyId) {
+      setCompanyId(String(id));
+      setDepartmentId("");
+      setBranchId("");
+      setDeptQuery("");
+      setBranchQuery("");
+    }
+    clearErr("companyId");
+  };
+
+  const pickDept = (id: number) => {
+    setDepartmentId(String(id));
+    clearErr("departmentId");
+  };
+
+  // กดสาขาที่เลือกอยู่ซ้ำ = ยกเลิก (สาขาไม่บังคับถ้าบริษัทมีแผนก)
+  const pickBranch = (id: number) => {
+    setBranchId((p) => (p === String(id) ? "" : String(id)));
+    clearErr("branchId");
+  };
 
   const onDeptQuery = (v: string) => {
     setDeptQuery(v);
@@ -520,30 +691,38 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     clearErr("departmentId");
   };
 
-  const pickDept = (d: Dept) => {
-    setDepartmentId(String(d.id));
-    clearErr("departmentId");
+  const onBranchQuery = (v: string) => {
+    setBranchQuery(v);
+    setHi(v.trim() ? 0 : -1);
+    clearErr("branchId");
   };
 
   // ลูกศรขึ้น/ลง เลื่อนรายการ, Enter (ตอนมีคำค้น) เลือกแถวที่ไฮไลต์
-  const onDeptKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    const n = visible.length;
-    if (n === 0) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHi((i) => (i + 1) % n);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHi((i) => (i <= 0 ? n - 1 : i - 1));
-    } else if (e.key === "Enter" && deptQuery.trim()) {
-      const d = visible[Math.min(Math.max(hi, 0), n - 1)];
-      // ถ้าแถวนั้นเลือกอยู่แล้ว ปล่อยให้ Enter ส่งฟอร์มไปขั้นถัดไป
-      if (d && String(d.id) !== departmentId) {
+  const onListKey =
+    (
+      list: Item[],
+      query: string,
+      selectedId: string,
+      pick: (id: number) => void
+    ) =>
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      const n = list.length;
+      if (n === 0) return;
+      if (e.key === "ArrowDown") {
         e.preventDefault();
-        pickDept(d);
+        setHi((i) => (i + 1) % n);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHi((i) => (i <= 0 ? n - 1 : i - 1));
+      } else if (e.key === "Enter" && query.trim()) {
+        const it = list[Math.min(Math.max(hi, 0), n - 1)];
+        // ถ้าแถวนั้นเลือกอยู่แล้ว ปล่อยให้ Enter ส่งฟอร์มไปขั้นถัดไป
+        if (it && String(it.id) !== selectedId) {
+          e.preventDefault();
+          pick(it.id);
+        }
       }
-    }
-  };
+    };
 
   /* ---------------- รูปโปรไฟล์ ---------------- */
 
@@ -572,8 +751,16 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     if (s === 0) {
       if (!nickname.trim()) err.nickname = "กรอกชื่อเล่น";
     } else if (s === 1) {
-      if (!departmentId) err.departmentId = "เลือกแผนกของคุณจากรายการ";
+      if (!companyId) err.companyId = "เลือกบริษัทของคุณ";
     } else if (s === 2) {
+      // แผนกบังคับ ถ้าบริษัทนี้มีแผนก
+      if (deptItems.length > 0 && !departmentId)
+        err.departmentId = "เลือกแผนกของคุณจากรายการ";
+    } else if (s === 3) {
+      // สาขาบังคับเฉพาะบริษัทที่ไม่มีแผนกแต่มีสาขา
+      if (deptItems.length === 0 && branchItems.length > 0 && !branchId)
+        err.branchId = "เลือกสาขาของคุณจากรายการ";
+    } else if (s === 4) {
       const uname = username.trim();
       if (!uname) err.username = "กรอก username";
       else if (!/^[A-Za-z0-9_]{3,20}$/.test(uname))
@@ -587,7 +774,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     return err;
   };
 
-  // ใช้ /api/departments/members เดิม (อ่านแผนกจากคนที่ล็อกอินอยู่ จึงต้องเรียกหลังสมัครสำเร็จ)
+  // ใช้ /api/departments/members เดิม (อ่านแผนก/สาขาจากคนที่ล็อกอินอยู่ จึงต้องเรียกหลังสมัครสำเร็จ)
   const loadMates = () => {
     fetch("/api/departments/members", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
@@ -602,7 +789,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
 
   const register = async (withAvatar: boolean) => {
     if (busy) return;
-    for (let s = 0; s <= 2; s++) {
+    for (let s = 0; s <= 4; s++) {
       const err = validate(s);
       if (Object.keys(err).length > 0) {
         setErrors(err);
@@ -620,7 +807,9 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       const formData = new FormData();
       formData.append("nickname", nickname.trim());
       formData.append("username", username.trim());
-      formData.append("departmentId", departmentId);
+      formData.append("companyId", companyId);
+      if (departmentId) formData.append("departmentId", departmentId);
+      if (branchId) formData.append("branchId", branchId);
       formData.append("password", password);
       if (withAvatar && avatarFile) formData.append("avatar", avatarFile);
 
@@ -693,6 +882,13 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     // แถวเพื่อนร่วมแผนก (ตัวเองแสดงใหญ่ตรงกลางแล้ว)
     const row = others;
 
+    // ชื่อหลักบนหน้า welcome: แผนก > สาขา > บริษัท
+    const branchName = selectedBranch ? branchLabel(selectedBranch) : null;
+    const mainTitle =
+      selectedDept?.name ?? branchName ?? selectedCompany?.name ?? "แผนกของคุณ";
+    // บริษัทที่ไม่มีแผนก เพื่อนร่วมกลุ่มคือคนในสาขาเดียวกัน
+    const groupLabel = selectedDept ? "แผนก" : "สาขา";
+
     return (
       <div className="fixed inset-0 z-50 overflow-y-auto bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] text-[#1B2A21]">
         <style>{`
@@ -730,7 +926,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
         <Sparkle className="right-[10%] top-[46%] h-6 w-6 fill-[#8FB54A]" />
 
         <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(2.5rem,env(safe-area-inset-top))]">
-          {/* ชื่อแผนก */}
+          {/* ชื่อบริษัท / แผนก / สาขา */}
           <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
             <p
               className="text-[16px] font-semibold text-[#3F5E1F]"
@@ -761,19 +957,35 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                 {nickname.trim()}
               </p>
             </div>
+            {selectedCompany && (
+              <p
+                className="mt-3 text-[16px] font-semibold text-[#3F5E1F]"
+                style={{ animation: "rf-fade .6s ease-out .3s both" }}
+              >
+                {selectedCompany.name}
+              </p>
+            )}
             <h1
-              className="mt-3 break-words text-[40px] font-bold leading-tight tracking-tight"
+              className="mt-1 break-words text-[40px] font-bold leading-tight tracking-tight"
               style={{ animation: "rf-pop .7s ease-out .25s both" }}
             >
-              {selectedDept ? deptLabel(selectedDept) : "แผนกของคุณ"}
+              {mainTitle}
             </h1>
+            {selectedDept && branchName && (
+              <p
+                className="mt-1 break-words text-[16px] font-semibold text-[#3F5E1F]"
+                style={{ animation: "rf-fade .6s ease-out .45s both" }}
+              >
+                {branchName}
+              </p>
+            )}
             <p
               className="mt-3 inline-flex rounded-full bg-white/70 px-4 py-1.5 text-[14px] font-semibold text-[#3F5E1F]"
               style={{ animation: "rf-fade .6s ease-out .6s both" }}
             >
               {mates
-                ? `${totalInDept} คนในแผนกนี้`
-                : "กำลังโหลดเพื่อนร่วมแผนก"}
+                ? `${totalInDept} คนใน${groupLabel}นี้`
+                : `กำลังโหลดเพื่อนร่วม${groupLabel}`}
             </p>
           </div>
 
@@ -851,7 +1063,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                 className="mt-5 text-center text-[13px] text-[#3F5E1F]"
                 style={{ animation: "rf-fade .6s ease-out 1.4s both" }}
               >
-                คุณเป็นคนแรกของแผนกนี้ ชวนเพื่อนมาโดดด้วยกันเลย
+                คุณเป็นคนแรกของ{groupLabel}นี้ ชวนเพื่อนมาโดดด้วยกันเลย
               </p>
             )}
           </div>
@@ -877,12 +1089,28 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       s: "ชื่อนี้จะแสดงบนอันดับให้คนอื่นเห็น",
     },
     {
+      t: "คุณอยู่บริษัทไหน",
+      s: "เลือกบริษัทของคุณ",
+    },
+    {
       t: "คุณอยู่แผนกไหน",
-      s: "เลือกจากรายการ ถ้าหาไม่เจอพิมพ์ค้นหาได้",
+      s: selectedCompany
+        ? `แผนกใน ${selectedCompany.name} เลือกจากรายการ หรือพิมพ์ค้นหา`
+        : "เลือกจากรายการ ถ้าหาไม่เจอพิมพ์ค้นหาได้",
+    },
+    {
+      t: "คุณอยู่สาขาไหน",
+      s:
+        deptItems.length > 0
+          ? "ข้ามได้ ถ้าอยู่สำนักงานใหญ่"
+          : "เลือกจากรายการ หรือพิมพ์ค้นหา",
     },
     { t: "ตั้งค่าบัญชี", s: "ใช้ username และรหัสผ่านนี้เข้าสู่ระบบ" },
     { t: "ใส่รูปโปรไฟล์", s: "เลือกรูปให้เพื่อนจำคุณได้ หรือข้ามไปก่อนก็ได้" },
   ][step];
+
+  const noItemsCls =
+    "mt-4 rounded-2xl bg-white/10 px-4 py-5 text-center text-[14px] lg:bg-[#1B2A21]/5";
 
   return (
     <RegShell>
@@ -984,82 +1212,100 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
             </div>
           )}
 
-          {/* ขั้น 2: แผนก (แสดงให้เลือกเลย พิมพ์ค้นหาเมื่อหาไม่เจอ) */}
+          {/* ขั้น 2: บริษัท */}
           {step === 1 && (
-            <div className="mt-4" onKeyDown={onDeptKey}>
-              <Field
-                label="ค้นหาแผนก"
-                value={deptQuery}
-                onChange={onDeptQuery}
-                placeholder="พิมพ์ชื่อแผนก (ถ้าหาไม่เจอในรายการ)"
-                autoComplete="off"
-                error={errors.departmentId}
+            <div className="mt-4">
+              <PickList
+                label="รายการบริษัท"
+                items={companyItems}
+                selectedId={companyId}
+                hi={-1}
+                onHover={() => {}}
+                onPick={pickCompany}
               />
-
-              <div
-                ref={deptListRef}
-                role="listbox"
-                aria-label="รายการแผนก"
-                className="relative -mx-2 mt-3 max-h-[min(52dvh,460px)] overflow-y-auto rounded-2xl bg-white text-[#1B2A21] shadow-lg ring-1 ring-black/5 sm:-mx-3"
-              >
-                {visible.length === 0 ? (
-                  <p className="px-4 py-5 text-center text-[14px] text-[#6B7A6E]">
-                    ไม่พบแผนกที่ตรงกัน ลองพิมพ์คำอื่น
-                  </p>
-                ) : (
-                  visible.map((d, i) => {
-                    const selected = String(d.id) === departmentId;
-                    return (
-                      <button
-                        key={d.id}
-                        type="button"
-                        role="option"
-                        aria-selected={selected}
-                        data-hi={i === hi ? "true" : undefined}
-                        onMouseEnter={() => setHi(i)}
-                        onClick={() => pickDept(d)}
-                        className={`flex min-h-12 w-full items-center justify-between gap-3 px-5 py-3 text-left transition-colors ${
-                          selected
-                            ? "bg-[#C9F25B]"
-                            : i === hi
-                              ? "bg-[#E8F5C1]"
-                              : ""
-                        }`}
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate text-[16px] font-semibold">
-                            {deptLabel(d)}
-                          </span>
-                          {d.th !== d.en && (
-                            <span className="block truncate text-[12px] text-[#6B7A6E]">
-                              {d.en}
-                            </span>
-                          )}
-                        </span>
-                        {selected && (
-                          <svg
-                            className="h-5 w-5 shrink-0"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={3}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden
-                          >
-                            <path d="M5 12l5 5 9-10" />
-                          </svg>
-                        )}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
+              {errors.companyId && (
+                <p
+                  role="alert"
+                  className="mt-2 text-[13px] text-[#FDA29B] lg:text-[#D92D20]"
+                >
+                  {errors.companyId}
+                </p>
+              )}
             </div>
           )}
 
-          {/* ขั้น 3: username / password */}
+          {/* ขั้น 3: แผนกในบริษัทที่เลือก (แสดงให้เลือกเลย พิมพ์ค้นหาเมื่อหาไม่เจอ) */}
           {step === 2 && (
+            <div
+              className="mt-4"
+              onKeyDown={onListKey(visibleDepts, deptQuery, departmentId, pickDept)}
+            >
+              {deptItems.length === 0 ? (
+                <p className={noItemsCls}>บริษัทนี้ไม่มีแผนก กด ถัดไป ได้เลย</p>
+              ) : (
+                <>
+                  <Field
+                    label="ค้นหาแผนก"
+                    value={deptQuery}
+                    onChange={onDeptQuery}
+                    placeholder="พิมพ์ชื่อแผนก (ถ้าหาไม่เจอในรายการ)"
+                    autoComplete="off"
+                    error={errors.departmentId}
+                  />
+                  <PickList
+                    label="รายการแผนก"
+                    items={visibleDepts}
+                    selectedId={departmentId}
+                    hi={hi}
+                    onHover={setHi}
+                    onPick={pickDept}
+                    listRef={listRef}
+                  />
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ขั้น 4: สาขาในบริษัทที่เลือก */}
+          {step === 3 && (
+            <div
+              className="mt-4"
+              onKeyDown={onListKey(
+                visibleBranches,
+                branchQuery,
+                branchId,
+                pickBranch
+              )}
+            >
+              {branchItems.length === 0 ? (
+                <p className={noItemsCls}>บริษัทนี้ไม่มีสาขา กด ถัดไป ได้เลย</p>
+              ) : (
+                <>
+                  <Field
+                    label="ค้นหาสาขา"
+                    value={branchQuery}
+                    onChange={onBranchQuery}
+                    placeholder="พิมพ์ชื่อสาขา หรือจังหวัด"
+                    autoComplete="off"
+                    error={errors.branchId}
+                  />
+                  <PickList
+                    label="รายการสาขา"
+                    items={visibleBranches}
+                    selectedId={branchId}
+                    hi={hi}
+                    onHover={setHi}
+                    onPick={pickBranch}
+                    listRef={listRef}
+                    limit={branchQuery.trim() ? undefined : BRANCH_PREVIEW}
+                  />
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ขั้น 5: username / password */}
+          {step === 4 && (
             <div className="mt-6 space-y-4">
               <Field
                 label="Username"
@@ -1096,8 +1342,8 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
             </div>
           )}
 
-          {/* ขั้น 4: รูปโปรไฟล์ (ข้ามได้) */}
-          {step === 3 && (
+          {/* ขั้น 6: รูปโปรไฟล์ (ข้ามได้) */}
+          {step === 5 && (
             <div className="mt-6 flex flex-col items-center">
               <input
                 type="file"

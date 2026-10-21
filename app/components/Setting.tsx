@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Segmented } from "./auth-shared";
 import type { User } from "./auth-shared";
+import { orgOf } from "./branches";
 
 /* ------------------------------------------------------------------ */
 /* หน้าตั้งค่า (แท็บ "ตั้งค่า")                                          */
@@ -493,6 +494,19 @@ function ProfileCard({
   const dirty = nameChanged || avatarChanged;
   const canSave = dirty && nameValid && !busy;
 
+  // บริษัท / แผนก / สาขา ที่เลือกตอนสมัคร (แสดงอย่างเดียว) ต้องมี id เหล่านี้อยู่ใน user
+  const org = orgOf(
+    user as User & {
+      companyId?: number | null;
+      departmentId?: number | null;
+      branchId?: number | null;
+    }
+  );
+  const orgRows: [string, string][] = [];
+  if (org.company) orgRows.push(["บริษัท", org.company]);
+  if (org.department) orgRows.push(["แผนก", org.department]);
+  if (org.branch) orgRows.push(["สาขา", org.branch]);
+
   const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -596,6 +610,22 @@ function ProfileCard({
           </span>
         )}
       </div>
+
+      {orgRows.length > 0 && (
+        <dl className="mt-4 divide-y divide-[#E3EAD6] overflow-hidden rounded-2xl bg-[#EEF2E4] text-[14px]">
+          {orgRows.map(([label, value]) => (
+            <div
+              key={label}
+              className="flex items-start justify-between gap-4 px-4 py-2.5"
+            >
+              <dt className="shrink-0 text-[#6B7A6E]">{label}</dt>
+              <dd className="min-w-0 break-words text-right font-semibold">
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button
