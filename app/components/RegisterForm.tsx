@@ -276,8 +276,9 @@ function CameraCapture({
       .getUserMedia({
         video: {
           facingMode: facing,
-          width: { ideal: 1080 },
-          height: { ideal: 1080 },
+          // 4:3 = เต็มเซนเซอร์ ไม่โดนครอปจนซูม (ขอจัตุรัสตรงๆ เบราว์เซอร์จะครอปกลางภาพ)
+          width: { ideal: 1280 },
+          height: { ideal: 960 },
         },
         audio: false,
       })
@@ -689,16 +690,8 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     const moreCount = Math.max(0, (mates?.count ?? 0) - others.length);
     const totalInDept = (mates?.count ?? 0) + 1;
 
-    // แถวสมาชิก: ตัวเองก่อน แล้วเพื่อนร่วมแผนก
-    const row: (Mate & { isMe?: boolean })[] = [
-      {
-        name: nickname.trim(),
-        username: username.trim(),
-        avatarUrl: avatarSrc ?? null,
-        isMe: true,
-      },
-      ...others,
-    ];
+    // แถวเพื่อนร่วมแผนก (ตัวเองแสดงใหญ่ตรงกลางแล้ว)
+    const row = others;
 
     return (
       <div className="fixed inset-0 z-50 overflow-y-auto bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] text-[#1B2A21]">
@@ -743,8 +736,31 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
               className="text-[16px] font-semibold text-[#3F5E1F]"
               style={{ animation: "rf-fade .6s ease-out .1s both" }}
             >
-              ยินดีต้อนรับ {nickname.trim()}
+              ยินดีต้อนรับ
             </p>
+
+            {/* รูปโปรไฟล์เรา อยู่กลางจอ ชื่ออยู่ใต้รูป */}
+            <div className="mt-5 flex w-full flex-col items-center">
+              <span
+                className="block"
+                style={{ animation: "rf-drop .95s ease-out .5s both" }}
+              >
+                <span
+                  className="rf-hop block"
+                  style={{ animation: "rf-hop 1.7s ease-in-out 1.8s infinite" }}
+                >
+                  <span className="flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-full shadow-xl ring-4 ring-[#1B2A21]">
+                    <Avatar name={nickname.trim()} src={avatarSrc} size={128} />
+                  </span>
+                </span>
+              </span>
+              <p
+                className="mt-3 w-full truncate px-4 text-center text-[22px] font-bold"
+                style={{ animation: "rf-fade .5s ease-out 1s both" }}
+              >
+                {nickname.trim()}
+              </p>
+            </div>
             <h1
               className="mt-3 break-words text-[40px] font-bold leading-tight tracking-tight"
               style={{ animation: "rf-pop .7s ease-out .25s both" }}
@@ -765,8 +781,8 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
           <div className="pb-6">
             <ul className="flex items-start justify-center gap-3">
               {row.map((m, i) => {
-                const drop = 0.7 + i * 0.14;
-                const hop = 2 + i * 0.18;
+                const drop = 0.9 + i * 0.14;
+                const hop = 2.2 + i * 0.18;
                 return (
                   <li
                     key={`${m.username}-${i}`}
@@ -783,11 +799,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                         }}
                       >
                         <span
-                          className={`flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full shadow-lg ${
-                            m.isMe
-                              ? "ring-4 ring-[#1B2A21]"
-                              : "ring-[3px] ring-white"
-                          }`}
+                          className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full shadow-lg ring-[3px] ring-white"
                         >
                           <Avatar name={m.name} src={m.avatarUrl} size={56} />
                         </span>
@@ -801,16 +813,6 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                     >
                       {m.name}
                     </span>
-                    {m.isMe && (
-                      <span
-                        className="mt-0.5 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[10px] font-semibold text-[#C9F25B]"
-                        style={{
-                          animation: `rf-fade .5s ease-out ${drop + 0.5}s both`,
-                        }}
-                      >
-                        คุณ
-                      </span>
-                    )}
                   </li>
                 );
               })}
@@ -820,13 +822,13 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                   <span
                     className="block"
                     style={{
-                      animation: `rf-drop .95s ease-out ${0.7 + row.length * 0.14}s both`,
+                      animation: `rf-drop .95s ease-out ${0.9 + row.length * 0.14}s both`,
                     }}
                   >
                     <span
                       className="rf-hop flex h-14 w-14 items-center justify-center rounded-full bg-[#C9F25B] text-[15px] font-bold text-[#1B2A21] shadow-lg ring-[3px] ring-white"
                       style={{
-                        animation: `rf-hop 1.7s ease-in-out ${2 + row.length * 0.18}s infinite`,
+                        animation: `rf-hop 1.7s ease-in-out ${2.2 + row.length * 0.18}s infinite`,
                       }}
                     >
                       +{moreCount}
@@ -835,7 +837,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                   <span
                     className="mt-2 text-[12px] font-semibold text-[#3F5E1F]"
                     style={{
-                      animation: `rf-fade .5s ease-out ${1.2 + row.length * 0.14}s both`,
+                      animation: `rf-fade .5s ease-out ${1.4 + row.length * 0.14}s both`,
                     }}
                   >
                     คน
@@ -879,7 +881,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       s: "เลือกจากรายการ ถ้าหาไม่เจอพิมพ์ค้นหาได้",
     },
     { t: "ตั้งค่าบัญชี", s: "ใช้ username และรหัสผ่านนี้เข้าสู่ระบบ" },
-    { t: "รูปโปรไฟล์", s: "เลือกรูปให้เพื่อนจำคุณได้ หรือข้ามไปก่อนก็ได้" },
+    { t: "ใส่รูปโปรไฟล์", s: "เลือกรูปให้เพื่อนจำคุณได้ หรือข้ามไปก่อนก็ได้" },
   ][step];
 
   return (
