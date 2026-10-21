@@ -10,6 +10,7 @@ import {
 } from "./auth-shared";
 import type { User } from "./auth-shared";
 import type { Session } from "./History";
+import DepartmentCard from "./DepartmentCard";
 
 /* ------------------------------------------------------------------ */
 /* หน้าหลัก (แท็บ "หน้าหลัก")                                            */
@@ -368,6 +369,13 @@ export default function Home({
           <p className="text-center text-[12px] text-[#6B7A6E]">
             พิงมือถือกับลังหรือผนังให้หงายขึ้นเล็กน้อย สูงระดับเอว ยืนให้เห็นศีรษะถึงเท้า แล้วกางมือเหมือนจับเชือก
           </p>
+
+          {user && (
+            <DepartmentCard
+              departmentId={user.departmentId}
+              myUsername={user.username}
+            />
+          )}
         </div>
 
         <div className="pj-stagger space-y-4">

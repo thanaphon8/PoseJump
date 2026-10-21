@@ -18,12 +18,16 @@ export type User = {
   username?: string;
   avatarUrl?: string; // เพิ่มฟิลด์รูปโปรไฟล์สำหรับแสดงผล
   points?: number;
+  departmentId?: number | null; // รหัสแผนก (ดู departments.ts)
 };
 
 export type AuthMode = "login" | "register";
 
 export type AuthErrors = Partial<
-  Record<"nickname" | "username" | "password" | "confirm" | "form", string>
+  Record<
+    "nickname" | "username" | "password" | "confirm" | "departmentId" | "form",
+    string
+  >
 >;
 
 // props ของหน้า login / register (ส่งมาจาก app/page.tsx)
@@ -218,6 +222,51 @@ export function Field({
       ) : hint ? (
         <span className="mt-1.5 block text-[12px] text-white/70 lg:text-[#6B7A6E]">{hint}</span>
       ) : null}
+    </label>
+  );
+}
+
+// ช่องเลือก (dropdown) หน้าตาเหมือน Field — ใช้เลือกแผนก
+export function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  error,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: readonly { value: string; label: string }[];
+  placeholder?: string;
+  error?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[13px] font-medium text-white/80 lg:text-[#6B7A6E]">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-invalid={!!error}
+        className={`h-12 w-full select-text rounded-2xl bg-white px-4 text-[16px] outline-none ring-2 transition-shadow focus:ring-[#C9F25B] ${
+          error ? "ring-[#D92D20]/60" : "ring-transparent"
+        } ${value ? "text-[#1B2A21]" : "text-[#A9B79A]"}`}
+      >
+        <option value="">{placeholder ?? "เลือก"}</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value} className="text-[#1B2A21]">
+            {o.label}
+          </option>
+        ))}
+      </select>
+      {error && (
+        <span role="alert" className="pj-in mt-1.5 block text-[12px] text-[#FFB4AB] lg:text-[#D92D20]">
+          {error}
+        </span>
+      )}
     </label>
   );
 }

@@ -15,6 +15,7 @@ export async function GET() {
               username: u.username,
               avatarUrl: u.avatarUrl,
               points,
+              departmentId: u.departmentId ?? null,
             }
           : null,
       },

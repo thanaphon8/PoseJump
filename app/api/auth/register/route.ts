@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { getDb } from "../../../../lib/mongodb";
 import { createSession } from "../../../../lib/auth";
+import { getDepartment } from "../../../components/departments";
 
 export async function POST(req: Request) {
   try {
@@ -15,6 +16,7 @@ export async function POST(req: Request) {
     const nicknameRaw = formData.get("nickname");
     const usernameRaw = formData.get("username");
     const passwordRaw = formData.get("password");
+    const departmentRaw = formData.get("departmentId");
     const avatarFile = formData.get("avatar") as File | null;
 
     const nickname =
@@ -22,6 +24,10 @@ export async function POST(req: Request) {
     const display =
       typeof usernameRaw === "string" ? usernameRaw.trim() : "";
     const password = typeof passwordRaw === "string" ? passwordRaw : "";
+    const departmentId =
+      typeof departmentRaw === "string" && /^\d{1,3}$/.test(departmentRaw)
+        ? Number(departmentRaw)
+        : null;
 
     const errors: Record<string, string> = {};
     if (!nickname) errors.nickname = "กรอกชื่อเล่น";
@@ -29,6 +35,8 @@ export async function POST(req: Request) {
       errors.username = "3-20 ตัว ใช้ a-z 0-9 และ _ เท่านั้น";
     if (password.length < 6 || password.length > 72)
       errors.password = "รหัสผ่านต้องยาว 6-72 ตัวอักษร";
+    if (!departmentId || !getDepartment(departmentId))
+      errors.departmentId = "เลือกแผนก";
     if (Object.keys(errors).length > 0) {
       return NextResponse.json({ errors }, { status: 400 });
     }
@@ -83,6 +91,7 @@ export async function POST(req: Request) {
         passwordHash,
         avatarUrl,
         driveFileId,
+        departmentId,
         points: 0,
         createdAt: new Date(),
       });
@@ -96,6 +105,7 @@ export async function POST(req: Request) {
             username: display,
             avatarUrl,
             points: 0,
+            departmentId,
           },
         },
         { status: 201 }

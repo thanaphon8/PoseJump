@@ -7,6 +7,7 @@ import {
   EyeButton,
   Field,
   Segmented,
+  SelectField,
 } from "./auth-shared";
 import type {
   AuthErrors,
@@ -14,10 +15,17 @@ import type {
   AuthMode,
   User,
 } from "./auth-shared";
+import { DEPARTMENTS } from "./departments";
+
+const DEPT_OPTIONS = DEPARTMENTS.map((d) => ({
+  value: String(d.id),
+  label: d.th === d.en ? d.en : `${d.th} (${d.en})`,
+}));
 
 export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
   const [nickname, setNickname] = useState("");
   const [username, setUsername] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
@@ -57,6 +65,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     const uname = username.trim();
     const err: AuthErrors = {};
     if (!nick) err.nickname = "กรอกชื่อเล่น";
+    if (!departmentId) err.departmentId = "เลือกแผนก";
     if (!uname) err.username = "กรอก username";
     else if (!/^[A-Za-z0-9_]{3,20}$/.test(uname))
       err.username = "3-20 ตัว ใช้ a-z 0-9 และ _ เท่านั้น";
@@ -76,6 +85,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       const formData = new FormData();
       formData.append("nickname", nick);
       formData.append("username", uname);
+      formData.append("departmentId", departmentId);
       formData.append("password", password);
       if (avatarFile) {
         formData.append("avatar", avatarFile);
@@ -190,6 +200,14 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
             placeholder="เช่น มะนาว"
             error={errors.nickname}
             autoFocus
+          />
+          <SelectField
+            label="แผนก"
+            value={departmentId}
+            onChange={edit("departmentId", setDepartmentId)}
+            placeholder="-- เลือกแผนก --"
+            options={DEPT_OPTIONS}
+            error={errors.departmentId}
           />
           <Field
             label="Username"

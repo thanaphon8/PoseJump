@@ -14,7 +14,8 @@ export type AuthUser = {
   username: string;
   display: string;
   nickname: string;
-  avatarUrl?: string; // <--- เพิ่มฟิลด์รูปโปรไฟล์ตรงนี้
+  avatarUrl?: string; // รูปโปรไฟล์
+  departmentId?: number | null; // รหัสแผนก (ดู departments.ts)
 };
 
 export async function createSession(userId: ObjectId) {
@@ -64,6 +65,8 @@ export async function currentUser(): Promise<AuthUser | null> {
     username: u.username as string,
     display: u.display as string,
     nickname: u.nickname as string,
-    avatarUrl: u.avatarUrl as string, // <--- ดึงค่า avatarUrl จาก MongoDB มาส่งต่อ
+    avatarUrl: u.avatarUrl as string,
+    departmentId:
+      typeof u.departmentId === "number" ? (u.departmentId as number) : null,
   };
 }
