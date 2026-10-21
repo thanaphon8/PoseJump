@@ -104,7 +104,8 @@ const HAND_MIN_OFFSET = 0.75;
 const HAND_MIN_VIS = 0.3;
 
 const SHOW_SKELETON = false;
-const FORCE_CONTAIN = false;
+// true = แสดงภาพเต็มไม่ครอป (ไม่ซูม) อาจมีแถบดำ
+const FORCE_CONTAIN = true;
 
 type Placement = {
   head: boolean;
@@ -1184,12 +1185,12 @@ function PoseSession(props: PoseProps) {
       connectionsRef.current = connections;
       if (cancelled()) return;
 
+      // ไม่บังคับ aspect ratio เพื่อไม่ให้เบราว์เซอร์ครอปภาพจากเซนเซอร์ (ลดอาการซูม)
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: settingsRef.current.facing },
-          width: { ideal: 600 },
-          height: { ideal: 800 },
-          aspectRatio: { ideal: 3 / 4 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
           frameRate: { ideal: 30, max: 30 },
         },
         audio: false,
@@ -1207,8 +1208,8 @@ function PoseSession(props: PoseProps) {
           | undefined;
         if (caps?.zoom) {
           await track.applyConstraints({
-            advanced: [{ zoom: caps.zoom.min } as MediaTrackConstraintSet],
-          });
+            zoom: caps.zoom.min,
+          } as MediaTrackConstraints);
         }
       } catch {
         // ตั้งซูมไม่ได้ก็ใช้ค่าเดิม
