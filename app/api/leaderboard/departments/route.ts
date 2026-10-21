@@ -6,6 +6,8 @@ import { DEPARTMENTS } from "../../../components/departments";
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
 const TH_OFFSET = 7 * HOUR;
+const TOP = 20; // จำนวนแผนกที่แสดง
+const MEMBERS_PER_DEPT = 100; // จำกัดสมาชิกที่ส่งต่อแผนก (กัน response ใหญ่)
 
 // สัปดาห์ = จันทร์ 00:00 → จันทร์ถัดไป 00:00 (เวลาไทย)
 function weekRange(now = Date.now()) {
@@ -17,8 +19,15 @@ function weekRange(now = Date.now()) {
   return { weekStart, resetAt: weekStart + 7 * DAY };
 }
 
-// GET /api/leaderboard/departments → อันดับแผนกรายสัปดาห์
-// ข้อมูลมาจาก collection "dept_jumps" (บันทึกโดย /api/sessions ตอนผู้ใช้ที่มีแผนกกระโดด)
+type Member = {
+  name: string;
+  username: string;
+  avatarUrl: string | null;
+  isMe: boolean;
+};
+
+// GET /api/leaderboard/departments → อันดับแผนกรายสัปดาห์ + สมาชิก (ไว้แสดงรูปซ้อน)
+// คะแนนมาจาก collection "dept_jumps" (บันทึกโดย /api/sessions)
 export async function GET() {
   await connection();
   try {
@@ -55,6 +64,60 @@ export async function GET() {
       .sort((a, b) => b.total - a.total || a.id - b.id)
       .map((d, i) => ({ ...d, rank: i + 1, me: d.id === me?.departmentId }));
 
+    const top = ranked.slice(0, TOP);
+
+    // สมาชิกของแผนกที่แสดง (ใช้วาดรูปโปรไฟล์ซ้อน)
+    const ids = top.map((d) => d.id);
+    const users = ids.length
+      ? await db
+          .collection("users")
+          .find(
+            { departmentId: { $in: ids } },
+            {
+              projection: {
+                display: 1,
+                username: 1,
+                nickname: 1,
+                avatarUrl: 1,
+                departmentId: 1,
+              },
+            }
+          )
+          .sort({ createdAt: 1 })
+          .toArray()
+      : [];
+
+    const byDept = new Map<number, Member[]>();
+    const countOf = new Map<number, number>();
+    for (const u of users) {
+      const dId = u.departmentId as number;
+      countOf.set(dId, (countOf.get(dId) ?? 0) + 1);
+      const list = byDept.get(dId) ?? [];
+      if (list.length < MEMBERS_PER_DEPT) {
+        list.push({
+          name: u.nickname as string,
+          username: (u.display ?? u.username) as string,
+          avatarUrl: (u.avatarUrl as string) || null,
+          isMe: !!me && u._id.equals(me.id),
+        });
+        byDept.set(dId, list);
+      }
+    }
+    // ตัวเองขึ้นก่อน แล้วคนที่มีรูปโปรไฟล์ (ให้รูปซ้อนดูสวย) ที่เหลือตามเวลาสมัคร
+    for (const list of byDept.values()) {
+      list.sort(
+        (a, b) =>
+          Number(b.isMe) - Number(a.isMe) ||
+          Number(!!b.avatarUrl) - Number(!!a.avatarUrl)
+      );
+    }
+
+    const entries = top.map((d) => ({
+      ...d,
+      memberCount: countOf.get(d.id) ?? 0,
+      members: byDept.get(d.id) ?? [],
+    }));
+
     const mine = ranked.find((d) => d.me);
     const myDept = me?.departmentId ?? null;
     const myInfo =
@@ -72,13 +135,7 @@ export async function GET() {
           : { rank: 0, total: 0, gap: 0 }; // แผนกตัวเองยังไม่มีคะแนน
 
     return NextResponse.json(
-      {
-        entries: ranked.slice(0, 20),
-        me: myInfo,
-        count: ranked.length,
-        weekStart,
-        resetAt,
-      },
+      { entries, me: myInfo, count: ranked.length, weekStart, resetAt },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (e) {
