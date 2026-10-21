@@ -17,8 +17,8 @@ function weekRange(now = Date.now()) {
 }
 
 // GET /api/departments/members
-// → สมาชิกแผนกเดียวกับผู้ใช้ที่ล็อกอิน + คะแนนรวมแผนกสัปดาห์นี้ (ครั้งกระโดด)
-// ผู้ใช้ที่ไม่มีแผนก (บริษัทที่มีแต่สาขา) ใช้สมาชิกสาขาเดียวกันแทน
+// → สมาชิกกลุ่มเดียวกับผู้ใช้ที่ล็อกอิน + คะแนนรวมกลุ่มสัปดาห์นี้ (ครั้งกระโดด)
+// สำนักงานใหญ่ = กลุ่มคือแผนก / หน้าร้าน = กลุ่มคือสาขา (1 สาขา = 1 กลุ่ม)
 export async function GET() {
   await connection();
   try {
@@ -28,6 +28,7 @@ export async function GET() {
     }
 
     // กลุ่ม = แผนก ถ้ามี ไม่งั้นใช้สาขา (id แผนก/สาขาไม่ซ้ำข้ามบริษัท)
+    // กติกาเดียวกับอันดับแผนก/สาขา: ถ้ามีแผนกนับเป็นแผนกก่อน
     const byDept = me.departmentId != null;
     const byBranch = !byDept && me.branchId != null;
     if (!byDept && !byBranch) {
@@ -36,9 +37,10 @@ export async function GET() {
         { headers: { "Cache-Control": "no-store" } }
       );
     }
+    // departmentId: null ตรงกับ null หรือไม่มีฟิลด์ (กันคนที่มีแผนกด้วยหลุดเข้ากลุ่มสาขา)
     const groupFilter = byDept
       ? { departmentId: me.departmentId }
-      : { branchId: me.branchId };
+      : { branchId: me.branchId, departmentId: null };
 
     const db = await getDb();
     const { weekStart, resetAt } = weekRange();
@@ -57,21 +59,19 @@ export async function GET() {
         .sort({ createdAt: 1 })
         .limit(500)
         .toArray(),
-      // dept_jumps เก็บตาม departmentId เท่านั้น กลุ่มสาขายังไม่มียอดรวม (ได้ 0)
-      byDept
-        ? db
-            .collection("dept_jumps")
-            .aggregate<{ _id: null; total: number }>([
-              {
-                $match: {
-                  departmentId: me.departmentId,
-                  ts: { $gte: weekStart, $lt: resetAt },
-                },
-              },
-              { $group: { _id: null, total: { $sum: "$total" } } },
-            ])
-            .toArray()
-        : Promise.resolve([] as { _id: null; total: number }[]),
+      // dept_jumps เก็บทั้ง departmentId และ branchId (ดู /api/sessions)
+      db
+        .collection("dept_jumps")
+        .aggregate<{ _id: null; total: number }>([
+          {
+            $match: {
+              ...groupFilter,
+              ts: { $gte: weekStart, $lt: resetAt },
+            },
+          },
+          { $group: { _id: null, total: { $sum: "$total" } } },
+        ])
+        .toArray(),
     ]);
 
     // ตัวเองขึ้นก่อน ที่เหลือเรียงตามเวลาสมัคร

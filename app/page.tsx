@@ -1069,6 +1069,7 @@ export default function Home() {
           {tab === "today" && (
             <Rank
               username={user?.username ?? null}
+              hasDepartment={!!(user?.departmentId || user?.branchId)}
               onStart={startSession}
               onOpenResult={openToday}
               hasToday={todayList.length > 0}

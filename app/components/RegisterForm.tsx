@@ -15,19 +15,29 @@ import type {
   User,
 } from "./auth-shared";
 import { COMPANIES, DEPARTMENTS, departmentsOf, getCompany } from "./departments";
-import { branchesOf, branchLabel, getBranch } from "./branches";
+import {
+  branchCode,
+  branchesOf,
+  branchFullLabel,
+  branchLabel,
+  branchProvince,
+  branchRegion,
+  getBranch,
+} from "./branches";
 
 /* ------------------------------------------------------------------ */
 /* ค่าคงที่ / ตัวช่วย                                                    */
 /* ------------------------------------------------------------------ */
 
-const STEPS = ["ชื่อเล่น", "บริษัท", "แผนก", "สาขา", "บัญชี", "โปรไฟล์"] as const;
-// ข้อความใต้วงกลมแต่ละขั้น: บอกว่าผู้ใช้ต้องทำอะไร
+// ลำดับขั้น: 0 ชื่อเล่น → 1 บริษัท → 2 ที่ทำงาน (สำนักงานใหญ่/หน้าร้าน) → 3 แผนกหรือสาขา → 4 บัญชี → 5 โปรไฟล์
+// ขั้น 2 จะข้ามไปเองถ้าบริษัทนั้นมีแค่แผนกหรือแค่สาขาอย่างเดียว
+const STEPS = ["ชื่อเล่น", "บริษัท", "ที่ทำงาน", "แผนก/สาขา", "บัญชี", "โปรไฟล์"] as const;
+// ข้อความใต้วงกลมแต่ละขั้น: บอกว่าผู้ใช้ต้องทำอะไร (ขั้น 3 เปลี่ยนเป็น "เลือกสาขา" ตอนเลือกหน้าร้าน)
 const STEP_LABELS = [
   "ใส่ชื่อเล่น",
   "เลือกบริษัท",
+  "ที่ทำงาน",
   "เลือกแผนก",
-  "เลือกสาขา",
   "ตั้งรหัสผ่าน",
   "เพิ่มรูป",
 ] as const;
@@ -41,6 +51,8 @@ type Mate = { name: string; username: string; avatarUrl: string | null };
 type Mates = { count: number; members: Mate[] };
 // รายการเลือก (บริษัท / แผนก / สาขา ใช้โครงเดียวกัน)
 type Item = { id: number; label: string; sub?: string };
+// สำนักงานใหญ่ = เลือกแผนก / หน้าร้าน = เลือกสาขา
+type Place = "hq" | "store";
 
 const fold = (s: string) => s.toLowerCase().replace(/\s+/g, "");
 
@@ -82,13 +94,11 @@ const stepOfErrors = (e: AuthErrors): number | null =>
     ? 0
     : e.companyId
       ? 1
-      : e.departmentId
-        ? 2
-        : e.branchId
-          ? 3
-          : e.username || e.password || e.confirm
-            ? 4
-            : null;
+      : e.departmentId || e.branchId
+        ? 3
+        : e.username || e.password || e.confirm
+          ? 4
+          : null;
 
 /* ------------------------------------------------------------------ */
 /* ส่วนประกอบย่อย                                                        */
@@ -556,6 +566,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
 
   const [nickname, setNickname] = useState("");
   const [companyId, setCompanyId] = useState("");
+  const [workplace, setWorkplace] = useState<Place | "">(""); // สำนักงานใหญ่ / หน้าร้าน
   const [departmentId, setDepartmentId] = useState("");
   const [branchId, setBranchId] = useState("");
   const [deptQuery, setDeptQuery] = useState(""); // คำค้นหา (ใช้กรองรายการแผนก)
@@ -605,15 +616,32 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       departmentsOf(Number(companyId)).map((d) => ({ id: d.id, label: d.name })),
     [companyId]
   );
+  // สาขา: แสดง "ID xxx · ชื่อสาขา" และใต้ชื่อเป็น "จังหวัด · ภาค" ดึงจากข้อมูลสาขาอัตโนมัติ
+  // (ค้นหาด้วยเลข ID / ชื่อสาขา / จังหวัด / ภาค ได้หมด เพราะ searchItems ค้นทั้ง label และ sub)
   const branchItems = useMemo<Item[]>(
     () =>
       branchesOf(Number(companyId)).map((b) => ({
         id: b.id,
-        label: branchLabel(b),
-        sub: b.province?.split("/")[0],
+        label: branchFullLabel(b),
+        sub: [branchProvince(b), branchRegion(b)].filter(Boolean).join(" · "),
       })),
     [companyId]
   );
+
+  // ถามว่าสำนักงานใหญ่/หน้าร้าน เฉพาะบริษัทที่มีทั้งแผนกและสาขา
+  // บริษัทที่มีอย่างเดียวจะเลือกให้เอง (มีแต่แผนก = สำนักงานใหญ่ / มีแต่สาขา = หน้าร้าน)
+  const askType = deptItems.length > 0 && branchItems.length > 0;
+  const place: Place | "" = askType
+    ? workplace
+    : deptItems.length > 0
+      ? "hq"
+      : branchItems.length > 0
+        ? "store"
+        : "";
+  // ขั้นที่ผู้ใช้ต้องผ่านจริง (ข้ามขั้น 2 ถ้าไม่ต้องถาม)
+  const flow = askType ? [0, 1, 2, 3, 4, 5] : [0, 1, 3, 4, 5];
+  const stepLabel = (id: number) =>
+    id === 3 && place === "store" ? "เลือกสาขา" : STEP_LABELS[id];
 
   // ยังไม่พิมพ์ = ทุกรายการ / พิมพ์แล้ว = กรองและเรียงตามความใกล้เคียง
   const visibleDepts = useMemo(
@@ -640,7 +668,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
 
   // เลื่อนรายการให้เห็นแถวที่ไฮไลต์ (เลื่อนในกล่องรายการเท่านั้น ไม่เลื่อนทั้งหน้า)
   useEffect(() => {
-    if ((step !== 2 && step !== 3) || hi < 0) return;
+    if (step !== 3 || hi < 0) return;
     const box = listRef.current;
     const el = box?.querySelector<HTMLElement>('[data-hi="true"]');
     if (!box || !el) return;
@@ -660,12 +688,13 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       clearErr(key);
     };
 
-  /* ---------------- บริษัท / แผนก / สาขา: เลือกจากรายการ หรือพิมพ์ค้นหา ---------------- */
+  /* ---------------- บริษัท / ที่ทำงาน / แผนก / สาขา ---------------- */
 
-  // เปลี่ยนบริษัท = ล้างแผนกและสาขาที่เลือกไว้ (เพราะเป็นของบริษัทเดิม)
+  // เปลี่ยนบริษัท = ล้างที่ทำงาน แผนก และสาขาที่เลือกไว้ (เพราะเป็นของบริษัทเดิม)
   const pickCompany = (id: number) => {
     if (String(id) !== companyId) {
       setCompanyId(String(id));
+      setWorkplace("");
       setDepartmentId("");
       setBranchId("");
       setDeptQuery("");
@@ -674,14 +703,26 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     clearErr("companyId");
   };
 
+  // เลือกสำนักงานใหญ่ = ล้างสาขา / เลือกหน้าร้าน = ล้างแผนก
+  const pickPlace = (p: Place) => {
+    setWorkplace(p);
+    if (p === "hq") {
+      setBranchId("");
+      setBranchQuery("");
+    } else {
+      setDepartmentId("");
+      setDeptQuery("");
+    }
+    clearErr("form");
+  };
+
   const pickDept = (id: number) => {
     setDepartmentId(String(id));
     clearErr("departmentId");
   };
 
-  // กดสาขาที่เลือกอยู่ซ้ำ = ยกเลิก (สาขาไม่บังคับถ้าบริษัทมีแผนก)
   const pickBranch = (id: number) => {
-    setBranchId((p) => (p === String(id) ? "" : String(id)));
+    setBranchId(String(id));
     clearErr("branchId");
   };
 
@@ -753,12 +794,14 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     } else if (s === 1) {
       if (!companyId) err.companyId = "เลือกบริษัทของคุณ";
     } else if (s === 2) {
-      // แผนกบังคับ ถ้าบริษัทนี้มีแผนก
-      if (deptItems.length > 0 && !departmentId)
-        err.departmentId = "เลือกแผนกของคุณจากรายการ";
+      // ต้องเลือกสำนักงานใหญ่/หน้าร้าน เฉพาะบริษัทที่มีทั้งสองแบบ
+      if (askType && !place)
+        err.form = "เลือกว่าคุณอยู่สำนักงานใหญ่หรือหน้าร้าน";
     } else if (s === 3) {
-      // สาขาบังคับเฉพาะบริษัทที่ไม่มีแผนกแต่มีสาขา
-      if (deptItems.length === 0 && branchItems.length > 0 && !branchId)
+      // สำนักงานใหญ่ = ต้องเลือกแผนก / หน้าร้าน = ต้องเลือกสาขา
+      if (place === "hq" && !departmentId)
+        err.departmentId = "เลือกแผนกของคุณจากรายการ";
+      if (place === "store" && !branchId)
         err.branchId = "เลือกสาขาของคุณจากรายการ";
     } else if (s === 4) {
       const uname = username.trim();
@@ -808,8 +851,10 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       formData.append("nickname", nickname.trim());
       formData.append("username", username.trim());
       formData.append("companyId", companyId);
-      if (departmentId) formData.append("departmentId", departmentId);
-      if (branchId) formData.append("branchId", branchId);
+      // สำนักงานใหญ่ส่งแค่แผนก / หน้าร้านส่งแค่สาขา
+      if (place === "hq" && departmentId)
+        formData.append("departmentId", departmentId);
+      if (place === "store" && branchId) formData.append("branchId", branchId);
       formData.append("password", password);
       if (withAvatar && avatarFile) formData.append("avatar", avatarFile);
 
@@ -853,14 +898,19 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       return;
     }
     setErrors({});
-    if (step < LAST_STEP) setStep(step + 1);
-    else register(true);
+    if (step < LAST_STEP) {
+      let n = step + 1;
+      if (n === 2 && !askType) n = 3; // ข้ามขั้นถามที่ทำงาน
+      setStep(n);
+    } else register(true);
   };
 
   const back = () => {
     if (busy || step === 0) return;
     setErrors({});
-    setStep(step - 1);
+    let p = step - 1;
+    if (p === 2 && !askType) p = 1; // ข้ามขั้นถามที่ทำงาน
+    setStep(p);
   };
 
   // แตะวงกลมของขั้นที่ผ่านมาแล้วเพื่อย้อนกลับไปแก้
@@ -884,9 +934,18 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
 
     // ชื่อหลักบนหน้า welcome: แผนก > สาขา > บริษัท
     const branchName = selectedBranch ? branchLabel(selectedBranch) : null;
+    // บรรทัดรอง (หน้าร้าน): "ID 115 · ปทุมธานี" ดึงรหัสสาขาและจังหวัดจากข้อมูลสาขาอัตโนมัติ
+    const branchInfo = selectedBranch
+      ? [
+          branchCode(selectedBranch) ? `ID ${branchCode(selectedBranch)}` : null,
+          branchProvince(selectedBranch),
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : null;
     const mainTitle =
       selectedDept?.name ?? branchName ?? selectedCompany?.name ?? "แผนกของคุณ";
-    // บริษัทที่ไม่มีแผนก เพื่อนร่วมกลุ่มคือคนในสาขาเดียวกัน
+    // หน้าร้าน เพื่อนร่วมกลุ่มคือคนในสาขาเดียวกัน
     const groupLabel = selectedDept ? "แผนก" : "สาขา";
 
     return (
@@ -971,6 +1030,14 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
             >
               {mainTitle}
             </h1>
+            {!selectedDept && branchInfo && (
+              <p
+                className="mt-1 break-words text-[16px] font-semibold text-[#3F5E1F]"
+                style={{ animation: "rf-fade .6s ease-out .45s both" }}
+              >
+                {branchInfo}
+              </p>
+            )}
             {selectedDept && branchName && (
               <p
                 className="mt-1 break-words text-[16px] font-semibold text-[#3F5E1F]"
@@ -1093,21 +1160,26 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       s: "เลือกบริษัทของคุณ",
     },
     {
-      t: "คุณอยู่แผนกไหน",
-      s: selectedCompany
-        ? `แผนกใน ${selectedCompany.name} เลือกจากรายการ หรือพิมพ์ค้นหา`
-        : "เลือกจากรายการ ถ้าหาไม่เจอพิมพ์ค้นหาได้",
+      t: "คุณทำงานที่ไหน",
+      s: "เลือกสำนักงานใหญ่ หรือหน้าร้าน",
     },
-    {
-      t: "คุณอยู่สาขาไหน",
-      s:
-        deptItems.length > 0
-          ? "ข้ามได้ ถ้าอยู่สำนักงานใหญ่"
-          : "เลือกจากรายการ หรือพิมพ์ค้นหา",
-    },
+    place === "store"
+      ? {
+          t: "คุณประจำสาขาไหน",
+          s: "เลือกจากรายการ หรือพิมพ์ค้นหาเลข ID / ชื่อสาขา / จังหวัด",
+        }
+      : {
+          t: "คุณอยู่แผนกไหน",
+          s: selectedCompany
+            ? `แผนกใน ${selectedCompany.name} เลือกจากรายการ หรือพิมพ์ค้นหา`
+            : "เลือกจากรายการ ถ้าหาไม่เจอพิมพ์ค้นหาได้",
+        },
     { t: "ตั้งค่าบัญชี", s: "ใช้ username และรหัสผ่านนี้เข้าสู่ระบบ" },
     { t: "ใส่รูปโปรไฟล์", s: "เลือกรูปให้เพื่อนจำคุณได้ หรือข้ามไปก่อนก็ได้" },
   ][step];
+
+  // ตำแหน่งของขั้นปัจจุบันในลำดับที่แสดงจริง (ใช้วาดวงกลมลำดับขั้น)
+  const pos = Math.max(0, flow.indexOf(step));
 
   const noItemsCls =
     "mt-4 rounded-2xl bg-white/10 px-4 py-5 text-center text-[14px] lg:bg-[#1B2A21]/5";
@@ -1117,9 +1189,10 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       <form onSubmit={next} noValidate className="w-full">
         {/* ขั้นตอน: วงกลมมีลำดับที่ + ข้อความบอกว่าต้องทำอะไร (แตะขั้นที่ผ่านแล้วเพื่อย้อนกลับ) */}
         <ol className="flex items-start" aria-label="ขั้นตอนการสมัคร">
-          {STEP_LABELS.map((label, i) => {
-            const done = i < step;
-            const cur = i === step;
+          {flow.map((id, p) => {
+            const label = stepLabel(id);
+            const done = p < pos;
+            const cur = p === pos;
             const circle = done
               ? "bg-[#C9F25B] text-[#1B2A21] lg:bg-[#3F5E1F] lg:text-white"
               : cur
@@ -1139,17 +1212,17 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                 <path d="M5 12l5 5 9-10" />
               </svg>
             ) : (
-              i + 1
+              p + 1
             );
             const circleCls = `relative z-10 flex h-9 w-9 items-center justify-center rounded-full text-[15px] font-bold tabular-nums transition-all duration-300 ${circle}`;
             return (
               <li
-                key={label}
+                key={id}
                 className="relative flex flex-1 flex-col items-center"
                 aria-current={cur ? "step" : undefined}
               >
                 {/* เส้นเชื่อมไปขั้นถัดไป */}
-                {i < STEP_LABELS.length - 1 && (
+                {p < flow.length - 1 && (
                   <span
                     aria-hidden
                     className={`absolute left-[calc(50%+22px)] top-[17px] h-0.5 w-[calc(100%-44px)] transition-colors duration-300 ${
@@ -1162,9 +1235,9 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                 {done ? (
                   <button
                     type="button"
-                    onClick={() => goTo(i)}
+                    onClick={() => goTo(id)}
                     disabled={busy}
-                    aria-label={`ย้อนกลับไปขั้นที่ ${i + 1}: ${label}`}
+                    aria-label={`ย้อนกลับไปขั้นที่ ${p + 1}: ${label}`}
                     className={`${circleCls} active:scale-90`}
                   >
                     {inner}
@@ -1234,40 +1307,89 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
             </div>
           )}
 
-          {/* ขั้น 3: แผนกในบริษัทที่เลือก (แสดงให้เลือกเลย พิมพ์ค้นหาเมื่อหาไม่เจอ) */}
+          {/* ขั้น 3: สำนักงานใหญ่ หรือ หน้าร้าน (แสดงเฉพาะบริษัทที่มีทั้งแผนกและสาขา) */}
           {step === 2 && (
+            <div
+              role="radiogroup"
+              aria-label="ที่ทำงาน"
+              className="mt-6 grid gap-3"
+            >
+              {(
+                [
+                  ["hq", "สำนักงานใหญ่", "ทำงานที่ออฟฟิศ เลือกแผนกของคุณ"],
+                  ["store", "หน้าร้าน", "ประจำที่สาขา เลือกสาขาของคุณ"],
+                ] as const
+              ).map(([k, title, sub]) => {
+                const sel = place === k;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    role="radio"
+                    aria-checked={sel}
+                    onClick={() => pickPlace(k)}
+                    className={`flex min-h-[72px] w-full items-center justify-between gap-3 rounded-2xl px-5 py-4 text-left text-[#1B2A21] transition-all active:scale-[0.99] ${
+                      sel
+                        ? "bg-[#C9F25B] shadow-lg"
+                        : "bg-white shadow-lg ring-1 ring-black/5"
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-[18px] font-bold">
+                        {title}
+                      </span>
+                      <span className="block text-[13px] text-[#6B7A6E]">
+                        {sub}
+                      </span>
+                    </span>
+                    {sel && (
+                      <svg
+                        className="h-5 w-5 shrink-0"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden
+                      >
+                        <path d="M5 12l5 5 9-10" />
+                      </svg>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ขั้น 4: สำนักงานใหญ่ = เลือกแผนก (แสดงให้เลือกเลย พิมพ์ค้นหาเมื่อหาไม่เจอ) */}
+          {step === 3 && place === "hq" && (
             <div
               className="mt-4"
               onKeyDown={onListKey(visibleDepts, deptQuery, departmentId, pickDept)}
             >
-              {deptItems.length === 0 ? (
-                <p className={noItemsCls}>บริษัทนี้ไม่มีแผนก กด ถัดไป ได้เลย</p>
-              ) : (
-                <>
-                  <Field
-                    label="ค้นหาแผนก"
-                    value={deptQuery}
-                    onChange={onDeptQuery}
-                    placeholder="พิมพ์ชื่อแผนก (ถ้าหาไม่เจอในรายการ)"
-                    autoComplete="off"
-                    error={errors.departmentId}
-                  />
-                  <PickList
-                    label="รายการแผนก"
-                    items={visibleDepts}
-                    selectedId={departmentId}
-                    hi={hi}
-                    onHover={setHi}
-                    onPick={pickDept}
-                    listRef={listRef}
-                  />
-                </>
-              )}
+              <Field
+                label="ค้นหาแผนก"
+                value={deptQuery}
+                onChange={onDeptQuery}
+                placeholder="พิมพ์ชื่อแผนก (ถ้าหาไม่เจอในรายการ)"
+                autoComplete="off"
+                error={errors.departmentId}
+              />
+              <PickList
+                label="รายการแผนก"
+                items={visibleDepts}
+                selectedId={departmentId}
+                hi={hi}
+                onHover={setHi}
+                onPick={pickDept}
+                listRef={listRef}
+              />
             </div>
           )}
 
-          {/* ขั้น 4: สาขาในบริษัทที่เลือก */}
-          {step === 3 && (
+          {/* ขั้น 4: หน้าร้าน = เลือกสาขา */}
+          {step === 3 && place === "store" && (
             <div
               className="mt-4"
               onKeyDown={onListKey(
@@ -1277,31 +1399,32 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                 pickBranch
               )}
             >
-              {branchItems.length === 0 ? (
-                <p className={noItemsCls}>บริษัทนี้ไม่มีสาขา กด ถัดไป ได้เลย</p>
-              ) : (
-                <>
-                  <Field
-                    label="ค้นหาสาขา"
-                    value={branchQuery}
-                    onChange={onBranchQuery}
-                    placeholder="พิมพ์ชื่อสาขา หรือจังหวัด"
-                    autoComplete="off"
-                    error={errors.branchId}
-                  />
-                  <PickList
-                    label="รายการสาขา"
-                    items={visibleBranches}
-                    selectedId={branchId}
-                    hi={hi}
-                    onHover={setHi}
-                    onPick={pickBranch}
-                    listRef={listRef}
-                    limit={branchQuery.trim() ? undefined : BRANCH_PREVIEW}
-                  />
-                </>
-              )}
+              <Field
+                label="ค้นหาสาขา"
+                value={branchQuery}
+                onChange={onBranchQuery}
+                placeholder="พิมพ์เลข ID, ชื่อสาขา หรือจังหวัด"
+                autoComplete="off"
+                error={errors.branchId}
+              />
+              <PickList
+                label="รายการสาขา"
+                items={visibleBranches}
+                selectedId={branchId}
+                hi={hi}
+                onHover={setHi}
+                onPick={pickBranch}
+                listRef={listRef}
+                limit={branchQuery.trim() ? undefined : BRANCH_PREVIEW}
+              />
             </div>
+          )}
+
+          {/* ขั้น 4: บริษัทที่ไม่มีทั้งแผนกและสาขา */}
+          {step === 3 && place === "" && (
+            <p className={noItemsCls}>
+              บริษัทนี้ยังไม่มีรายการแผนกหรือสาขา กด ถัดไป ได้เลย
+            </p>
           )}
 
           {/* ขั้น 5: username / password */}

@@ -41,6 +41,7 @@ type DayEntry = {
   goal: number;
   goalRank: number | null;
   points: number;
+  org?: OrgInfo;
 };
 type DayData = {
   date: string;
@@ -59,6 +60,7 @@ type WeekEntry = {
   total: number;
   rewardDays: number;
   perDay: number[];
+  org?: OrgInfo;
 };
 type WeekData = { start: string; days: string[]; entries: WeekEntry[] };
 type MonthEntry = {
@@ -72,6 +74,7 @@ type MonthEntry = {
   rewardDays: number;
   activeDays: number;
   bestDay: number;
+  org?: OrgInfo;
 };
 type MonthData = {
   scope: "month" | "all";
@@ -81,6 +84,20 @@ type MonthData = {
   activeDays: number;
   entries: MonthEntry[];
 };
+// สังกัดของผู้เล่น ต้องตรงกับ OrgInfo ใน lib/admin-stats.ts
+type OrgInfo = {
+  company: string | null;
+  workplace: "สำนักงานใหญ่" | "หน้าร้าน" | null;
+  department: string | null;
+  branch: string | null;
+  branchCode: string | null;
+  province: string | null;
+  region: string | null;
+  groupKey: string | null;
+  groupName: string | null;
+};
+type Group = "player" | "group";
+type WorkFilter = "all" | "hq" | "store";
 type View = "day" | "week" | "month";
 type Sort = "points" | "total";
 type Scope = "month" | "all";
@@ -130,15 +147,56 @@ async function getJson<T>(url: string): Promise<T> {
   return (await r.json()) as T;
 }
 
-const matches = (q: string, name: string, username: string) => {
+// สังกัดเป็นข้อความบรรทัดเดียว เช่น "Com7 · หน้าร้าน · ID 115 Studio 7_... · ปทุมธานี"
+const orgText = (o?: OrgInfo) =>
+  !o
+    ? ""
+    : [
+        o.company,
+        o.workplace,
+        o.department,
+        o.branch ? (o.branchCode ? `ID ${o.branchCode} ${o.branch}` : o.branch) : null,
+        o.province,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+// ค้นหาได้ทั้งชื่อ username และสังกัด (พิมพ์เลข ID สาขา ชื่อสาขา จังหวัด แผนก ก็เจอ)
+const matches = (q: string, name: string, username: string, org?: OrgInfo) => {
   const s = q.trim().toLowerCase();
   if (!s) return true;
-  return name.toLowerCase().includes(s) || username.toLowerCase().includes(s);
+  return (
+    name.toLowerCase().includes(s) ||
+    username.toLowerCase().includes(s) ||
+    orgText(org).toLowerCase().includes(s)
+  );
 };
+
+// ดาวน์โหลด CSV (ใส่ BOM ให้ Excel อ่านไทยได้ และกันสูตรแทรกจากชื่อผู้เล่น)
+function downloadCsv(
+  filename: string,
+  head: string[],
+  body: (string | number)[][]
+) {
+  const esc = (v: string | number) => {
+    let t = String(v);
+    if (typeof v === "string" && /^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+    return `"${t.replace(/"/g, '""')}"`;
+  };
+  const text = [head, ...body].map((r) => r.map(esc).join(",")).join("\r\n");
+  const blob = new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 /* ---------------- ส่วนประกอบ UI ---------------- */
 
 const ICONS = {
+  download: "M12 3v12M7 10l5 5 5-5M5 21h14",
   day: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
   week: "M5 20V11M12 20V4M19 20v-6",
   month: "M4 6h16M4 12h16M4 18h16",
@@ -434,6 +492,159 @@ function Shell({
   );
 }
 
+/* ---------------- สังกัด / กลุ่ม ---------------- */
+
+function OrgLine({ org }: { org?: OrgInfo }) {
+  const t = orgText(org);
+  if (!t) return null;
+  return (
+    <div className="truncate text-[11px] text-[#8A9A7C]" title={t}>
+      {t}
+    </div>
+  );
+}
+
+type GroupRow = {
+  key: string;
+  rank: number;
+  name: string;
+  sub: string;
+  players: number;
+  total: number;
+  points: number;
+};
+
+// รวมผู้เล่นเป็นกลุ่ม: สำนักงานใหญ่ = 1 แผนก / หน้าร้าน = 1 สาขา (เหมือนอันดับฝั่งผู้ใช้)
+function buildGroups(
+  rows: { total: number; points: number; org?: OrgInfo }[],
+  sort: Sort
+): GroupRow[] {
+  const m = new Map<string, Omit<GroupRow, "rank">>();
+  for (const e of rows) {
+    const o = e.org;
+    const key = o?.groupKey ?? "none";
+    const g = m.get(key) ?? {
+      key,
+      name: o?.groupName ?? "ไม่ระบุสังกัด",
+      sub: o?.groupKey
+        ? [o.company, o.workplace, o.branchCode ? `ID ${o.branchCode}` : null, o.province]
+            .filter(Boolean)
+            .join(" · ")
+        : "",
+      players: 0,
+      total: 0,
+      points: 0,
+    };
+    g.players += 1;
+    g.total += e.total;
+    g.points += e.points;
+    m.set(key, g);
+  }
+  return [...m.values()]
+    .sort(
+      sort === "total"
+        ? (a, b) => b.total - a.total || b.points - a.points
+        : (a, b) => b.points - a.points || b.total - a.total
+    )
+    .map((g, i) => ({ ...g, rank: i + 1 }));
+}
+
+const matchesGroup = (q: string, g: GroupRow) => {
+  const s = q.trim().toLowerCase();
+  if (!s) return true;
+  return `${g.name} ${g.sub}`.toLowerCase().includes(s);
+};
+
+function GroupBoard({ rows, sort }: { rows: GroupRow[]; sort: Sort }) {
+  const th =
+    "px-4 py-3 text-left text-[12px] font-medium text-[#6B7A6E] whitespace-nowrap";
+  return (
+    <>
+      <section className="mt-4 overflow-hidden rounded-3xl bg-white">
+        {rows.length === 0 ? (
+          <p className="px-4 py-10 text-center text-[14px] text-[#6B7A6E]">
+            ไม่มีข้อมูล
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse">
+              <thead>
+                <tr className="border-b border-[#EEF2E4]">
+                  <th className={`${th} w-16`}>#</th>
+                  <th className={th}>แผนก / สาขา</th>
+                  <th className={`${th} text-right`}>คน</th>
+                  <th className={`${th} hidden text-right md:table-cell`}>
+                    เฉลี่ย/คน
+                  </th>
+                  <th className={`${th} text-right`}>โดดรวม</th>
+                  <th className={`${th} text-right`}>point รวม</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EEF2E4]">
+                {rows.map((g) => (
+                  <tr key={g.key}>
+                    <td className="px-4 py-3">
+                      <Rank rank={g.rank} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar name={g.name} />
+                        <div className="min-w-0">
+                          <div className="truncate text-[15px] font-semibold">
+                            {g.name}
+                          </div>
+                          {g.sub && (
+                            <div
+                              className="truncate text-[12px] text-[#6B7A6E]"
+                              title={g.sub}
+                            >
+                              {g.sub}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-[14px] tabular-nums text-[#6B7A6E]">
+                      {fmtNum(g.players)}
+                    </td>
+                    <td className="hidden px-4 py-3 text-right text-[14px] tabular-nums text-[#6B7A6E] md:table-cell">
+                      {fmtNum(Math.round(g.total / Math.max(1, g.players)))}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-right tabular-nums ${
+                        sort === "total"
+                          ? "text-[22px] font-semibold text-[#3F5E1F]"
+                          : "text-[15px] text-[#6B7A6E]"
+                      }`}
+                    >
+                      {fmtNum(g.total)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span
+                        className={`font-semibold tabular-nums ${
+                          sort === "total" ? "text-[15px]" : "text-[22px]"
+                        } ${g.points > 0 ? "text-[#3F5E1F]" : "text-[#A9B79A]"}`}
+                      >
+                        {fmtNum(g.points)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
+        กลุ่ม = แผนก (สำนักงานใหญ่) หรือ 1 สาขา (หน้าร้าน) นับเฉพาะคนที่โดดในช่วงนี้และตรงตัวกรอง ·{" "}
+        {sort === "total"
+          ? "เรียงตามยอดโดดรวม ถ้าเท่ากันเรียงตาม point"
+          : "เรียงตาม point รวม ถ้าเท่ากันเรียงตามยอดโดดรวม"}
+      </p>
+    </>
+  );
+}
+
 /* ---------------- หน้าหลัก ---------------- */
 
 export default function AdminPage() {
@@ -445,6 +656,11 @@ export default function AdminPage() {
   const [onlyAwarded, setOnlyAwarded] = useState(false);
   const [sort, setSort] = useState<Sort>("points");
   const [scope, setScope] = useState<Scope>("month");
+  // มุมมอง (รายคน / แผนก-สาขา) และตัวกรองสังกัด ใช้ร่วมกันทั้ง 3 หน้า
+  const [group, setGroup] = useState<Group>("player");
+  const [fCompany, setFCompany] = useState("");
+  const [fWork, setFWork] = useState<WorkFilter>("all");
+  const [fProvince, setFProvince] = useState("");
   const [day, setDay] = useState<DayData | null>(null);
   const [week, setWeek] = useState<WeekData | null>(null);
   const [month, setMonth] = useState<MonthData | null>(null);
@@ -672,28 +888,169 @@ export default function AdminPage() {
       )
       .map((e, i) => ({ ...e, rank: i + 1 }));
 
-  const dayRows = day
-    ? day.entries.filter(
-        (e) =>
-          (!onlyAwarded || e.points > 0) && matches(q, e.name, e.username)
+  /* ---- ตัวกรองสังกัด (เติมค่าได้เมื่อ API ส่ง org มาให้) ---- */
+  const activeEntries: { org?: OrgInfo }[] =
+    view === "day"
+      ? (day?.entries ?? [])
+      : view === "week"
+        ? (week?.entries ?? [])
+        : (month?.entries ?? []);
+  const hasOrg = activeEntries.some((e) => !!e.org);
+  const uniq = (xs: (string | null | undefined)[]) =>
+    [...new Set(xs.filter((x): x is string => !!x))].sort((a, b) =>
+      a.localeCompare(b, "th")
+    );
+  const companyOpts = uniq(activeEntries.map((e) => e.org?.company));
+  const provinceOpts = uniq(activeEntries.map((e) => e.org?.province));
+  const filterActive = !!fCompany || fWork !== "all" || !!fProvince;
+  const orgOk = (o?: OrgInfo) => {
+    if (!filterActive || !hasOrg) return true;
+    if (fCompany && o?.company !== fCompany) return false;
+    if (fWork === "hq" && o?.workplace !== "สำนักงานใหญ่") return false;
+    if (fWork === "store" && o?.workplace !== "หน้าร้าน") return false;
+    if (fProvince && o?.province !== fProvince) return false;
+    return true;
+  };
+  const clearFilters = () => {
+    setFCompany("");
+    setFWork("all");
+    setFProvince("");
+  };
+
+  // อันดับ (rank) คงเป็นอันดับรวมทั้งระบบ ตัวกรองและช่องค้นหาแค่ซ่อนแถว
+  const dayScoped = day ? day.entries.filter((e) => orgOk(e.org)) : [];
+  const weekScoped = week ? week.entries.filter((e) => orgOk(e.org)) : [];
+  const monthScoped = month ? month.entries.filter((e) => orgOk(e.org)) : [];
+
+  const dayRows = dayScoped.filter(
+    (e) =>
+      (!onlyAwarded || e.points > 0) && matches(q, e.name, e.username, e.org)
+  );
+  const weekRows = week
+    ? byKey(week.entries).filter(
+        (e) => orgOk(e.org) && matches(q, e.name, e.username, e.org)
       )
     : [];
-  const weekRows = week
-    ? byKey(week.entries).filter((e) => matches(q, e.name, e.username))
-    : [];
   const monthRows = month
-    ? byKey(month.entries).filter((e) => matches(q, e.name, e.username))
+    ? byKey(month.entries).filter(
+        (e) => orgOk(e.org) && matches(q, e.name, e.username, e.org)
+      )
     : [];
 
-  const dayTotal = day ? day.entries.reduce((a, e) => a + e.total, 0) : 0;
-  const weekPoints = week ? week.entries.reduce((a, e) => a + e.points, 0) : 0;
-  const weekTotal = week ? week.entries.reduce((a, e) => a + e.total, 0) : 0;
-  const monthPoints = month
-    ? month.entries.reduce((a, e) => a + e.points, 0)
-    : 0;
-  const monthTotal = month
-    ? month.entries.reduce((a, e) => a + e.total, 0)
-    : 0;
+  // สถิติในการ์ดนับเฉพาะคนที่ตรงตัวกรองสังกัด (ไม่กรองด้วยช่องค้นหา)
+  const sum = <T extends object>(rows: T[], f: (r: T) => number) =>
+    rows.reduce((a, r) => a + f(r), 0);
+  const dayTotal = sum(dayScoped, (e) => e.total);
+  const dayReached =
+    filterActive && hasOrg
+      ? dayScoped.filter((e) => e.goalRank !== null).length
+      : (day?.reachedCount ?? 0);
+  const dayAwarded =
+    filterActive && hasOrg
+      ? dayScoped.filter((e) => e.points > 0).length
+      : (day?.awardedCount ?? 0);
+  const weekPoints = sum(weekScoped, (e) => e.points);
+  const weekTotal = sum(weekScoped, (e) => e.total);
+  const monthPoints = sum(monthScoped, (e) => e.points);
+  const monthTotal = sum(monthScoped, (e) => e.total);
+
+  // มุมมองแผนก/สาขา
+  const groupSource = view === "day" ? dayScoped : view === "week" ? weekScoped : monthScoped;
+  const groupList = buildGroups(groupSource, sort).filter((g) =>
+    matchesGroup(q, g)
+  );
+
+  const periodTag =
+    view === "day"
+      ? date
+      : view === "week"
+        ? (week?.start ?? date)
+        : isAll
+          ? "all"
+          : date.slice(0, 7);
+
+  const exportCsv = () => {
+    const oc = (o?: OrgInfo) => [
+      o?.company ?? "",
+      o?.workplace ?? "",
+      o?.department ?? "",
+      o?.branchCode ?? "",
+      o?.branch ?? "",
+      o?.province ?? "",
+      o?.region ?? "",
+    ];
+    const oh = ["บริษัท", "ที่ทำงาน", "แผนก", "รหัสสาขา", "สาขา", "จังหวัด", "ภาค"];
+    if (group === "group") {
+      downloadCsv(
+        `pose-jump-groups-${view}-${periodTag}`,
+        ["#", "กลุ่ม", "รายละเอียด", "จำนวนคน", "โดดรวม", "เฉลี่ยต่อคน", "point"],
+        groupList.map((g) => [
+          g.rank,
+          g.name,
+          g.sub,
+          g.players,
+          g.total,
+          Math.round(g.total / Math.max(1, g.players)),
+          g.points,
+        ])
+      );
+    } else if (view === "day") {
+      downloadCsv(
+        `pose-jump-day-${periodTag}`,
+        ["#", "ชื่อ", "username", ...oh, "โดด (ครั้ง)", "รอบ", "ลำดับถึงเป้า", "point"],
+        dayRows.map((e) => [
+          e.rank,
+          e.name,
+          e.username,
+          ...oc(e.org),
+          e.total,
+          e.rounds,
+          e.goalRank ?? "",
+          e.points,
+        ])
+      );
+    } else if (view === "week") {
+      downloadCsv(
+        `pose-jump-week-${periodTag}`,
+        ["#", "ชื่อ", "username", ...oh, ...(week?.days ?? []), "โดดรวม", "point รวม", "วันที่ได้ point"],
+        weekRows.map((e) => [
+          e.rank,
+          e.name,
+          e.username,
+          ...oc(e.org),
+          ...e.perDay,
+          e.total,
+          e.points,
+          e.rewardDays,
+        ])
+      );
+    } else {
+      downloadCsv(
+        `pose-jump-month-${periodTag}`,
+        ["#", "ชื่อ", "username", ...oh, "วันที่โดด", "วันที่ได้ point", "รอบ", "วันที่ดีที่สุด", "โดดรวม", "point รวม"],
+        monthRows.map((e) => [
+          e.rank,
+          e.name,
+          e.username,
+          ...oc(e.org),
+          e.activeDays,
+          e.rewardDays,
+          e.rounds,
+          e.bestDay,
+          e.total,
+          e.points,
+        ])
+      );
+    }
+  };
+  const canExport =
+    group === "group"
+      ? groupList.length > 0
+      : (view === "day" ? dayRows : view === "week" ? weekRows : monthRows)
+          .length > 0;
+
+  const selCls =
+    "h-10 min-w-0 rounded-full bg-white px-4 text-[14px] shadow-sm outline-none ring-2 ring-transparent focus:ring-[#C9F25B]";
 
   const navBtn =
     "flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#1B2A21] shadow-sm transition-transform active:scale-90 disabled:opacity-30";
@@ -813,6 +1170,18 @@ export default function AdminPage() {
           )}
 
           <div className="flex flex-1 flex-wrap items-center gap-3 lg:justify-end">
+            <div className="w-56 shrink-0">
+              <Segmented<Group>
+                value={group}
+                onChange={setGroup}
+                options={
+                  [
+                    ["player", "รายคน"],
+                    ["group", "แผนก/สาขา"],
+                  ] as const
+                }
+              />
+            </div>
             <label className="relative block min-w-0 flex-1 lg:max-w-xs lg:flex-none">
               <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6B7A6E]">
                 <Icon d={ICONS.search} size={16} />
@@ -824,7 +1193,7 @@ export default function AdminPage() {
                 className="h-10 w-full rounded-full bg-white pl-10 pr-4 text-[14px] shadow-sm outline-none ring-2 ring-transparent placeholder:text-[#A9B79A] focus:ring-[#C9F25B]"
               />
             </label>
-            {view !== "day" && (
+            {(view !== "day" || group === "group") && (
               <div className="w-64 shrink-0">
                 <Segmented<Sort>
                   value={sort}
@@ -838,7 +1207,7 @@ export default function AdminPage() {
                 />
               </div>
             )}
-            {view === "day" && (
+            {view === "day" && group === "player" && (
               <div className="w-56 shrink-0">
                 <Segmented<"all" | "awarded">
                   value={onlyAwarded ? "awarded" : "all"}
@@ -854,6 +1223,78 @@ export default function AdminPage() {
             )}
           </div>
         </div>
+
+        {/* ตัวกรองสังกัด + ส่งออก */}
+        {state === "ok" && (
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            {hasOrg && (
+              <>
+                {companyOpts.length > 1 && (
+                  <select
+                    value={fCompany}
+                    onChange={(e) => setFCompany(e.target.value)}
+                    aria-label="บริษัท"
+                    className={selCls}
+                  >
+                    <option value="">ทุกบริษัท</option>
+                    {companyOpts.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <div className="w-full sm:w-96">
+                  <Segmented<WorkFilter>
+                    value={fWork}
+                    onChange={(v) => {
+                      setFWork(v);
+                      if (v === "hq") setFProvince("");
+                    }}
+                    options={
+                      [
+                        ["all", "ทั้งหมด"],
+                        ["hq", "สำนักงานใหญ่"],
+                        ["store", "หน้าร้าน"],
+                      ] as const
+                    }
+                  />
+                </div>
+                {fWork !== "hq" && provinceOpts.length > 0 && (
+                  <select
+                    value={fProvince}
+                    onChange={(e) => setFProvince(e.target.value)}
+                    aria-label="จังหวัด"
+                    className={selCls}
+                  >
+                    <option value="">ทุกจังหวัด</option>
+                    {provinceOpts.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {filterActive && (
+                  <button
+                    onClick={clearFilters}
+                    className="h-10 rounded-full px-4 text-[14px] font-semibold text-[#3F5E1F] transition-opacity active:opacity-60"
+                  >
+                    ล้างตัวกรอง
+                  </button>
+                )}
+              </>
+            )}
+            <button
+              onClick={exportCsv}
+              disabled={!canExport}
+              className="ml-auto flex h-10 items-center gap-2 rounded-full bg-[#1B2A21] px-5 text-[14px] font-semibold text-[#C9F25B] transition-transform active:scale-95 disabled:opacity-40"
+            >
+              <Icon d={ICONS.download} size={16} />
+              ส่งออก CSV
+            </button>
+          </div>
+        )}
 
         {state === "loading" && (
           <p className={`${card} px-4 py-10 text-center text-[14px] text-[#6B7A6E]`}>
@@ -883,7 +1324,7 @@ export default function AdminPage() {
                 dark
                 icon={ICONS.users}
                 label="คนที่โดด"
-                value={fmtNum(day.entries.length)}
+                value={fmtNum(dayScoped.length)}
                 sub="คนลงสนามวันนี้"
               />
               <StatCard
@@ -895,17 +1336,21 @@ export default function AdminPage() {
               <StatCard
                 icon={ICONS.check}
                 label="ถึงเป้า"
-                value={fmtNum(day.reachedCount)}
+                value={fmtNum(dayReached)}
                 sub="คน"
               />
               <StatCard
                 icon={ICONS.star}
                 label={`ได้ ${fmtNum(day.reward)} point`}
-                value={`${day.awardedCount}/${day.quota}`}
+                value={`${dayAwarded}/${day.quota}`}
                 sub={`โควตา ${fmtNum(day.quota)} คนแรก`}
               />
             </div>
 
+            {group === "group" ? (
+              <GroupBoard rows={groupList} sort={sort} />
+            ) : (
+              <>
             <section className={`${card} mt-4 overflow-hidden`}>
               {dayRows.length === 0 ? (
                 <p className="px-4 py-10 text-center text-[14px] text-[#6B7A6E]">
@@ -955,6 +1400,7 @@ export default function AdminPage() {
                                       @{e.username}
                                     </div>
                                   )}
+                                  <OrgLine org={e.org} />
                                 </div>
                               </div>
                             </td>
@@ -1007,6 +1453,8 @@ export default function AdminPage() {
               เรียงตามยอดโดดรวมของวัน ลำดับถึงเป้า = ลำดับเวลาที่ยอดสะสมของวันนั้นถึงเป้ารายวันของคนนั้น
               ตัดวันที่เที่ยงคืนเวลาไทย
             </p>
+              </>
+            )}
           </>
         )}
 
@@ -1018,7 +1466,7 @@ export default function AdminPage() {
                 dark
                 icon={ICONS.users}
                 label="คนที่โดด"
-                value={fmtNum(week.entries.length)}
+                value={fmtNum(weekScoped.length)}
                 sub="คนในสัปดาห์นี้"
               />
               <StatCard
@@ -1037,6 +1485,10 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {group === "group" ? (
+              <GroupBoard rows={groupList} sort={sort} />
+            ) : (
+              <>
             <section className={`${card} mt-4 overflow-hidden`}>
               {weekRows.length === 0 ? (
                 <p className="px-4 py-10 text-center text-[14px] text-[#6B7A6E]">
@@ -1081,6 +1533,7 @@ export default function AdminPage() {
                                   {e.username && `@${e.username} · `}
                                   ได้ point {e.rewardDays} วัน
                                 </div>
+                                <OrgLine org={e.org} />
                               </div>
                             </div>
                           </td>
@@ -1125,6 +1578,8 @@ export default function AdminPage() {
                 : "เรียงตาม point รวมของสัปดาห์ ถ้าเท่ากันเรียงตามยอดโดดรวม"}{" "}
               point คำนวณจากกติกา {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน ได้ {POINT_REWARD} point
             </p>
+              </>
+            )}
           </>
         )}
 
@@ -1136,7 +1591,7 @@ export default function AdminPage() {
                 dark
                 icon={ICONS.users}
                 label="คนที่โดด"
-                value={fmtNum(month.entries.length)}
+                value={fmtNum(monthScoped.length)}
                 sub={isAll ? "คนทั้งหมดที่เคยโดด" : "คนในเดือนนี้"}
               />
               <StatCard
@@ -1159,6 +1614,10 @@ export default function AdminPage() {
               />
             </div>
 
+            {group === "group" ? (
+              <GroupBoard rows={groupList} sort={sort} />
+            ) : (
+              <>
             <section className={`${card} mt-4 overflow-hidden`}>
               {monthRows.length === 0 ? (
                 <p className="px-4 py-10 text-center text-[14px] text-[#6B7A6E]">
@@ -1205,6 +1664,7 @@ export default function AdminPage() {
                                     @{e.username}
                                   </div>
                                 )}
+                                <OrgLine org={e.org} />
                               </div>
                             </div>
                           </td>
@@ -1263,6 +1723,8 @@ export default function AdminPage() {
               {isAll ? "นับตั้งแต่รอบกระโดดแรกของระบบ " : "นับทั้งเดือน "}
               ตัดวันที่เที่ยงคืนเวลาไทย · point จากกติกา {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน ได้ {POINT_REWARD} point
             </p>
+              </>
+            )}
           </>
         )}
       </Shell>

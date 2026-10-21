@@ -46,8 +46,9 @@ function ensureIndexes(db: Db) {
         .createIndex({ userId: 1, day: 1 }, { unique: true }),
       // เรียงลำดับในวันเดียวกัน
       db.collection("goal_hits").createIndex({ day: 1, seq: 1 }),
-      // คะแนนแผนกรายสัปดาห์
+      // คะแนนรายสัปดาห์ของแผนก (สำนักงานใหญ่) และสาขา (หน้าร้าน)
       db.collection("dept_jumps").createIndex({ ts: 1, departmentId: 1 }),
+      db.collection("dept_jumps").createIndex({ ts: 1, branchId: 1 }),
     ]).catch((e) => {
       indexReady = null;
       console.error("ensureIndexes failed", e);
@@ -200,13 +201,18 @@ export async function POST(req: Request) {
       kcal,
     });
 
-    // คะแนนแผนก: เก็บแยก collection เพื่อไม่หายเมื่อผู้ใช้ล้างประวัติ
+    // คะแนนกลุ่ม: เก็บแยก collection เพื่อไม่หายเมื่อผู้ใช้ล้างประวัติ
+    // สำนักงานใหญ่ = นับเข้าแผนก / หน้าร้าน = นับเข้าสาขา (1 สาขา = 1 กลุ่ม)
     // ล้มเหลวไม่ทำให้การบันทึกรอบล้มเหลว
-    if (user.departmentId != null) {
+    const departmentId = user.departmentId ?? null;
+    const branchId =
+      (user as unknown as { branchId?: number | null }).branchId ?? null;
+    if (departmentId != null || branchId != null) {
       try {
         await db.collection("dept_jumps").insertOne({
           userId: user.id,
-          departmentId: user.departmentId,
+          departmentId,
+          branchId,
           ts,
           total,
         });
@@ -230,7 +236,7 @@ export async function POST(req: Request) {
   }
 }
 
-// ล้างประวัติทั้งหมดของผู้ใช้ (ไม่ลบ point, บันทึกถึงเป้า และคะแนนแผนก)
+// ล้างประวัติทั้งหมดของผู้ใช้ (ไม่ลบ point, บันทึกถึงเป้า และคะแนนแผนก/สาขา)
 export async function DELETE() {
   try {
     const user = await currentUser();

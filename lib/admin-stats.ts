@@ -1,5 +1,14 @@
 import { ObjectId, type Db } from "mongodb";
 import { purgeOrphansThrottled } from "./purge-orphans";
+// branches.ts / departments.ts อยู่ที่ app/components/ (lib/ อยู่ราก โปรเจกต์)
+import {
+  branchCode,
+  branchLabel,
+  branchProvince,
+  branchRegion,
+  getBranch,
+} from "../app/components/branches";
+import { getCompany, getDepartment } from "../app/components/departments";
 
 // ชื่อ collection ที่เก็บรอบกระโดด ดูจาก app/api/sessions/route.ts
 // ห้ามใช้ "sessions" เพราะ lib/auth.ts ใช้เก็บเซสชันล็อกอิน
@@ -52,6 +61,20 @@ export const monthRange = (month: string) => {
   };
 };
 
+// สังกัดของผู้เล่น (ใช้ในหน้า admin: กรอง / จัดกลุ่ม / ส่งออก)
+// สำนักงานใหญ่ = มีแผนก / หน้าร้าน = มีแต่สาขา (ตรงกับฝั่งผู้ใช้)
+export type OrgInfo = {
+  company: string | null;
+  workplace: "สำนักงานใหญ่" | "หน้าร้าน" | null;
+  department: string | null;
+  branch: string | null; // ชื่อสาขาไม่รวมรหัส
+  branchCode: string | null; // เช่น "115"
+  province: string | null;
+  region: string | null;
+  groupKey: string | null; // "d:<id>" แผนก / "b:<id>" สาขา
+  groupName: string | null;
+};
+
 export type DayEntry = {
   userId: string;
   name: string;
@@ -61,9 +84,33 @@ export type DayEntry = {
   goal: number;
   goalRank: number | null;
   points: number;
+  org: OrgInfo;
 };
 
 type Row = Record<string, unknown>;
+
+const idOf = (v: unknown) => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+export function orgFromUser(u?: Row): OrgInfo {
+  const company = getCompany(idOf(u?.companyId));
+  const dept = getDepartment(idOf(u?.departmentId));
+  const branch = getBranch(idOf(u?.branchId));
+  return {
+    company: company?.name ?? null,
+    workplace: dept ? "สำนักงานใหญ่" : branch ? "หน้าร้าน" : null,
+    department: dept?.name ?? null,
+    branch: branch ? branchLabel(branch) : null,
+    branchCode: branch ? branchCode(branch) : null,
+    province: branch ? branchProvince(branch) : null,
+    region: branch ? branchRegion(branch) : null,
+    groupKey: dept ? `d:${dept.id}` : branch ? `b:${branch.id}` : null,
+    groupName: dept ? dept.name : branch ? branchLabel(branch) : null,
+  };
+}
 
 // userId อาจเก็บเป็น ObjectId หรือ string รองรับทั้งสองแบบ
 const toId = (v: unknown) =>
@@ -124,9 +171,20 @@ function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
         goal: DAILY_GOAL,
         goalRank,
         points: goalRank !== null && goalRank <= POINT_QUOTA ? POINT_REWARD : 0,
+        org: orgFromUser(u),
       };
     })
     .sort((a, b) => b.total - a.total);
+}
+
+// เติมสังกัด (org) ให้แถวที่มี userId ใช้กับ route สัปดาห์/เดือนที่สร้างแถวเอง
+export async function withOrg<T extends { userId: string }>(
+  db: Db,
+  rows: T[]
+): Promise<(T & { org: OrgInfo })[]> {
+  if (rows.length === 0) return [];
+  const userMap = await loadUserMap(db, rows as unknown as Row[]);
+  return rows.map((r) => ({ ...r, org: orgFromUser(userMap.get(r.userId)) }));
 }
 
 // ผลของทุกคนในหนึ่งวัน

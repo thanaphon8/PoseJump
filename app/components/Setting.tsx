@@ -4,7 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Segmented } from "./auth-shared";
 import type { User } from "./auth-shared";
-import { orgOf } from "./branches";
+import {
+  branchCode,
+  branchLabel,
+  branchProvince,
+  branchRegion,
+  getBranch,
+  orgOf,
+} from "./branches";
 
 /* ------------------------------------------------------------------ */
 /* หน้าตั้งค่า (แท็บ "ตั้งค่า")                                          */
@@ -495,17 +502,32 @@ function ProfileCard({
   const canSave = dirty && nameValid && !busy;
 
   // บริษัท / แผนก / สาขา ที่เลือกตอนสมัคร (แสดงอย่างเดียว) ต้องมี id เหล่านี้อยู่ใน user
-  const org = orgOf(
-    user as User & {
-      companyId?: number | null;
-      departmentId?: number | null;
-      branchId?: number | null;
-    }
-  );
+  const orgUser = user as User & {
+    companyId?: number | null;
+    departmentId?: number | null;
+    branchId?: number | null;
+  };
+  const org = orgOf(orgUser);
+  const branch = getBranch(orgUser.branchId);
+  // มีแผนก = สำนักงานใหญ่ / มีแต่สาขา = หน้าร้าน (ตรงกับตอนสมัครและการ์ดแผนก)
+  const workplace = org.department
+    ? "สำนักงานใหญ่"
+    : branch
+      ? "หน้าร้าน"
+      : null;
+  const code = branch ? branchCode(branch) : null;
+  const province = branch ? branchProvince(branch) : null;
+  const region = branch ? branchRegion(branch) : null;
   const orgRows: [string, string][] = [];
   if (org.company) orgRows.push(["บริษัท", org.company]);
+  if (workplace) orgRows.push(["ที่ทำงาน", workplace]);
   if (org.department) orgRows.push(["แผนก", org.department]);
-  if (org.branch) orgRows.push(["สาขา", org.branch]);
+  if (branch) {
+    orgRows.push(["สาขา", branchLabel(branch)]);
+    if (code) orgRows.push(["รหัสสาขา", `ID ${code}`]);
+    if (province)
+      orgRows.push(["จังหวัด", region ? `${province} · ${region}` : province]);
+  }
 
   const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

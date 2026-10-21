@@ -951,7 +951,7 @@ const RAW: [number, number, string, string?][] = [
   [942, 1, "ID 1788_BN_STA(Lotus go Fresh-Romklao24)-Minburi-Bangkok", "กรุงเทพมหานคร/ภาคกลาง"],
   [943, 1, "ID 1353_OPPO_Robinson_Suphanburi", "สุพรรณบุรี/ภาคกลาง"],
   [944, 1, "ID 1329_BN_Big C_Krabi", "กระบี่/ภาคใต้"],
-  [945, 1, "ID 2950_Honor-Central-Suratthani", "สุราษฏร์ธานี/ภาคใต้"],
+  [945, 1, "ID 2950_Honor-Central-Suratthani", "สุราษฎร์ธานี/ภาคใต้"],
   [946, 1, "ID 457_BNM(Samsung)_Itmall_Fortune Town", "กรุงเทพมหานคร/ภาคกลาง"],
   [947, 1, "ID 885_Xiaomi_Robinson_Mueang_Prachinburi", "ปราจีนบุรี/ภาคตะวันออก"],
   [948, 1, "ID 738_BN_Big C_Satun", "สตูล/ภาคใต้"],
@@ -992,7 +992,7 @@ const RAW: [number, number, string, string?][] = [
   [983, 1, "ID 2949_Xiaomi-Big C-Hatyai-Songkhla", "สงขลา/ภาคใต้"],
   [984, 1, "ID 1352_OPPO_Robinson_Samutprakan", "สมุทรปราการ/ภาคกลาง"],
   [985, 1, "ID 951_BKK_Central_Mahachai", "สมุทรสาคร/ภาคกลาง"],
-  [986, 1, "ID 3058_BN_Lotus Krabi 3", "กระบี้/ภาคใต้"],
+  [986, 1, "ID 3058_BN_Lotus Krabi 3", "กระบี่/ภาคใต้"],
   [987, 1, "ID 2664_BN Solar-Fashion Island", "กรุงเทพมหานคร/ภาคกลาง"],
   [988, 1, "ID 1822_BNM_Central Mueang Ubonratchathani", "อุบลราชธานี/ภาคตะวันออกเฉียงเหนือ"],
   [989, 1, "ID 1824_BN_Emporium(Power Mall)_Sukhumvit_Bangkok", "กรุงเทพมหานคร/ภาคกลาง"],
@@ -1302,6 +1302,22 @@ export const branchesOf = (companyId?: number | null) =>
 // ชื่อสาขาที่อ่านง่าย: ตัด "ID 115_" ข้างหน้าออก
 export const branchLabel = (b: Branch) => b.name.replace(/^\s*ID\s*\d+\s*_\s*/i, "");
 
+// รหัสสาขา เช่น "ID 115_Studio 7_..." → "115" (ไม่มีรหัส = null)
+export const branchCode = (b: Branch) =>
+  b.name.match(/^\s*ID\s*(\d+)/i)?.[1] ?? null;
+
+// จังหวัด / ภาค ดึงจาก province ("ปทุมธานี/ภาคกลาง") อัตโนมัติ
+export const branchProvince = (b: Branch) =>
+  b.province?.split("/")[0]?.trim() || null;
+export const branchRegion = (b: Branch) =>
+  b.province?.split("/")[1]?.trim() || null;
+
+// ชื่อพร้อมรหัสสาขา: "ID 115 · Studio 7_Future Park_Rangsit"
+export const branchFullLabel = (b: Branch) => {
+  const code = branchCode(b);
+  return code ? `ID ${code} · ${branchLabel(b)}` : branchLabel(b);
+};
+
 // ตัวช่วยแสดงโปรไฟล์: ส่ง user ที่มี companyId/departmentId/branchId
 export function orgOf(u?: {
   companyId?: number | null;
@@ -1319,7 +1335,9 @@ export function orgOf(u?: {
 }
 
 // ตรวจฝั่งเซิร์ฟเวอร์: แผนก/สาขาต้องอยู่ในบริษัทที่เลือก
-// แผนกบังคับถ้าบริษัทมีแผนก / ถ้าไม่มีแผนก ต้องเลือกสาขา / สาขาอื่นๆ ไม่บังคับ
+// สำนักงานใหญ่ = แผนก / หน้าร้าน = สาขา (1 สาขา = 1 กลุ่ม เหมือน 1 แผนก)
+// บริษัทที่มีทั้งสองแบบ: เลือกอย่างใดอย่างหนึ่งก็พอ
+// บริษัทที่มีแค่แผนก บังคับแผนก / มีแค่สาขา บังคับสาขา
 export function validateOrg(
   companyId: number,
   departmentId?: number | null,
@@ -1332,13 +1350,14 @@ export function validateOrg(
   }
   const hasDepts = departmentsOf(companyId).length > 0;
   const hasBranches = branchesOf(companyId).length > 0;
-  if (departmentId) {
-    if (getDepartment(departmentId)?.companyId !== companyId)
-      err.departmentId = "แผนกไม่อยู่ในบริษัทที่เลือก";
-  } else if (hasDepts) err.departmentId = "เลือกแผนกของคุณ";
-  if (branchId) {
-    if (getBranch(branchId)?.companyId !== companyId)
-      err.branchId = "สาขาไม่อยู่ในบริษัทที่เลือก";
-  } else if (!hasDepts && hasBranches) err.branchId = "เลือกสาขาของคุณ";
+  if (departmentId && getDepartment(departmentId)?.companyId !== companyId)
+    err.departmentId = "แผนกไม่อยู่ในบริษัทที่เลือก";
+  if (branchId && getBranch(branchId)?.companyId !== companyId)
+    err.branchId = "สาขาไม่อยู่ในบริษัทที่เลือก";
+  if (!departmentId && !branchId) {
+    if (hasDepts && hasBranches) err.departmentId = "เลือกแผนกหรือสาขาของคุณ";
+    else if (hasDepts) err.departmentId = "เลือกแผนกของคุณ";
+    else if (hasBranches) err.branchId = "เลือกสาขาของคุณ";
+  }
   return err;
 }
