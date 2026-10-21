@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ICONS, Icon, Segmented } from "./auth-shared";
+import { Segmented } from "./auth-shared";
 import type { User } from "./auth-shared";
 
 /* ------------------------------------------------------------------ */
@@ -315,7 +315,9 @@ function CameraModal({
       role="dialog"
       aria-modal="true"
       aria-label="ถ่ายรูปโปรไฟล์"
-      className="pj-in fixed left-0 top-0 z-50 w-full overflow-hidden overscroll-none bg-black text-white"
+      className={`pj-in fixed left-0 top-0 z-50 w-full overflow-hidden overscroll-none text-white ${
+        shot ? "bg-black" : "bg-black/95"
+      }`}
       style={{ height: "100dvh" }}
     >
       {shot ? (
@@ -381,75 +383,69 @@ function CameraModal({
           </div>
         </div>
       ) : (
-        /* ขั้นถ่าย: กล้องเต็มจอ */
-        <>
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            className="absolute inset-0 h-full w-full object-cover"
-            style={{ transform: mirror ? "scaleX(-1)" : undefined }}
-          />
+        /* ขั้นถ่าย: กรอบวงกลมเหมือนหน้าสมัคร */
+        <div
+          className="flex h-full w-full flex-col items-center justify-center px-6"
+          style={{
+            paddingTop: "max(1rem, env(safe-area-inset-top))",
+            paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+          }}
+        >
+          <p className="mb-5 text-center text-[15px] font-semibold text-white/90">
+            จัดหน้าให้อยู่ในวงกลม
+          </p>
 
-          {!ready && !err && (
-            <div className="pj-pulse absolute inset-0 flex items-center justify-center text-[13px] text-white/70">
-              กำลังเปิดกล้อง
-            </div>
-          )}
+          <div
+            className="relative overflow-hidden rounded-full bg-[#1B2A21] ring-4 ring-[#C9F25B]"
+            style={{ width: V, height: V }}
+          >
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              className="h-full w-full object-cover"
+              style={{ transform: mirror ? "scaleX(-1)" : undefined }}
+            />
+            {!ready && !err && (
+              <span className="pj-pulse absolute inset-0 flex items-center justify-center text-[14px] text-white/70">
+                กำลังเปิดกล้อง
+              </span>
+            )}
+          </div>
+
           {err && (
-            <p className="absolute inset-x-6 top-1/2 -translate-y-1/2 text-center text-[14px] text-[#FF8A80]">
+            <p
+              role="alert"
+              className="mt-5 max-w-xs rounded-2xl bg-[#FDE8E6] px-4 py-3 text-center text-[14px] text-[#D92D20]"
+            >
               {err}
             </p>
           )}
 
-          <button
-            onClick={onClose}
-            aria-label="ปิด"
-            className="absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur transition-transform active:scale-90"
-            style={{ top: "max(1rem, env(safe-area-inset-top))" }}
-          >
-            <Icon d={ICONS.close} size={16} />
-          </button>
-
-          <div
-            className="absolute inset-x-0 bottom-0 flex items-center justify-center px-8"
-            style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}
-          >
-            {/* ปุ่มชัตเตอร์วงกลม */}
+          <div className="mt-8 flex w-full max-w-xs items-center justify-between">
             <button
-              onClick={snap}
-              disabled={!ready}
-              aria-label="ถ่ายรูป"
-              className="flex h-[76px] w-[76px] items-center justify-center rounded-full border-4 border-white transition-transform active:scale-90 disabled:opacity-40"
+              type="button"
+              onClick={onClose}
+              className="h-11 min-w-[84px] rounded-full px-4 text-[15px] font-semibold text-white/80 hover:text-white"
             >
-              <span className="block h-[58px] w-[58px] rounded-full bg-white" />
+              ยกเลิก
             </button>
-
-            {/* ปุ่มสลับกล้อง (ไอคอน) */}
             <button
+              type="button"
+              onClick={snap}
+              disabled={!ready || !!err}
+              aria-label="ถ่ายรูป"
+              className="h-[72px] w-[72px] rounded-full bg-white ring-4 ring-[#C9F25B] ring-offset-2 ring-offset-black transition-transform active:scale-90 disabled:opacity-40"
+            />
+            <button
+              type="button"
               onClick={() => setCam((c) => (c === "user" ? "environment" : "user"))}
-              aria-label="สลับกล้อง"
-              className="absolute right-8 flex h-12 w-12 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur transition-transform active:scale-90"
+              className="h-11 min-w-[84px] rounded-full px-4 text-[15px] font-semibold text-white/80 hover:text-white"
             >
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" />
-                <path d="M21 3v5h-5" />
-                <path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" />
-                <path d="M3 21v-5h5" />
-              </svg>
+              สลับกล้อง
             </button>
           </div>
-        </>
+        </div>
       )}
     </div>,
     document.body

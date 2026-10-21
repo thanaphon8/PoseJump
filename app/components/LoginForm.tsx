@@ -2,18 +2,8 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
-import {
-  AuthShell,
-  EyeButton,
-  Field,
-  Segmented,
-} from "./auth-shared";
-import type {
-  AuthErrors,
-  AuthFormProps,
-  AuthMode,
-  User,
-} from "./auth-shared";
+import { AuthShell, EyeButton, Field } from "./auth-shared";
+import type { AuthErrors, AuthFormProps, User } from "./auth-shared";
 
 // หน้าเข้าสู่ระบบ (เชื่อมต่อ MongoDB ผ่าน /api/auth/login)
 // ใช้เป็นคอมโพเนนต์ใน app/page.tsx: <LoginForm onAuthed={...} onSwitch={...} />
@@ -85,22 +75,7 @@ export default function LoginForm({ onAuthed, onSwitch }: AuthFormProps) {
           เข้าสู่ระบบเพื่อไปต่อจากรอบล่าสุด
         </p>
 
-        <div className="mt-6">
-          <Segmented<AuthMode>
-            value="login"
-            onChange={(m) => {
-              if (m === "register") onSwitch("register");
-            }}
-            options={
-              [
-                ["login", "เข้าสู่ระบบ"],
-                ["register", "สมัครสมาชิก"],
-              ] as const
-            }
-          />
-        </div>
-
-        <div className="mt-5 space-y-4">
+        <div className="mt-6 space-y-4">
           <Field
             label="Username"
             value={username}
