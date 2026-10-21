@@ -376,10 +376,7 @@ const orgLine = [org.company, org.department, org.branch]
               เริ่มกระโดด
             </button>
           </div>
-          <p className="text-center text-[12px] text-[#6B7A6E]">
-            พิงมือถือกับลังหรือผนังให้หงายขึ้นเล็กน้อย สูงระดับเอว ยืนให้เห็นศีรษะถึงเท้า แล้วกางมือเหมือนจับเชือก
-          </p>
-
+          
           {user && (
             <DepartmentCard
               companyId={user.companyId}
