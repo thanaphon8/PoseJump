@@ -104,7 +104,7 @@ const HAND_MIN_OFFSET = 0.75;
 const HAND_MIN_VIS = 0.3;
 
 const SHOW_SKELETON = false;
-// true = แสดงภาพเต็มไม่ครอป (ไม่ซูม) อาจมีแถบดำ
+// true = กล้องหน้าแสดงภาพเต็มไม่ครอป (ไม่ซูม) อาจมีแถบดำ กล้องหลังใช้ logic เดิม
 const FORCE_CONTAIN = true;
 
 type Placement = {
@@ -1185,14 +1185,24 @@ function PoseSession(props: PoseProps) {
       connectionsRef.current = connections;
       if (cancelled()) return;
 
-      // ไม่บังคับ aspect ratio เพื่อไม่ให้เบราว์เซอร์ครอปภาพจากเซนเซอร์ (ลดอาการซูม)
+      // กล้องหน้า: ไม่บังคับ aspect ratio เพื่อไม่ให้เบราว์เซอร์ครอปภาพ (ลดอาการซูม)
+      // กล้องหลัง: ใช้ค่าเดิม
+      const isFront = settingsRef.current.facing === "user";
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: settingsRef.current.facing },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30, max: 30 },
-        },
+        video: isFront
+          ? {
+              facingMode: { ideal: "user" },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              frameRate: { ideal: 30, max: 30 },
+            }
+          : {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 600 },
+              height: { ideal: 800 },
+              aspectRatio: { ideal: 3 / 4 },
+              frameRate: { ideal: 30, max: 30 },
+            },
         audio: false,
       });
       if (cancelled()) {
@@ -1207,9 +1217,15 @@ function PoseSession(props: PoseProps) {
           | { zoom?: { min: number; max: number } }
           | undefined;
         if (caps?.zoom) {
-          await track.applyConstraints({
-            zoom: caps.zoom.min,
-          } as MediaTrackConstraints);
+          if (isFront) {
+            await track.applyConstraints({
+              zoom: caps.zoom.min,
+            } as MediaTrackConstraints);
+          } else {
+            await track.applyConstraints({
+              advanced: [{ zoom: caps.zoom.min } as MediaTrackConstraintSet],
+            });
+          }
         }
       } catch {
         // ตั้งซูมไม่ได้ก็ใช้ค่าเดิม
@@ -1363,7 +1379,8 @@ function PoseSession(props: PoseProps) {
     90 - (facing === "user" ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA);
   const flip = facing === "user" ? "-scale-x-100" : "";
   const fit =
-    FORCE_CONTAIN || (vp.w > 0 && vp.w / vp.h > vdim.w / vdim.h)
+    (FORCE_CONTAIN && facing === "user") ||
+    (vp.w > 0 && vp.w / vp.h > vdim.w / vdim.h)
       ? "object-contain"
       : "object-cover";
 
