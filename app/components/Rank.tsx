@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ICONS, Icon, POINT_QUOTA, POINT_REWARD } from "./auth-shared";
+import {
+  ICONS,
+  Icon,
+  POINT_QUOTA,
+  POINT_REWARD,
+  Segmented,
+} from "./auth-shared";
+import DepartmentRank from "./DepartmentRank";
 
 /* ------------------------------------------------------------------ */
 /* ค่าคงที่และชนิดข้อมูล (ซ้ำกับ app/page.tsx เพราะไฟล์ page.tsx export ได้แค่ default) */
@@ -37,6 +44,8 @@ type Board = {
 type RankProps = {
   // ใช้โหลดอันดับใหม่เมื่อเปลี่ยนบัญชี
   username: string | null;
+  // ผู้ใช้เลือกแผนกไว้แล้วหรือยัง (ใช้ในแท็บอันดับแผนก)
+  hasDepartment: boolean;
   // แตะปุ่มเริ่มกระโดด
   onStart: () => void;
   // เปิดหน้าสรุป "ผลวันนี้"
@@ -395,6 +404,8 @@ function RankView(props: RankProps) {
   const [board, setBoard] = useState<Board | null>(null);
   const [boardErr, setBoardErr] = useState(false);
   const [boardNow, setBoardNow] = useState(0);
+  // สลับมุมมอง: อันดับบุคคล (รายวัน) / อันดับแผนก (รายสัปดาห์)
+  const [view, setView] = useState<"person" | "dept">("person");
 
   // ให้ loadBoard อ่าน callback ล่าสุดได้โดยไม่ต้องสร้างฟังก์ชันใหม่
   const P = useRef(props);
@@ -507,6 +518,37 @@ function RankView(props: RankProps) {
     );
   };
 
+  // ตัวสลับ บุคคล / แผนก
+  const tabs = (
+    <div className="mb-4">
+      <Segmented<"person" | "dept">
+        value={view}
+        onChange={setView}
+        options={
+          [
+            ["person", "บุคคล"],
+            ["dept", "แผนก"],
+          ] as const
+        }
+      />
+    </div>
+  );
+
+  // มุมมองอันดับแผนก
+  if (view === "dept") {
+    return (
+      <>
+        <header className="mb-5">
+          <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
+            อันดับแผนก
+          </h1>
+        </header>
+        {tabs}
+        <DepartmentRank hasDepartment={props.hasDepartment} />
+      </>
+    );
+  }
+
   return (
     <>
       <header className="mb-5 flex items-end justify-between gap-3">
@@ -528,6 +570,7 @@ function RankView(props: RankProps) {
         </button>
       </header>
 
+      {tabs}
 
       {!board && !boardErr && (
         <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>

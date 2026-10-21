@@ -46,6 +46,8 @@ function ensureIndexes(db: Db) {
         .createIndex({ userId: 1, day: 1 }, { unique: true }),
       // เรียงลำดับในวันเดียวกัน
       db.collection("goal_hits").createIndex({ day: 1, seq: 1 }),
+      // คะแนนแผนกรายสัปดาห์
+      db.collection("dept_jumps").createIndex({ ts: 1, departmentId: 1 }),
     ]).catch((e) => {
       indexReady = null;
       console.error("ensureIndexes failed", e);
@@ -198,6 +200,21 @@ export async function POST(req: Request) {
       kcal,
     });
 
+    // คะแนนแผนก: เก็บแยก collection เพื่อไม่หายเมื่อผู้ใช้ล้างประวัติ
+    // ล้มเหลวไม่ทำให้การบันทึกรอบล้มเหลว
+    if (user.departmentId != null) {
+      try {
+        await db.collection("dept_jumps").insertOne({
+          userId: user.id,
+          departmentId: user.departmentId,
+          ts,
+          total,
+        });
+      } catch (e) {
+        console.error("dept_jumps insert failed", e);
+      }
+    }
+
     // ให้ point ล้มเหลวไม่ทำให้การบันทึกรอบล้มเหลว
     try {
       await settleDailyGoal(db, user.id, now);
@@ -213,7 +230,7 @@ export async function POST(req: Request) {
   }
 }
 
-// ล้างประวัติทั้งหมดของผู้ใช้ (ไม่ลบ point และบันทึกถึงเป้า)
+// ล้างประวัติทั้งหมดของผู้ใช้ (ไม่ลบ point, บันทึกถึงเป้า และคะแนนแผนก)
 export async function DELETE() {
   try {
     const user = await currentUser();
