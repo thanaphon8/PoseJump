@@ -18,6 +18,7 @@ function weekRange(now = Date.now()) {
 
 // GET /api/departments/members
 // → สมาชิกกลุ่มเดียวกับผู้ใช้ที่ล็อกอิน + คะแนนรวมกลุ่มสัปดาห์นี้ (ครั้งกระโดด)
+// + โน๊ตสั้นของแต่ละคน (เฉพาะที่ยังไม่หมดอายุ 24 ชม.)
 // สำนักงานใหญ่ = กลุ่มคือแผนก / หน้าร้าน = กลุ่มคือสาขา (1 สาขา = 1 กลุ่ม)
 export async function GET() {
   await connection();
@@ -74,6 +75,27 @@ export async function GET() {
         .toArray(),
     ]);
 
+    // โน๊ตของสมาชิกกลุ่มนี้ที่ยังไม่หมดอายุ
+    // (TTL index ลบแถวเก่าให้เอง แต่ monitor ช้าได้ ~60 วินาที จึงกรอง expiresAt ซ้ำที่นี่)
+    const noteDocs = await db
+      .collection("dept_notes")
+      .find(
+        { userId: { $in: docs.map((d) => d._id) }, expiresAt: { $gt: new Date() } },
+        { projection: { userId: 1, text: 1, style: 1, expiresAt: 1 } }
+      )
+      .toArray();
+    const noteByUser = new Map(
+      noteDocs.map((n) => [
+        String(n.userId),
+        {
+          text: n.text as string,
+          // โน๊ตเก่าที่ไม่มี style = กรอบธรรมดา
+          style: (n.style as string) ?? "none",
+          expiresAt: (n.expiresAt as Date).toISOString(),
+        },
+      ])
+    );
+
     // ตัวเองขึ้นก่อน ที่เหลือเรียงตามเวลาสมัคร
     const members = docs
       .map((d) => ({
@@ -81,6 +103,7 @@ export async function GET() {
         username: (d.display ?? d.username) as string,
         avatarUrl: (d.avatarUrl as string) || null,
         isMe: d._id.equals(me.id),
+        note: noteByUser.get(String(d._id)) ?? null,
       }))
       .sort((a, b) => Number(b.isMe) - Number(a.isMe));
 

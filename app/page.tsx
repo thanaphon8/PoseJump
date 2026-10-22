@@ -859,6 +859,8 @@ export default function Home() {
     document.documentElement.style.overflowX = "hidden";
     document.body.style.overflowX = "hidden";
     document.body.style.overscrollBehaviorX = "none";
+    // portal (เช่น popup สมาชิกแผนก) ต่อกับ body โดยตรง ต้องได้ฟอนต์เดียวกับทั้งแอป
+    document.body.style.fontFamily = FONT;
   }, []);
 
   const commitShot = useCallback((kind: "start" | "end", img: string | null) => {
