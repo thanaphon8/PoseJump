@@ -101,7 +101,7 @@ export function Icon({
 export function Logo({
   size = 32,
   className = "",
-  src = "/img/logo.PNG",
+  src = "/img/logo.png",
 }: {
   size?: number;
   className?: string;
@@ -127,7 +127,7 @@ export function Logo({
 // โลโก้หน้า login/register: ไม่มีกรอบวงกลม แสดงโลโก้เต็มขนาด
 export function AuthLogo({
   size = 160,
-  src = "/img/logo.PNG",
+  src = "/img/logo.png",
 }: {
   size?: number;
   src?: string;
@@ -364,7 +364,7 @@ export function AuthShell({
 
       <div className="relative flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
         <div className="flex flex-col items-center gap-3 pt-4 lg:hidden">
-          <AuthLogo size={220} src="/img/logo.PNG" />
+          <AuthLogo size={220} src="/img/logo.png" />
           <span className="max-w-full text-center text-[22px] font-bold leading-tight tracking-tight text-[#C9F25B]">
             {APP_SHORT}
           </span>

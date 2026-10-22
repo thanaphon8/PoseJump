@@ -258,7 +258,7 @@ function Icon({
   );
 }
 
-// โลโก้เหมือนฝั่งผู้ใช้: public/img/logo.PNG พื้นหลังโปร่งใส ไม่ตัดกรอบ
+// โลโก้เหมือนฝั่งผู้ใช้: public/img/logo.png พื้นหลังโปร่งใส ไม่ตัดกรอบ
 function Logo({
   size = 32,
   className = "",
@@ -269,7 +269,7 @@ function Logo({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/img/logo.PNG"
+      src="/img/logo.png"
       alt=""
       onError={(e) => {
         e.currentTarget.style.display = "none";
