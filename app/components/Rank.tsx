@@ -25,6 +25,9 @@ type BoardEntry = {
   name: string;
   // รูปโปรไฟล์ที่ผู้ใช้ตั้งไว้ (ถ้าไม่มีจะแสดงตัวอักษรแรกของชื่อ)
   avatarUrl?: string | null;
+  // บริษัท / แผนก ของคนนั้น (แสดงใต้ชื่อ ถ้าไม่มีจะไม่แสดง)
+  company?: string | null;
+  department?: string | null;
   total: number;
   rounds: number;
   me: boolean;
@@ -104,6 +107,29 @@ function Avatar({
     >
       {initialOf(name)}
     </span>
+  );
+}
+
+// บรรทัดบริษัท · แผนก ใต้ชื่อ (ไม่มีข้อมูลเลยจะไม่แสดง)
+function OrgLine({
+  company,
+  department,
+  center = false,
+}: {
+  company?: string | null;
+  department?: string | null;
+  center?: boolean;
+}) {
+  const text = [company, department].filter(Boolean).join(" · ");
+  if (!text) return null;
+  return (
+    <div
+      className={`w-full truncate text-[11px] leading-4 text-[#6B7A6E] ${
+        center ? "text-center" : ""
+      }`}
+    >
+      {text}
+    </div>
   );
 }
 
@@ -250,9 +276,29 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
     { place: 3, e: entries[2] },
   ];
   const look = {
-    1: { h: 128, step: "bg-[#C9F25B] text-[#1B2A21]", av: 84, delay: "0s" },
-    2: { h: 96, step: "bg-[#1B2A21] text-[#C9F25B]", av: 68, delay: ".12s" },
-    3: { h: 72, step: "bg-[#3F5E1F] text-white", av: 68, delay: ".24s" },
+    1: {
+      h: 128,
+      step: "bg-[#C9F25B] text-[#1B2A21]",
+      av: 84,
+      delay: "0s",
+      // อันดับ 1: ตัวใหญ่สุด และเลื่อนลงมาจากเลขอันดับ
+      co: "mt-3 line-clamp-2 text-[14px] leading-[17px]",
+    },
+    2: {
+      h: 96,
+      step: "bg-[#1B2A21] text-[#C9F25B]",
+      av: 68,
+      delay: ".12s",
+      co: "line-clamp-2 text-[13px] leading-[15px]",
+    },
+    3: {
+      h: 72,
+      step: "bg-[#3F5E1F] text-white",
+      av: 68,
+      delay: ".24s",
+      // แท่นเตี้ยสุด แสดงบรรทัดเดียวเพื่อไม่ล้นแท่น
+      co: "line-clamp-1 text-[12px] leading-[14px]",
+    },
   } as const;
 
   return (
@@ -284,6 +330,7 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
                   <div className="mt-2 w-full truncate text-center text-[14px] font-semibold">
                     {e.name}
                   </div>
+                  <OrgLine department={e.department} center />
                   {e.me && (
                     <span className="mt-0.5 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
                       คุณ
@@ -312,7 +359,7 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
                 </>
               )}
               <div
-                className={`pj-rise flex w-full flex-col items-center justify-start gap-1 rounded-t-2xl pt-3 ${
+                className={`pj-rise relative flex w-full flex-col items-center justify-start gap-1 overflow-hidden rounded-t-2xl px-1.5 pt-3 ${
                   e ? L.step : "bg-[#EEF2E4] text-[#A9B79A]"
                 }`}
                 style={{ height: L.h, animationDelay: L.delay }}
@@ -320,9 +367,16 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
                 <span className="text-[32px] font-bold leading-none tabular-nums">
                   {place}
                 </span>
+                {e?.company && (
+                  <span
+                    className={`w-full break-words text-center font-bold ${L.co}`}
+                  >
+                    {e.company}
+                  </span>
+                )}
                 {reached && (
                   <span
-                    className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20"
+                    className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/20"
                     aria-label="ถึงเป้าแล้ว"
                   >
                     <Icon d={ICONS.check} size={12} />
@@ -483,6 +537,7 @@ function RankView(props: RankProps) {
               </span>
             )}
           </div>
+          <OrgLine company={e.company} department={e.department} />
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <GoalTag goalRank={e.goalRank ?? null} />
             {e.goalRank != null && (
@@ -633,6 +688,13 @@ function RankView(props: RankProps) {
                     <div className="truncate text-[24px] font-semibold">
                       {leader.name}
                     </div>
+                    {(leader.company || leader.department) && (
+                      <div className="truncate text-[12px] text-white/60">
+                        {[leader.company, leader.department]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                    )}
                     <div className="mt-1 flex items-baseline gap-2">
                       <span className="text-[40px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
                         {fmtNum(leader.total)}

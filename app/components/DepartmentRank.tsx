@@ -29,6 +29,8 @@ type DeptEntry = {
   kind?: "dept" | "branch";
   name: string;
   en: string;
+  // ชื่อบริษัทของกลุ่มนั้น (API ต้องส่งมา ถ้าไม่มีจะไม่แสดง)
+  company?: string | null;
   total: number;
   active: number;
   me: boolean;
@@ -278,10 +280,27 @@ function DeptPodium({
     { place: 1, e: entries[0] },
     { place: 3, e: entries[2] },
   ];
+  // co = สไตล์ชื่อบริษัทในแท่น (ตัวหนา) อันดับ 1 ใหญ่สุดและเลื่อนลงมาจากเลขอันดับ
+  // ขนาดจำกัดตามความสูงแท่น ไม่ให้ล้น (อันดับ 3 มือถือแท่นเตี้ยสุด แสดง 1 บรรทัด)
   const look = {
-    1: { h: "h-28 lg:h-40", step: "bg-[#C9F25B] text-[#1B2A21]", delay: "0s" },
-    2: { h: "h-20 lg:h-28", step: "bg-[#1B2A21] text-[#C9F25B]", delay: ".12s" },
-    3: { h: "h-14 lg:h-20", step: "bg-[#3F5E1F] text-white", delay: ".24s" },
+    1: {
+      h: "h-28 lg:h-40",
+      step: "bg-[#C9F25B] text-[#1B2A21]",
+      delay: "0s",
+      co: "mt-3 line-clamp-2 text-[13px] leading-[15px] lg:text-[16px] lg:leading-[19px]",
+    },
+    2: {
+      h: "h-20 lg:h-28",
+      step: "bg-[#1B2A21] text-[#C9F25B]",
+      delay: ".12s",
+      co: "line-clamp-2 text-[12px] leading-[14px] lg:text-[14px] lg:leading-[17px]",
+    },
+    3: {
+      h: "h-14 lg:h-20",
+      step: "bg-[#3F5E1F] text-white",
+      delay: ".24s",
+      co: "line-clamp-1 text-[11px] leading-[13px] lg:line-clamp-2 lg:text-[13px] lg:leading-[16px]",
+    },
   } as const;
 
   return (
@@ -350,7 +369,7 @@ function DeptPodium({
                   </>
                 )}
                 <div
-                  className={`pj-rise flex w-full flex-col items-center justify-start rounded-t-2xl pt-3 ${L.h} ${
+                  className={`pj-rise flex w-full flex-col items-center justify-start overflow-hidden rounded-t-2xl px-1.5 pt-3 ${L.h} ${
                     e ? L.step : "bg-[#EEF2E4] text-[#A9B79A]"
                   }`}
                   style={{ animationDelay: L.delay }}
@@ -358,6 +377,13 @@ function DeptPodium({
                   <span className="text-[32px] font-bold leading-none tabular-nums lg:text-[40px]">
                     {place}
                   </span>
+                  {e?.company && (
+                    <span
+                      className={`mt-1 w-full break-words text-center font-bold ${L.co}`}
+                    >
+                      {e.company}
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -504,6 +530,11 @@ export default function DepartmentRank({
                             </span>
                           )}
                         </div>
+                        {e.company && (
+                          <div className="truncate text-[12px] font-bold text-[#3F5E1F]">
+                            {e.company}
+                          </div>
+                        )}
                         <div className="mt-1.5 flex items-center gap-2">
                           <AvatarStack
                             members={e.members}
@@ -585,6 +616,11 @@ export default function DepartmentRank({
                   <h3 className="break-words text-[26px] font-bold leading-tight tracking-tight">
                     {opened.name}
                   </h3>
+                  {opened.company && (
+                    <div className="mt-0.5 break-words text-[15px] font-bold text-[#3F5E1F]">
+                      {opened.company}
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"

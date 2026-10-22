@@ -4,6 +4,10 @@ import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
 import { getUserPoints } from "../../../lib/points";
 import { purgeOrphansThrottled } from "../../../lib/purge-orphans";
+// แปลง companyId / departmentId / branchId เป็นชื่อ (ตัวเดียวกับที่หน้าตั้งค่าใช้)
+// ถ้า path ไม่ตรงโครงสร้างโปรเจกต์ ให้แก้บรรทัดนี้ให้ชี้ไปที่ branches.ts
+import { orgOf, getBranch, branchLabel } from "../../components/branches";
+import { getDepartment } from "../../components/departments";
 
 // "วันนี้" นับตามเวลาไทย (UTC+7) อันดับจึงรีเซ็ตตอนเที่ยงคืนของไทย
 const TZ_OFFSET = 7 * 3_600_000;
@@ -20,7 +24,41 @@ type UserDoc = {
   _id: ObjectId | string;
   nickname?: string;
   avatarUrl?: string | null;
+  companyId?: number | null;
+  departmentId?: number | null;
+  branchId?: number | null;
 };
+
+type Org = { company: string | null; department: string | null };
+
+// บริษัท + แผนก ของผู้ใช้ (คนหน้าร้านไม่มีแผนก ใช้ชื่อสาขาแทน)
+// แปลง id ที่อาจเก็บเป็น string ใน DB ให้เป็นตัวเลข (ว่าง = null)
+const num = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+function orgInfo(u: UserDoc): Org {
+  try {
+    const departmentId = num(u.departmentId);
+    const branchId = num(u.branchId);
+    const branch = getBranch(branchId);
+    // ไม่มี companyId ใน user → หาบริษัทจากแผนกหรือสาขาแทน (ทั้งคู่ผูกกับบริษัทอยู่แล้ว)
+    const companyId =
+      num(u.companyId) ??
+      getDepartment(departmentId)?.companyId ??
+      branch?.companyId ??
+      null;
+    const org = orgOf({ companyId, departmentId, branchId });
+    return {
+      company: org.company || null,
+      department: org.department || (branch ? branchLabel(branch) : null),
+    };
+  } catch {
+    return { company: null, department: null };
+  }
+}
 
 export async function GET() {
   await connection();
@@ -60,7 +98,14 @@ export async function GET() {
     const existing = await db
       .collection<UserDoc>("users")
       .find({ _id: { $in: rawRows.map((r) => toId(r._id)) } })
-      .project({ _id: 1, nickname: 1, avatarUrl: 1 })
+      .project({
+        _id: 1,
+        nickname: 1,
+        avatarUrl: 1,
+        companyId: 1,
+        departmentId: 1,
+        branchId: 1,
+      })
       .toArray();
     const names = new Map(
       existing.map((u) => [String(u._id), u.nickname as string])
@@ -71,6 +116,10 @@ export async function GET() {
         String(u._id),
         (u.avatarUrl as string | null | undefined) ?? null,
       ])
+    );
+    // บริษัท / แผนก ของแต่ละคน (แสดงใต้ชื่อในหน้าอันดับ)
+    const orgs = new Map(
+      existing.map((u) => [String(u._id), orgInfo(u as UserDoc)])
     );
     const rows = rawRows.filter((r) => names.has(String(r._id)));
 
@@ -98,10 +147,13 @@ export async function GET() {
 
     const entries = top.map((r, i) => {
       const goal = goalOf.get(String(r._id));
+      const org = orgs.get(String(r._id));
       return {
         rank: i + 1,
         name: names.get(String(r._id)) ?? "ไม่ระบุชื่อ",
         avatarUrl: avatars.get(String(r._id)) ?? null,
+        company: org?.company ?? null,
+        department: org?.department ?? null,
         total: r.total,
         rounds: r.rounds,
         me: String(r._id) === myId,
