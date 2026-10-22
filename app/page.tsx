@@ -732,11 +732,14 @@ export default function Home() {
     setPromoOpen(true);
   }, [authReady, user]);
 
+  const username = user?.username ?? null;
+
   useEffect(() => {
     if (!authReady) return;
+    let cancelled = false;
     let v: DayShots = EMPTY_SHOTS;
     try {
-      const raw = localStorage.getItem(`${SHOTS_KEY}:${user?.username ?? "guest"}`);
+      const raw = localStorage.getItem(`${SHOTS_KEY}:${username ?? "guest"}`);
       if (raw) {
         const d = JSON.parse(raw) as DayShots;
         if (d && d.day === dayKey(Date.now())) {
@@ -746,7 +749,40 @@ export default function Home() {
     } catch {}
     shotsRef.current = v;
     setShots(v);
-  }, [authReady, user]);
+
+    // รูปของวันนี้ที่บันทึกไว้บนเซิร์ฟเวอร์ (Drive) ใช้เมื่อในเครื่องนี้ไม่มีรูป
+    // เช่น ล็อกอินจากเครื่องหรือเบราว์เซอร์อื่น หรือล้างข้อมูลเบราว์เซอร์
+    if (username) {
+      fetch("/api/snapshot", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then(
+          (
+            d: {
+              snapshots?: Partial<Record<"first-of-day" | "near-goal", string>>;
+            } | null
+          ) => {
+            if (cancelled || !d?.snapshots) return;
+            const dk = dayKey(Date.now());
+            const cur = shotsRef.current;
+            const base =
+              cur.day === dk ? cur : { day: dk, start: null, end: null };
+            const next: DayShots = {
+              day: dk,
+              start: base.start ?? d.snapshots["first-of-day"] ?? null,
+              end: base.end ?? d.snapshots["near-goal"] ?? null,
+            };
+            if (cur.day === dk && next.start === cur.start && next.end === cur.end)
+              return;
+            shotsRef.current = next;
+            setShots(next);
+          }
+        )
+        .catch(() => {});
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, username]);
 
   useEffect(() => {
     setNow0(Date.now());
@@ -1239,7 +1275,7 @@ export default function Home() {
 
         <section className={`${card} p-4 lg:p-5`}>
           <h2 className="text-[15px] font-semibold">ภาพยืนยันการกระโดดวันนี้</h2>
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="mt-3 grid grid-cols-2 items-start gap-3">
             {(
               [
                 ["ภาพแรกของวัน", shots.start, "ยังไม่มีภาพ"],
@@ -1256,8 +1292,8 @@ export default function Home() {
                   <img
                     src={src}
                     alt={`ภาพผู้กระโดด ${label}`}
-                    className="w-full rounded-2xl bg-[#EEF2E4] object-cover"
-                    style={{ aspectRatio: `${vdim.w} / ${vdim.h}` }}
+                    referrerPolicy="no-referrer"
+                    className="h-auto w-full rounded-2xl bg-[#EEF2E4]"
                   />
                 ) : (
                   <div

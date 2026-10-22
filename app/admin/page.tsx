@@ -37,6 +37,7 @@ type DayEntry = {
   userId: string;
   name: string;
   username: string;
+  avatarUrl?: string | null;
   total: number;
   rounds: number;
   goal: number;
@@ -57,6 +58,7 @@ type WeekEntry = {
   userId: string;
   name: string;
   username: string;
+  avatarUrl?: string | null;
   points: number;
   total: number;
   rewardDays: number;
@@ -69,6 +71,7 @@ type MonthEntry = {
   userId: string;
   name: string;
   username: string;
+  avatarUrl?: string | null;
   points: number;
   total: number;
   rounds: number;
@@ -185,7 +188,7 @@ function downloadCsv(
     return `"${t.replace(/"/g, '""')}"`;
   };
   const text = [head, ...body].map((r) => r.map(esc).join(",")).join("\r\n");
-  const blob = new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob(["\uFEFF" + text], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -266,7 +269,50 @@ function Logo({
   );
 }
 
-function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+// รูปโปรไฟล์ ถ้าไม่มีหรือโหลดไม่ได้ใช้ตัวอักษรแรกของชื่อแทน
+// รูปที่เพิ่งอัปโหลดขึ้น Drive บางครั้งยังโหลดไม่ได้ทันที ลองใหม่ได้ 3 ครั้ง
+function Avatar({
+  name,
+  src,
+  size = 40,
+}: {
+  name: string;
+  src?: string | null;
+  size?: number;
+}) {
+  const [bad, setBad] = useState(false);
+  const [tries, setTries] = useState(0);
+
+  useEffect(() => {
+    setBad(false);
+    setTries(0);
+  }, [src]);
+
+  useEffect(() => {
+    if (!bad || !src || tries >= 3) return;
+    const t = setTimeout(() => {
+      setTries((n) => n + 1);
+      setBad(false);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [bad, src, tries]);
+
+  if (src && !bad) {
+    const url =
+      tries > 0 ? `${src}${src.includes("?") ? "&" : "?"}r=${tries}` : src;
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={url}
+        alt={name}
+        referrerPolicy="no-referrer"
+        onError={() => setBad(true)}
+        className="shrink-0 rounded-full bg-[#1B2A21] object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-full bg-[#1B2A21] font-semibold text-[#C9F25B]"
@@ -495,12 +541,38 @@ function Shell({
 
 /* ---------------- สังกัด / กลุ่ม ---------------- */
 
+// สังกัดของผู้เล่นเป็นป้ายแยก: บริษัท / ที่ทำงาน / แผนกหรือสาขา / จังหวัด
 function OrgLine({ org }: { org?: OrgInfo }) {
-  const t = orgText(org);
-  if (!t) return null;
+  if (!org) return null;
+  const place = org.department
+    ? `แผนก ${org.department}`
+    : org.branch
+      ? `สาขา ${org.branchCode ? `ID ${org.branchCode} ` : ""}${org.branch}`
+      : null;
+  if (!org.company && !org.workplace && !place) return null;
   return (
-    <div className="truncate text-[11px] text-[#8A9A7C]" title={t}>
-      {t}
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      {org.company && (
+        <span className="rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
+          {org.company}
+        </span>
+      )}
+      {org.workplace && (
+        <span className="rounded-full bg-[#E8F5C1] px-2 py-0.5 text-[11px] font-semibold text-[#3F5E1F]">
+          {org.workplace}
+        </span>
+      )}
+      {place && (
+        <span
+          className="max-w-full truncate rounded-full bg-[#EEF2E4] px-2 py-0.5 text-[11px] text-[#1B2A21]"
+          title={place}
+        >
+          {place}
+        </span>
+      )}
+      {org.province && (
+        <span className="text-[11px] text-[#8A9A7C]">{org.province}</span>
+      )}
     </div>
   );
 }
@@ -673,9 +745,11 @@ export default function AdminPage() {
   const [pwErr, setPwErr] = useState("");
   const [busy, setBusy] = useState(false);
   // ผู้เล่นที่ถูกกดดูผลของวัน (หน้ารายวัน) null = ไม่เปิด
-  const [detail, setDetail] = useState<{ userId: string; date: string } | null>(
-    null
-  );
+  const [detail, setDetail] = useState<{
+    userId: string;
+    date: string;
+    avatarUrl?: string | null;
+  } | null>(null);
 
   useEffect(() => {
     const t = todayYmd();
@@ -1393,12 +1467,20 @@ export default function AdminPage() {
                             tabIndex={0}
                             aria-label={`ดูผลวันนี้ของ ${e.name}`}
                             onClick={() =>
-                              setDetail({ userId: e.userId, date })
+                              setDetail({
+                                userId: e.userId,
+                                date,
+                                avatarUrl: e.avatarUrl,
+                              })
                             }
                             onKeyDown={(ev) => {
                               if (ev.key === "Enter" || ev.key === " ") {
                                 ev.preventDefault();
-                                setDetail({ userId: e.userId, date });
+                                setDetail({
+                                  userId: e.userId,
+                                  date,
+                                  avatarUrl: e.avatarUrl,
+                                });
                               }
                             }}
                             className={`cursor-pointer transition-colors hover:bg-[#EEF2E4] focus-visible:bg-[#EEF2E4] focus-visible:outline-none ${
@@ -1410,7 +1492,7 @@ export default function AdminPage() {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-3">
-                                <Avatar name={e.name} />
+                                <Avatar name={e.name} src={e.avatarUrl} size={44} />
                                 <div className="min-w-0">
                                   <div className="truncate text-[15px] font-semibold">
                                     {e.name}
@@ -1544,7 +1626,7 @@ export default function AdminPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                              <Avatar name={e.name} />
+                              <Avatar name={e.name} src={e.avatarUrl} size={44} />
                               <div className="min-w-0">
                                 <div className="truncate text-[15px] font-semibold">
                                   {e.name}
@@ -1674,7 +1756,7 @@ export default function AdminPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                              <Avatar name={e.name} />
+                              <Avatar name={e.name} src={e.avatarUrl} size={44} />
                               <div className="min-w-0">
                                 <div className="truncate text-[15px] font-semibold">
                                   {e.name}
@@ -1752,6 +1834,7 @@ export default function AdminPage() {
           <UserDayModal
             userId={detail.userId}
             date={detail.date}
+            avatarUrl={detail.avatarUrl}
             onClose={() => setDetail(null)}
             onLocked={() => {
               setDetail(null);

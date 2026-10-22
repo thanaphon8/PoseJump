@@ -57,6 +57,7 @@ export async function GET(req: Request) {
           userId: me.userId,
           name: me.name,
           username: me.username,
+          avatarUrl: me.avatarUrl,
           org: me.org,
         },
         total: me.total,

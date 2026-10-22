@@ -9,6 +9,7 @@ import {
   monthRange,
   validMonth,
   ymdOf,
+  type OrgInfo,
 } from "@/lib/admin-stats";
 
 // GET /api/admin/month?month=YYYY-MM&scope=month|all
@@ -54,6 +55,8 @@ export async function GET(req: Request) {
     {
       name: string;
       username: string;
+      avatarUrl: string | null;
+      org: OrgInfo;
       points: number;
       total: number;
       rounds: number;
@@ -67,9 +70,12 @@ export async function GET(req: Request) {
   for (const list of perDay) {
     if (list.length > 0) activeDays += 1;
     for (const e of list) {
+      // name / avatarUrl / org มากับแถวรายวันจาก computeRange อยู่แล้ว
       const a = acc.get(e.userId) ?? {
         name: e.name,
         username: e.username,
+        avatarUrl: e.avatarUrl,
+        org: e.org,
         points: 0,
         total: 0,
         rounds: 0,

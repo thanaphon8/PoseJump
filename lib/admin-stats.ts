@@ -84,6 +84,7 @@ export type DayEntry = {
   goal: number;
   goalRank: number | null;
   points: number;
+  avatarUrl: string | null;
   org: OrgInfo;
 };
 
@@ -110,6 +111,12 @@ export function orgFromUser(u?: Row): OrgInfo {
     groupKey: dept ? `d:${dept.id}` : branch ? `b:${branch.id}` : null,
     groupName: dept ? dept.name : branch ? branchLabel(branch) : null,
   };
+}
+
+// รูปโปรไฟล์ของผู้เล่น ถ้า field ใน users ไม่ใช่ avatarUrl แก้ที่นี่ที่เดียว
+export function avatarOf(u?: Row): string | null {
+  const v = u?.avatarUrl;
+  return typeof v === "string" && v ? v : null;
 }
 
 // userId อาจเก็บเป็น ObjectId หรือ string รองรับทั้งสองแบบ
@@ -171,20 +178,25 @@ function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
         goal: DAILY_GOAL,
         goalRank,
         points: goalRank !== null && goalRank <= POINT_QUOTA ? POINT_REWARD : 0,
+        avatarUrl: avatarOf(u),
         org: orgFromUser(u),
       };
     })
     .sort((a, b) => b.total - a.total);
 }
 
-// เติมสังกัด (org) ให้แถวที่มี userId ใช้กับ route สัปดาห์/เดือนที่สร้างแถวเอง
+// เติมสังกัด (org) และรูปโปรไฟล์ ให้แถวที่มี userId
+// ใช้กับ route สัปดาห์/เดือนที่สร้างแถวเอง
 export async function withOrg<T extends { userId: string }>(
   db: Db,
   rows: T[]
-): Promise<(T & { org: OrgInfo })[]> {
+): Promise<(T & { org: OrgInfo; avatarUrl: string | null })[]> {
   if (rows.length === 0) return [];
   const userMap = await loadUserMap(db, rows as unknown as Row[]);
-  return rows.map((r) => ({ ...r, org: orgFromUser(userMap.get(r.userId)) }));
+  return rows.map((r) => {
+    const u = userMap.get(r.userId);
+    return { ...r, org: orgFromUser(u), avatarUrl: avatarOf(u) };
+  });
 }
 
 // ผลของทุกคนในหนึ่งวัน

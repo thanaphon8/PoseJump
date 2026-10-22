@@ -7,6 +7,7 @@ import {
   mondayOf,
   validYmd,
   ymdOf,
+  type OrgInfo,
 } from "@/lib/admin-stats";
 
 // GET /api/admin/week?date=YYYY-MM-DD
@@ -27,6 +28,8 @@ export async function GET(req: Request) {
     {
       name: string;
       username: string;
+      avatarUrl: string | null;
+      org: OrgInfo;
       points: number;
       total: number;
       rewardDays: number;
@@ -35,9 +38,12 @@ export async function GET(req: Request) {
   >();
   perDay.forEach((list, di) => {
     for (const e of list) {
+      // name / avatarUrl / org มากับแถวรายวันจาก computeDay อยู่แล้ว
       const a = acc.get(e.userId) ?? {
         name: e.name,
         username: e.username,
+        avatarUrl: e.avatarUrl,
+        org: e.org,
         points: 0,
         total: 0,
         rewardDays: 0,
