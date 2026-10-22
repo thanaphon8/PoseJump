@@ -2,43 +2,66 @@ import { NextResponse, connection } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
-import { getUserPoints } from "../../../lib/points";
 
-// วางที่ app/api/profile/route.ts
-// รับ FormData: nickname (ไม่บังคับ), avatar (ไฟล์รูป ไม่บังคับ)
-// อัปโหลดรูปขึ้น Google Drive ผ่าน Apps Script ตัวเดียวกับตอน register
-const NAME_MAX = 20;
-const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+// วางที่ app/api/snapshot/route.ts
+// POST: รับ FormData: kind ("first-of-day" | "near-goal"), photo (ไฟล์รูป)
+//   อัปโหลดขึ้น Google Drive ผ่าน Apps Script ตัวเดียวกับรูปโปรไฟล์ (ลงโฟลเดอร์ย่อยตาม kind)
+//   เก็บได้ 1 รูปต่อ kind ต่อผู้ใช้ต่อวัน (วันเวลาไทย) ถ้ามีแล้วจะไม่บันทึกซ้ำ
+// GET: คืนรูปของผู้ใช้ที่ล็อกอินสำหรับวันนี้ (หรือ ?date=YYYY-MM-DD)
 
-const toId = (v: ObjectId | string) =>
-  typeof v === "string" && ObjectId.isValid(v) ? new ObjectId(v) : v;
+const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+const KINDS = ["first-of-day", "near-goal"] as const;
+type Kind = (typeof KINDS)[number];
+
+const EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
 
 const noStore = { "Cache-Control": "no-store" };
 
 const fail = (error: string, status: number) =>
   NextResponse.json({ error }, { status, headers: noStore });
 
-const EXT: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif",
+const toId = (v: ObjectId | string) =>
+  typeof v === "string" && ObjectId.isValid(v) ? new ObjectId(v) : v;
+
+// วันที่เวลาไทย YYYY-MM-DD (คำนวณฝั่งเซิร์ฟเวอร์ ไม่เชื่อค่าจากเครื่องผู้ใช้)
+const thaiDate = (d = new Date()) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+
+type SnapshotDoc = {
+  userId: ObjectId | string;
+  date: string;
+  kind: Kind;
+  imageUrl: string;
+  driveFileId: string;
+  createdAt: Date;
 };
 
-async function uploadAvatar(
+async function uploadToDrive(
   file: File,
-  username: string
+  kind: Kind,
+  username: string,
+  date: string
 ): Promise<{ imageUrl: string; fileId: string } | null> {
   const GAS_URL = process.env.GOOGLE_APPS_SCRIPT_URL;
   if (!GAS_URL) {
-    console.error("profile: GOOGLE_APPS_SCRIPT_URL is not set");
+    console.error("snapshot: GOOGLE_APPS_SCRIPT_URL is not set");
     return null;
   }
   try {
     const buf = await file.arrayBuffer();
     const fileBase64 = Buffer.from(buf).toString("base64");
     const ext = EXT[file.type] ?? "jpg";
-    const fileName = `avatar_${username}_${Date.now()}.${ext}`;
+    const safeUser = username.replace(/[^\w\-]/g, "_");
+    const fileName = `${safeUser}_${date}.${ext}`;
 
     const res = await fetch(GAS_URL, {
       method: "POST",
@@ -48,6 +71,8 @@ async function uploadAvatar(
         fileBase64,
         fileName,
         fileType: file.type,
+        subfolder: kind,
+        overwrite: true,
       }),
     });
     const j = (await res.json()) as {
@@ -58,15 +83,15 @@ async function uploadAvatar(
     if (j.success && j.imageUrl) {
       return { imageUrl: j.imageUrl, fileId: j.fileId ?? "" };
     }
-    console.error("profile: apps script returned failure", j);
+    console.error("snapshot: apps script returned failure", j);
     return null;
   } catch (e) {
-    console.error("profile: upload via Apps Script failed", e);
+    console.error("snapshot: upload via Apps Script failed", e);
     return null;
   }
 }
 
-export async function PATCH(req: Request) {
+export async function POST(req: Request) {
   await connection();
   try {
     const user = await currentUser();
@@ -79,63 +104,93 @@ export async function PATCH(req: Request) {
       return fail("ข้อมูลไม่ถูกต้อง", 400);
     }
 
-    const set: Record<string, unknown> = {};
+    const kindRaw = fd.get("kind");
+    if (typeof kindRaw !== "string" || !KINDS.includes(kindRaw as Kind)) {
+      return fail("ชนิดรูปไม่ถูกต้อง", 400);
+    }
+    const kind = kindRaw as Kind;
 
-    // ชื่อ (ไม่บังคับ)
-    const nickRaw = fd.get("nickname");
-    if (nickRaw !== null) {
-      const nick = typeof nickRaw === "string" ? nickRaw.trim() : "";
-      const len = Array.from(nick).length;
-      if (len < 1 || len > NAME_MAX) {
-        return fail(`ชื่อต้องยาว 1-${NAME_MAX} ตัวอักษร`, 400);
-      }
-      set.nickname = nick;
+    const photo = fd.get("photo");
+    if (!(photo instanceof File) || photo.size === 0) {
+      return fail("ไม่พบไฟล์รูป", 400);
+    }
+    if (!EXT[photo.type]) {
+      return fail("ไฟล์ต้องเป็นรูป JPG, PNG หรือ WebP", 400);
+    }
+    if (photo.size > PHOTO_MAX_BYTES) {
+      return fail("ขนาดไฟล์รูปภาพต้องไม่เกิน 5MB", 400);
     }
 
-    // รูป (ไม่บังคับ)
-    const avatar = fd.get("avatar");
-    if (avatar instanceof File && avatar.size > 0) {
-      if (!avatar.type.startsWith("image/")) {
-        return fail("ไฟล์ต้องเป็นรูปภาพ", 400);
-      }
-      if (avatar.size > AVATAR_MAX_BYTES) {
-        return fail("ขนาดไฟล์รูปภาพต้องไม่เกิน 5MB", 400);
-      }
-      const up = await uploadAvatar(avatar, String(user.username ?? "user"));
-      if (!up) return fail("อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง", 502);
-      set.avatarUrl = up.imageUrl;
-      set.driveFileId = up.fileId;
-    }
-
-    if (Object.keys(set).length === 0) {
-      return fail("ไม่มีข้อมูลที่จะแก้ไข", 400);
-    }
-
+    const date = thaiDate();
     const db = await getDb();
-    const users = db.collection<{ _id: ObjectId | string }>("users");
-    await users.updateOne({ _id: toId(user.id) }, { $set: set });
+    const col = db.collection<SnapshotDoc>("snapshots");
+    const userId = toId(user.id);
 
-    const fresh = (await users.findOne({ _id: toId(user.id) })) as {
-      nickname?: string;
-      username?: string;
-      avatarUrl?: string | null;
-    } | null;
+    // มีรูปชนิดนี้ของวันนี้แล้ว ไม่บันทึกซ้ำ
+    const existing = await col.findOne({ userId, date, kind });
+    if (existing) {
+      return NextResponse.json(
+        { saved: false, imageUrl: existing.imageUrl, date, kind },
+        { headers: noStore }
+      );
+    }
 
-    const points = await getUserPoints(user.id);
+    const up = await uploadToDrive(
+      photo,
+      kind,
+      String(user.username ?? "user"),
+      date
+    );
+    if (!up) return fail("อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง", 502);
 
-    return NextResponse.json(
+    // ถ้าสองคำขอเข้าพร้อมกัน upsert + $setOnInsert ทำให้มีแค่เอกสารเดียว
+    await col.updateOne(
+      { userId, date, kind },
       {
-        user: {
-          name: fresh?.nickname ?? user.nickname,
-          username: fresh?.username ?? user.username,
-          avatarUrl: fresh?.avatarUrl || null,
-          points,
+        $setOnInsert: {
+          userId,
+          date,
+          kind,
+          imageUrl: up.imageUrl,
+          driveFileId: up.fileId,
+          createdAt: new Date(),
         },
       },
+      { upsert: true }
+    );
+
+    const saved = await col.findOne({ userId, date, kind });
+    return NextResponse.json(
+      { saved: true, imageUrl: saved?.imageUrl ?? up.imageUrl, date, kind },
       { headers: noStore }
     );
   } catch (e) {
-    console.error("profile PATCH failed", e);
+    console.error("snapshot POST failed", e);
+    return fail("เซิร์ฟเวอร์ผิดพลาด", 500);
+  }
+}
+
+export async function GET(req: Request) {
+  await connection();
+  try {
+    const user = await currentUser();
+    if (!user) return fail("กรุณาเข้าสู่ระบบ", 401);
+
+    const q = new URL(req.url).searchParams.get("date");
+    const date = q && /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : thaiDate();
+
+    const db = await getDb();
+    const rows = await db
+      .collection<SnapshotDoc>("snapshots")
+      .find({ userId: toId(user.id), date })
+      .toArray();
+
+    const out: Partial<Record<Kind, string>> = {};
+    for (const r of rows) out[r.kind] = r.imageUrl;
+
+    return NextResponse.json({ date, snapshots: out }, { headers: noStore });
+  } catch (e) {
+    console.error("snapshot GET failed", e);
     return fail("เซิร์ฟเวอร์ผิดพลาด", 500);
   }
 }

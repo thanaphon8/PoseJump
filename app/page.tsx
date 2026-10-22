@@ -12,6 +12,7 @@ import HomeView from "./components/HomeView";
 import PromoPopup from "./components/PromoPopup";
 import Setting from "./components/Setting";
 import Navbar from "./components/Navbar";
+import { uploadShot } from "./components/snapshot";
 import type { Tab, NavItem } from "./components/Navbar";
 import type { Session } from "./components/History";
 import {
@@ -836,6 +837,10 @@ export default function Home() {
         JSON.stringify(next)
       );
     } catch {}
+    // ส่งภาพขึ้น Drive เฉพาะผู้ใช้ที่ล็อกอิน เซิร์ฟเวอร์กันบันทึกซ้ำรายวันให้เอง
+    if (userRef.current) {
+      uploadShot(kind, img).catch(() => {});
+    }
   }, []);
 
   const getTodayBase = useCallback(() => {
@@ -1269,7 +1274,7 @@ export default function Home() {
             ))}
           </div>
           <p className="mt-3 text-[12px] text-[#6B7A6E]">
-            ถ่ายวันละ 2 ภาพ เก็บในเครื่องนี้เท่านั้น ไม่ถูกอัปโหลด และรีเซ็ตทุกวัน
+            ถ่ายวันละ 2 ภาพ ผู้ที่เข้าสู่ระบบจะถูกบันทึกภาพไว้ใน Google Drive ของแอป และรีเซ็ตทุกวัน
           </p>
         </section>
 
