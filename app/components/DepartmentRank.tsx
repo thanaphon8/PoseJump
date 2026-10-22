@@ -52,14 +52,23 @@ type DeptBoard = {
 
 const gid = (e: DeptEntry) => e.key ?? String(e.id);
 
-const badge = (rank: number) =>
-  rank === 1
-    ? "bg-[#C9F25B] text-[#1B2A21]"
-    : rank === 2
-      ? "bg-[#1B2A21] text-[#C9F25B]"
-      : rank === 3
-        ? "bg-[#3F5E1F] text-white"
-        : "bg-[#EEF2E4] text-[#6B7A6E]";
+// เก็บอันดับแผนกล่าสุดไว้ในหน่วยความจำ: สลับกลับมาหน้านี้แล้วเห็นทันที (แล้วค่อยรีเฟรชเงียบๆ)
+let cachedBoard: DeptBoard | null = null;
+
+async function fetchDeptBoard(): Promise<DeptBoard> {
+  const r = await fetch("/api/leaderboard/departments", {
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error("load failed");
+  const b = (await r.json()) as DeptBoard;
+  cachedBoard = b;
+  return b;
+}
+
+// โหลดล่วงหน้า (เรียกจากหน้าอันดับบุคคล) ให้กดสลับมาแผนกแล้วมีข้อมูลทันที
+export function prefetchDeptBoard() {
+  fetchDeptBoard().catch(() => {});
+}
 
 function Avatar({
   name,
@@ -130,10 +139,11 @@ function AvatarStack({
   );
 }
 
+// จอตั้งแต่ sm (640px) ขึ้นไป = รูปบนแท่นใหญ่ขึ้น (ตรงกับ breakpoint ของหน้าอันดับบุคคล)
 function useIsLg() {
   const [lg, setLg] = useState(false);
   useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1024px)");
+    const mq = window.matchMedia("(min-width: 640px)");
     const on = () => setLg(mq.matches);
     on();
     mq.addEventListener("change", on);
@@ -271,7 +281,8 @@ function Confetti({
 }
 
 // แท่นยืน 3 กลุ่มแรก (แผนก/สาขา): เรียงซ้าย→ขวา = อันดับ 2, 1, 3 (เหมือนอันดับบุคคล)
-// มือถือ: คอลัมน์แคบ ชื่อตัดได้ 2 บรรทัด / คอม: แท่นสูงขึ้น ตัวอักษรใหญ่ขึ้น
+// ขนาดแท่น/ตัวอักษร/ระยะห่าง ใช้ชุดเดียวกับแท่นยืนของอันดับบุคคล (Rank.tsx) ให้หน้าตาเหมือนกัน
+// มือถือ: คอลัมน์แคบ ชื่อตัดได้ 2 บรรทัด
 // unit = หน่วยของตัวเลข (หน้าผู้ใช้ = "ครั้ง", แอดมินเปลี่ยนเป็น "ไลค์" / "point" ได้)
 function DeptPodium({
   entries,
@@ -292,29 +303,29 @@ function DeptPodium({
   // ขนาดจำกัดตามความสูงแท่น ไม่ให้ล้น (อันดับ 3 มือถือแท่นเตี้ยสุด แสดง 1 บรรทัด)
   const look = {
     1: {
-      h: "h-28 lg:h-40",
+      h: "h-32",
       step: "bg-[#C9F25B] text-[#1B2A21]",
       delay: "0s",
-      co: "mt-3 line-clamp-2 text-[13px] leading-[15px] lg:text-[16px] lg:leading-[19px]",
+      co: "mt-3 line-clamp-2 text-[14px] leading-[17px]",
     },
     2: {
-      h: "h-20 lg:h-28",
+      h: "h-24",
       step: "bg-[#1B2A21] text-[#C9F25B]",
       delay: ".12s",
-      co: "line-clamp-2 text-[12px] leading-[14px] lg:text-[14px] lg:leading-[17px]",
+      co: "line-clamp-2 text-[13px] leading-[15px]",
     },
     3: {
-      h: "h-14 lg:h-20",
+      h: "h-[72px]",
       step: "bg-[#3F5E1F] text-white",
       delay: ".24s",
-      co: "line-clamp-1 text-[11px] leading-[13px] lg:line-clamp-2 lg:text-[13px] lg:leading-[16px]",
+      co: "line-clamp-1 text-[12px] leading-[14px]",
     },
   } as const;
 
   return (
     <section aria-label="3 อันดับแรก แผนก/สาขา" className="relative">
-      <div className="overflow-hidden rounded-3xl bg-white px-2 pt-5 sm:px-4 lg:px-8 lg:pt-8">
-        <div className="flex items-end gap-1.5 sm:gap-3 lg:gap-5">
+      <div className="overflow-hidden rounded-3xl bg-white px-2 pt-5 sm:px-6 sm:pt-6">
+        <div className="flex items-end gap-1.5 sm:gap-4">
           {slots.map(({ place, e }) => {
             const L = look[place];
             return (
@@ -343,15 +354,15 @@ function DeptPodium({
                         members={e.members}
                         size={place === 1 ? (lg ? 84 : 58) : lg ? 64 : 44}
                       />
-                      <div className="mt-2 line-clamp-2 min-h-[2.5em] w-full break-words text-center text-[12px] font-semibold leading-tight lg:text-[15px]">
+                      <div className="mt-2 line-clamp-2 min-h-[2.5em] w-full break-words text-center text-[12px] font-semibold leading-tight sm:text-[14px]">
                         {e.name}
                       </div>
                       {e.me && (
-                        <span className="mt-1 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[10px] font-semibold text-[#C9F25B] lg:text-[11px]">
+                        <span className="mt-1 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[10px] font-semibold text-[#C9F25B] sm:text-[11px]">
                           ของคุณ
                         </span>
                       )}
-                      <div className="mt-1 text-[20px] font-semibold leading-none tabular-nums lg:text-[28px]">
+                      <div className="mt-1 text-[20px] font-semibold leading-none tabular-nums">
                         {fmtNum(e.total)}
                       </div>
                       <div className="mt-1 text-[11px] text-[#6B7A6E]">
@@ -387,7 +398,7 @@ function DeptPodium({
                   }`}
                   style={{ animationDelay: L.delay }}
                 >
-                  <span className="text-[32px] font-bold leading-none tabular-nums lg:text-[40px]">
+                  <span className="text-[32px] font-bold leading-none tabular-nums">
                     {place}
                   </span>
                   {e?.company && (
@@ -454,7 +465,6 @@ export function DeptBoardView({
     );
   }
 
-  const max = Math.max(1, ...entries.map((e) => e.total));
   const rest = entries.slice(3);
   const opened = entries.find((e) => gid(e) === openKey) ?? null;
   const totalLabel = cumulative && unit === "ครั้ง" ? "ครั้งสะสม" : unit;
@@ -470,20 +480,17 @@ export function DeptBoardView({
                 type="button"
                 onClick={() => setOpenKey(gid(e))}
                 aria-haspopup="dialog"
-                className={`pj-lift flex w-full items-center gap-3 rounded-3xl px-4 py-3 text-left transition-transform active:scale-[0.99] ${
+                className={`pj-lift flex w-full items-center gap-3 rounded-full px-5 py-2.5 text-left transition-transform active:scale-[0.99] sm:px-6 ${
                   e.me ? "bg-[#E8F5C1]" : "bg-white"
                 }`}
               >
-                <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums ${badge(
-                    e.rank
-                  )}`}
-                >
+                {/* อันดับ 4 ขึ้นไป: เลขเฉยๆ ไม่มีวงกลม (เหมือนอันดับบุคคล) */}
+                <span className="w-6 shrink-0 text-center text-[14px] font-semibold tabular-nums text-[#6B7A6E]">
                   {e.rank}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-[15px] font-semibold">
+                    <span className="truncate text-[16px] font-semibold">
                       {e.name}
                     </span>
                     {e.me && (
@@ -497,22 +504,17 @@ export function DeptBoardView({
                       {e.company}
                     </div>
                   )}
-                  <div className="mt-1.5 flex items-center gap-2">
+                  <div className="mt-1 flex items-center gap-2">
                     <AvatarStack
                       members={e.members}
                       total={e.memberCount}
-                      size={28}
+                      size={24}
+                      max={3}
                       ringClass={e.me ? "ring-[#E8F5C1]" : "ring-white"}
                     />
                     <span className="text-[11px] text-[#6B7A6E]">
                       {e.memberCount} คน
                     </span>
-                  </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]">
-                    <div
-                      className="h-full rounded-full bg-[#3F5E1F] transition-[width] duration-500"
-                      style={{ width: `${(e.total / max) * 100}%` }}
-                    />
                   </div>
                 </div>
                 <div className="text-right">
@@ -673,18 +675,15 @@ export default function DepartmentRank({
   // true = ผู้ใช้มีแผนก หรือ สาขา อย่างใดอย่างหนึ่ง
   hasDepartment: boolean;
 }) {
-  const [board, setBoard] = useState<DeptBoard | null>(null);
+  const [board, setBoard] = useState<DeptBoard | null>(cachedBoard);
   const [err, setErr] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch("/api/leaderboard/departments", {
-        cache: "no-store",
-      });
-      if (!r.ok) throw new Error("load failed");
-      setBoard((await r.json()) as DeptBoard);
+      setBoard(await fetchDeptBoard());
       setErr(false);
     } catch {
+      // มีข้อมูลเดิมแสดงอยู่แล้ว ไม่ต้องสลับเป็นหน้า error
       setErr(true);
     }
   }, []);
@@ -696,10 +695,23 @@ export default function DepartmentRank({
   }, [load]);
 
   if (!board && !err) {
+    // โครงเปล่าขนาดใกล้เคียงของจริง (แท่นยืน + 3 แถว) กันหน้ากระโดดตอนข้อมูลมา
     return (
-      <p className="rounded-3xl bg-white px-4 py-6 text-center text-[14px] text-[#6B7A6E]">
-        กำลังโหลดอันดับ
-      </p>
+      <div
+        className="w-full lg:max-w-[40rem]"
+        role="status"
+        aria-label="กำลังโหลดอันดับ"
+      >
+        <div className="h-[260px] animate-pulse rounded-3xl bg-white" />
+        <div className="mt-3 space-y-2">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-[76px] animate-pulse rounded-full bg-white"
+            />
+          ))}
+        </div>
+      </div>
     );
   }
   if (!board) {
@@ -717,21 +729,19 @@ export default function DepartmentRank({
   }
 
   return (
-    <div className="mx-auto w-full space-y-4 lg:max-w-3xl">
-      <p className="px-1 text-[13px] text-[#6B7A6E]">
-        คะแนนสะสมไม่รีเซ็ต · {board.count} กลุ่มลงสนาม
-        {!hasDepartment && " · บัญชีนี้ยังไม่ได้เลือกแผนกหรือสาขา"}
-      </p>
-
-      <section>
-        <h2 className="mb-2 px-1 text-[16px] font-semibold">
-          ตารางอันดับแผนก / สาขา
-        </h2>
-        <DeptBoardView entries={board.entries} />
-        <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
+    // หัวข้อ "ตารางอันดับ" + ตัวสลับ บุคคล/แผนก อยู่ใน Rank.tsx แล้ว (บรรทัดเดียวกับหน้าบุคคล)
+    // ความกว้างเท่าคอลัมน์ตารางของหน้าบุคคล ชิดซ้าย / pj-in = เฟดเข้าเบาๆ ตอนสลับมาหน้านี้
+    <div className="pj-in w-full lg:max-w-[40rem]">
+      <DeptBoardView entries={board.entries} />
+      <div className="mt-3 space-y-1 px-1 text-[12px] text-[#6B7A6E]">
+        <p>
+          คะแนนสะสมไม่รีเซ็ต · {board.count} กลุ่มลงสนาม
+          {!hasDepartment && " · บัญชีนี้ยังไม่ได้เลือกแผนกหรือสาขา"}
+        </p>
+        <p>
           คะแนน = ผลรวมครั้งกระโดดของทุกคนในกลุ่ม (สำนักงานใหญ่นับเป็นแผนก หน้าร้านนับ 1 สาขาเป็น 1 กลุ่ม) นับสะสมตั้งแต่เริ่มและไม่รีเซ็ต แสดง 20 อันดับแรก กดที่กลุ่มเพื่อดูสมาชิก
         </p>
-      </section>
+      </div>
     </div>
   );
 }

@@ -48,14 +48,19 @@ function toAvatar(
   return c.toDataURL("image/jpeg", 0.85);
 }
 
+// size = px ตายตัว / fill = เต็มกล่องแม่ (ให้ขนาดเปลี่ยนตามหน้าจอด้วย class ของกล่องแม่)
 function Avatar({
   name,
   src,
   size = 40,
+  fill = false,
+  className = "",
 }: {
   name: string;
   src?: string | null;
   size?: number;
+  fill?: boolean;
+  className?: string;
 }) {
   const [imgError, setImgError] = useState(false);
   const [tries, setTries] = useState(0);
@@ -87,16 +92,22 @@ function Avatar({
         alt={name}
         referrerPolicy="no-referrer"
         onError={() => setImgError(true)}
-        className="shrink-0 rounded-full object-cover bg-[#1B2A21]"
-        style={{ width: size, height: size }}
+        className={`shrink-0 rounded-full object-cover bg-[#1B2A21] ${
+          fill ? "h-full w-full" : ""
+        } ${className}`}
+        style={fill ? undefined : { width: size, height: size }}
       />
     );
   }
 
   return (
     <span
-      className="flex shrink-0 items-center justify-center rounded-full bg-[#1B2A21] font-semibold text-[#C9F25B]"
-      style={{ width: size, height: size, fontSize: size * 0.42 }}
+      className={`flex shrink-0 items-center justify-center rounded-full bg-[#1B2A21] font-semibold text-[#C9F25B] ${
+        fill ? "h-full w-full" : ""
+      } ${className}`}
+      style={
+        fill ? undefined : { width: size, height: size, fontSize: size * 0.42 }
+      }
       aria-hidden
     >
       {initialOf(name)}
@@ -120,7 +131,7 @@ function Switch({
       aria-label={label}
       onClick={() => onChange(!on)}
       className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors duration-200 ${
-        on ? "bg-[#3F5E1F]" : "bg-[#D5DCC8]"
+        on ? "bg-[#3F5E1F]" : "bg-[#D5DCC8] hover:bg-[#C6CFB6]"
       }`}
     >
       <span
@@ -137,6 +148,9 @@ function Switch({
 /* ------------------------------------------------------------------ */
 
 type Shot = { img: HTMLImageElement; w: number; h: number };
+
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 3;
 
 function CameraModal({
   initialFacing,
@@ -160,8 +174,22 @@ function CameraModal({
   const [zoom, setZoom] = useState(1);
   const [V, setV] = useState(280); // เส้นผ่านศูนย์กลางวงกลมครอป (px)
 
+  // คำนวณขนาดวงกลมใหม่ทุกครั้งที่หน้าจอเปลี่ยน (หมุนจอ / ย่อขยายหน้าต่างบนคอม)
   useEffect(() => {
-    setV(Math.round(Math.min(window.innerWidth - 48, window.innerHeight * 0.55, 420)));
+    const calc = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      // จอเตี้ย (มือถือแนวนอน) ต้องเหลือที่ให้ปุ่มด้านล่าง
+      const room = h < 600 ? h - 230 : h * 0.55;
+      setV(Math.round(Math.max(140, Math.min(w - 48, room, 480))));
+    };
+    calc();
+    window.addEventListener("resize", calc);
+    window.addEventListener("orientationchange", calc);
+    return () => {
+      window.removeEventListener("resize", calc);
+      window.removeEventListener("orientationchange", calc);
+    };
   }, []);
 
   useEffect(() => {
@@ -330,14 +358,14 @@ function CameraModal({
       {shot ? (
         /* ขั้นเลื่อนเลือกตำแหน่งในวงกลม */
         <div
-          className="flex h-full w-full flex-col items-center justify-center gap-5 px-6"
+          className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 sm:gap-5"
           style={{
             paddingTop: "max(1rem, env(safe-area-inset-top))",
             paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
           }}
         >
           <div
-            className="relative touch-none select-none overflow-hidden rounded-full bg-[#1B2A21] ring-4 ring-[#C9F25B]"
+            className="relative touch-none select-none overflow-hidden rounded-full bg-[#1B2A21] ring-4 ring-[#C9F25B] active:cursor-grabbing"
             style={{ width: V, height: V, cursor: "grab" }}
             onPointerDown={onDown}
             onPointerMove={onMove}
@@ -359,17 +387,19 @@ function CameraModal({
             />
           </div>
 
-          <p className="text-[13px] text-white/70">ลากเพื่อเลื่อนหาตำแหน่งที่ต้องการ</p>
+          <p className="text-center text-[13px] text-white/70">
+            ลากเพื่อเลื่อนหาตำแหน่งที่ต้องการ
+          </p>
 
           <input
             type="range"
-            min={1}
-            max={3}
+            min={ZOOM_MIN}
+            max={ZOOM_MAX}
             step={0.01}
             value={zoom}
             onChange={(e) => setZoom(Number(e.target.value))}
             aria-label="ซูม"
-            className="w-full max-w-xs accent-[#C9F25B]"
+            className="w-full max-w-xs cursor-pointer accent-[#C9F25B]"
           />
 
           {err && <p className="text-center text-[13px] text-[#FF8A80]">{err}</p>}
@@ -377,13 +407,13 @@ function CameraModal({
           <div className="flex w-full max-w-xs gap-2">
             <button
               onClick={() => setShot(null)}
-              className="h-12 flex-1 rounded-full bg-white/15 text-[15px] font-semibold transition-transform active:scale-[0.98]"
+              className="h-12 flex-1 rounded-full bg-white/15 text-[15px] font-semibold transition-all hover:bg-white/25 active:scale-[0.98]"
             >
               ถ่ายใหม่
             </button>
             <button
               onClick={confirm}
-              className="h-12 flex-1 rounded-full bg-[#C9F25B] text-[15px] font-semibold text-[#1B2A21] transition-all active:scale-[0.98] active:bg-[#B8E348]"
+              className="h-12 flex-1 rounded-full bg-[#C9F25B] text-[15px] font-semibold text-[#1B2A21] transition-all hover:bg-[#D6F77F] active:scale-[0.98] active:bg-[#B8E348]"
             >
               ใช้รูปนี้
             </button>
@@ -398,7 +428,7 @@ function CameraModal({
             paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
           }}
         >
-          <p className="mb-5 text-center text-[15px] font-semibold text-white/90">
+          <p className="mb-4 text-center text-[15px] font-semibold text-white/90 sm:mb-5">
             จัดหน้าให้อยู่ในวงกลม
           </p>
 
@@ -429,11 +459,11 @@ function CameraModal({
             </p>
           )}
 
-          <div className="mt-8 flex w-full max-w-xs items-center justify-between">
+          <div className="mt-6 flex w-full max-w-xs items-center justify-between sm:mt-8">
             <button
               type="button"
               onClick={onClose}
-              className="h-11 min-w-[84px] rounded-full px-4 text-[15px] font-semibold text-white/80 hover:text-white"
+              className="h-11 min-w-[84px] rounded-full px-4 text-[15px] font-semibold text-white/80 transition-colors hover:bg-white/10 hover:text-white"
             >
               ยกเลิก
             </button>
@@ -442,12 +472,12 @@ function CameraModal({
               onClick={snap}
               disabled={!ready || !!err}
               aria-label="ถ่ายรูป"
-              className="h-[72px] w-[72px] rounded-full bg-white ring-4 ring-[#C9F25B] ring-offset-2 ring-offset-black transition-transform active:scale-90 disabled:opacity-40"
+              className="h-[72px] w-[72px] rounded-full bg-white ring-4 ring-[#C9F25B] ring-offset-2 ring-offset-black transition-transform enabled:hover:scale-105 active:scale-90 disabled:opacity-40"
             />
             <button
               type="button"
               onClick={() => setCam((c) => (c === "user" ? "environment" : "user"))}
-              className="h-11 min-w-[84px] rounded-full px-4 text-[15px] font-semibold text-white/80 hover:text-white"
+              className="h-11 min-w-[84px] rounded-full px-4 text-[15px] font-semibold text-white/80 transition-colors hover:bg-white/10 hover:text-white"
             >
               สลับกล้อง
             </button>
@@ -601,28 +631,30 @@ function ProfileCard({
   };
 
   return (
-    <section className={`${card} p-5`}>
+    <section className={`${card} p-4 sm:p-6`}>
       <h2 className="text-[15px] font-semibold">โปรไฟล์</h2>
 
       <div className="mt-4 flex flex-col items-center text-center">
         <div className="relative">
+          {/* มือถือ 112px / จอใหญ่ขึ้น 144px */}
           <span
-            className={`block rounded-full ${
+            className={`block h-28 w-28 rounded-full sm:h-36 sm:w-36 ${
               avatarChanged ? "ring-4 ring-[#C9F25B] ring-offset-2" : ""
             }`}
           >
             <Avatar
               name={user.name}
               src={draftAvatar ?? savedAvatar ?? user.avatarUrl}
-              size={144}
+              fill
+              className="text-5xl sm:text-6xl"
             />
           </span>
         </div>
-        <div className="mt-3 max-w-full truncate text-[18px] font-semibold">
+        <div className="mt-3 max-w-full truncate text-[18px] font-semibold sm:text-[20px]">
           {user.name}
         </div>
         {user.username && (
-          <div className="max-w-full truncate text-[12px] text-[#6B7A6E]">
+          <div className="max-w-full truncate text-[12px] text-[#6B7A6E] sm:text-[13px]">
             @{user.username}
           </div>
         )}
@@ -653,14 +685,14 @@ function ProfileCard({
         <button
           onClick={() => fileRef.current?.click()}
           disabled={busy}
-          className="h-11 rounded-full bg-[#EEF2E4] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-40"
+          className="h-11 rounded-full bg-[#EEF2E4] text-[14px] font-semibold transition-all hover:bg-[#E3EAD6] active:scale-[0.97] disabled:opacity-40"
         >
           เลือกรูป
         </button>
         <button
           onClick={() => setCamOpen(true)}
           disabled={busy}
-          className="h-11 rounded-full bg-[#1B2A21] text-[14px] font-semibold text-[#C9F25B] transition-transform active:scale-[0.97] disabled:opacity-40"
+          className="h-11 rounded-full bg-[#1B2A21] text-[14px] font-semibold text-[#C9F25B] transition-all hover:bg-[#25382C] active:scale-[0.97] disabled:opacity-40"
         >
           ถ่ายรูปใหม่
         </button>
@@ -689,7 +721,7 @@ function ProfileCard({
           }}
           maxLength={NAME_MAX * 2}
           autoComplete="off"
-          className="mt-1 h-12 w-full rounded-full bg-[#EEF2E4] px-5 text-[16px] font-medium text-[#1B2A21] outline-none ring-2 ring-transparent transition-shadow placeholder:text-[#A9B79A] focus:bg-white focus:ring-[#3F5E1F]"
+          className="mt-1 h-12 w-full rounded-full bg-[#EEF2E4] px-5 text-[16px] font-medium text-[#1B2A21] outline-none ring-2 ring-transparent transition-shadow placeholder:text-[#A9B79A] hover:bg-[#E8EEDB] focus:bg-white focus:ring-[#3F5E1F]"
         />
         <div className="mt-1 flex items-center justify-between px-1 text-[11px]">
           <span
@@ -707,14 +739,14 @@ function ProfileCard({
       <button
         onClick={save}
         disabled={!canSave}
-        className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348] disabled:bg-[#E3EAD6] disabled:text-[#A9B79A]"
+        className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 enabled:hover:bg-[#D6F77F] active:scale-[0.98] active:bg-[#B8E348] disabled:bg-[#E3EAD6] disabled:text-[#A9B79A]"
       >
         {busy ? "กำลังบันทึก" : "บันทึก"}
       </button>
       {dirty && !busy && (
         <button
           onClick={reset}
-          className="mt-2 h-10 w-full rounded-full text-[14px] font-semibold text-[#3F5E1F] active:opacity-60"
+          className="mt-2 h-10 w-full rounded-full text-[14px] font-semibold text-[#3F5E1F] transition-colors hover:bg-[#EEF2E4] active:opacity-60"
         >
           ยกเลิกการเปลี่ยนแปลง
         </button>
@@ -744,6 +776,8 @@ function ProfileCard({
 
 /* ------------------------------------------------------------------ */
 /* หน้าตั้งค่า                                                           */
+/* มือถือ/แท็บเล็ตแนวตั้ง: คอลัมน์เดียว / จอ lg ขึ้นไป: 2 คอลัมน์        */
+/* (โปรไฟล์ซ้าย, ตัวเลือกขวา)                                            */
 /* ------------------------------------------------------------------ */
 
 export default function Setting({
@@ -768,14 +802,16 @@ export default function Setting({
       <h1 className="text-[30px] font-bold tracking-tight lg:text-[36px]">
         ตั้งค่า
       </h1>
-      <div className="mt-5 space-y-4 lg:max-w-md">
+      <div className="mx-auto mt-5 grid w-full max-w-md gap-4 sm:max-w-lg lg:mx-0 lg:mt-6 lg:max-w-4xl lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:items-start lg:gap-6">
         {user && (
           <ProfileCard user={user} facing={facing} onUserChange={onUserChange} />
         )}
 
-        <div className="space-y-4">
+        <div
+          className={`space-y-4 ${user ? "" : "lg:col-span-2 lg:max-w-sm"}`}
+        >
           <ul className={`${card} divide-y divide-[#EEF2E4]`}>
-            <li className="flex items-center justify-between gap-3 px-4 py-3">
+            <li className="flex items-center justify-between gap-3 px-4 py-3 lg:px-5 lg:py-4">
               <span className="text-[16px]">กล้อง</span>
               <div className="w-40">
                 <Segmented<"user" | "environment">
@@ -791,7 +827,7 @@ export default function Setting({
                 />
               </div>
             </li>
-            <li className="flex items-center justify-between gap-3 px-4 py-3">
+            <li className="flex items-center justify-between gap-3 px-4 py-3 lg:px-5 lg:py-4">
               <span className="text-[16px]">เสียงนับและเตือน</span>
               <Switch on={sound} onChange={onSound} label="เสียงนับและเตือน" />
             </li>
@@ -801,7 +837,7 @@ export default function Setting({
             onClick={() => {
               if (window.confirm("ลบประวัติการกระโดดทั้งหมด?")) onClearHistory();
             }}
-            className="h-12 w-full rounded-full bg-white text-[15px] font-semibold text-[#D92D20] transition-transform active:scale-[0.98]"
+            className="h-12 w-full rounded-full bg-white text-[15px] font-semibold text-[#D92D20] transition-all hover:bg-[#FDE8E6] active:scale-[0.98]"
           >
             ล้างประวัติ
           </button>

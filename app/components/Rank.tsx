@@ -8,7 +8,7 @@ import {
   POINT_REWARD,
   Segmented,
 } from "./auth-shared";
-import DepartmentRank from "./DepartmentRank";
+import DepartmentRank, { prefetchDeptBoard } from "./DepartmentRank";
 
 /* ------------------------------------------------------------------ */
 /* ค่าคงที่และชนิดข้อมูล (ซ้ำกับ app/page.tsx เพราะไฟล์ page.tsx export ได้แค่ default) */
@@ -64,20 +64,27 @@ type RankProps = {
 /* ------------------------------------------------------------------ */
 
 const card = "rounded-3xl bg-white pj-lift";
+// กรอบเนื้อหา: มือถือเต็มความกว้าง / แท็บเล็ตจำกัดและอยู่กลาง / คอมกว้างพอวาง 2 คอลัมน์
+const wrap = "mx-auto w-full max-w-xl lg:mx-0 lg:max-w-5xl";
 const limeBtn =
   "flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348]";
 
 const initialOf = (name: string) =>
   (Array.from(name.trim())[0] ?? "?").toUpperCase();
 
+// size = px ตายตัว / fill = เต็มกล่องแม่ (ให้ขนาดเปลี่ยนตามหน้าจอด้วย class)
 function Avatar({
   name,
   src,
   size = 40,
+  fill = false,
+  className = "",
 }: {
   name: string;
   src?: string | null;
   size?: number;
+  fill?: boolean;
+  className?: string;
 }) {
   const [imgError, setImgError] = useState(false);
 
@@ -93,16 +100,18 @@ function Avatar({
         alt={name}
         referrerPolicy="no-referrer"
         onError={() => setImgError(true)}
-        className="shrink-0 rounded-full object-cover bg-[#1B2A21]"
-        style={{ width: size, height: size }}
+        className={`shrink-0 rounded-full object-cover bg-[#1B2A21] ${className}`}
+        style={fill ? undefined : { width: size, height: size }}
       />
     );
   }
 
   return (
     <span
-      className="flex shrink-0 items-center justify-center rounded-full bg-[#1B2A21] font-semibold text-[#C9F25B]"
-      style={{ width: size, height: size, fontSize: size * 0.42 }}
+      className={`flex shrink-0 items-center justify-center rounded-full bg-[#1B2A21] font-semibold text-[#C9F25B] ${className}`}
+      style={
+        fill ? undefined : { width: size, height: size, fontSize: size * 0.42 }
+      }
       aria-hidden
     >
       {initialOf(name)}
@@ -139,25 +148,6 @@ function PointBadge({ points }: { points: number }) {
     <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#3F5E1F]">
       <Icon d={ICONS.star} size={12} fill />
       {fmtNum(points)} point
-    </span>
-  );
-}
-
-// แท็กบอกว่าแต่ละคนทัน 100 คนแรกที่ทำเป้าหมายรายวันสำเร็จหรือไม่
-function GoalTag({ goalRank }: { goalRank: number | null }) {
-  if (goalRank === null) {
-    return (
-      <span className="shrink-0 rounded-full border border-[#C5CFB5] px-2 py-0.5 text-[11px] font-semibold text-[#6B7A6E]">
-        ยังไม่ถึงเป้า
-      </span>
-    );
-  }
-  // ลำดับ 101 ขึ้นไป ไม่แสดงแท็ก
-  if (goalRank > POINT_QUOTA) return null;
-  return (
-    <span className="flex shrink-0 items-center gap-1 rounded-full bg-[#3F5E1F] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
-      <Icon d={ICONS.check} size={11} />
-      ทัน {POINT_QUOTA} คนแรก · +{POINT_REWARD}
     </span>
   );
 }
@@ -279,7 +269,8 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
     1: {
       h: 128,
       step: "bg-[#C9F25B] text-[#1B2A21]",
-      av: 84,
+      // มือถือ 76px / sm ขึ้นไป 104px
+      av: "h-[76px] w-[76px] text-[32px] sm:h-[104px] sm:w-[104px] sm:text-[44px]",
       delay: "0s",
       // อันดับ 1: ตัวใหญ่สุด และเลื่อนลงมาจากเลขอันดับ
       co: "mt-3 line-clamp-2 text-[14px] leading-[17px]",
@@ -287,14 +278,15 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
     2: {
       h: 96,
       step: "bg-[#1B2A21] text-[#C9F25B]",
-      av: 68,
+      // มือถือ 64px / sm ขึ้นไป 84px
+      av: "h-16 w-16 text-[27px] sm:h-[84px] sm:w-[84px] sm:text-[35px]",
       delay: ".12s",
       co: "line-clamp-2 text-[13px] leading-[15px]",
     },
     3: {
       h: 72,
       step: "bg-[#3F5E1F] text-white",
-      av: 68,
+      av: "h-16 w-16 text-[27px] sm:h-[84px] sm:w-[84px] sm:text-[35px]",
       delay: ".24s",
       // แท่นเตี้ยสุด แสดงบรรทัดเดียวเพื่อไม่ล้นแท่น
       co: "line-clamp-1 text-[12px] leading-[14px]",
@@ -303,8 +295,8 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
 
   return (
     <section aria-label="3 อันดับแรก" className="relative">
-      <div className="overflow-hidden rounded-3xl bg-white px-3 pt-5">
-      <div className="flex items-end gap-2">
+      <div className="overflow-hidden rounded-3xl bg-white px-3 pt-5 sm:px-6 sm:pt-6">
+      <div className="flex items-end gap-2 sm:gap-4">
         {slots.map(({ place, e }) => {
           const L = look[place];
           const reached = !!e && (e.goalRank != null || e.total >= e.goal);
@@ -325,7 +317,12 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
                       e.me ? "ring-2 ring-[#3F5E1F] ring-offset-2" : ""
                     }`}
                   >
-                    <Avatar name={e.name} src={e.avatarUrl} size={L.av} />
+                    <Avatar
+                      name={e.name}
+                      src={e.avatarUrl}
+                      fill
+                      className={L.av}
+                    />
                   </span>
                   <div className="mt-2 w-full truncate text-center text-[14px] font-semibold">
                     {e.name}
@@ -346,8 +343,7 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
               ) : (
                 <>
                   <span
-                    className="flex items-center justify-center rounded-full bg-[#EEF2E4] font-semibold text-[#A9B79A]"
-                    style={{ width: L.av, height: L.av }}
+                    className={`flex items-center justify-center rounded-full bg-[#EEF2E4] font-semibold text-[#A9B79A] ${L.av}`}
                     aria-hidden
                   >
                     —
@@ -490,6 +486,11 @@ function RankView(props: RankProps) {
     return () => clearInterval(t);
   }, [loadBoard, props.username]);
 
+  // โหลดอันดับแผนกรอไว้ล่วงหน้า กดสลับไปแท็บ "แผนก" แล้วเห็นข้อมูลทันที ไม่ต้องรอ
+  useEffect(() => {
+    prefetchDeptBoard();
+  }, []);
+
   const leader = board?.entries[0];
   const leftMs = Math.max(0, (board?.resetAt ?? 0) - boardNow);
   const resetText = `${Math.floor(leftMs / 3600000)} ชม. ${Math.floor(
@@ -506,26 +507,30 @@ function RankView(props: RankProps) {
 
   // แถวอันดับ 4 ขึ้นไป (3 อันดับแรกอยู่บนแท่นยืน)
   const boardRow = (e: BoardEntry) => {
-    // ถึงเป้า = เซิร์ฟเวอร์บันทึกว่าถึงเป้าแล้ว หรือยอดรวมทุกรอบของวันถึงเป้าของคนนั้น
-    const reached = e.goalRank != null || e.total >= e.goal;
-    const pct = reached
-      ? 100
-      : Math.min(100, (e.total / Math.max(1, e.goal)) * 100);
+    // ทัน POINT_QUOTA คนแรกที่ทำเป้าหมายรายวันสำเร็จ = ได้ไอคอนติ๊กเขียว
+    const inQuota = e.goalRank != null && e.goalRank <= POINT_QUOTA;
     return (
       <li
         key={e.rank}
-        className={`flex items-center gap-3 rounded-3xl px-4 py-3 ${
+        className={`flex items-center gap-3 rounded-full px-5 py-2.5 sm:px-6 ${
           e.me ? "bg-[#E8F5C1]" : "bg-white"
         }`}
       >
+        {/* อันดับ 4 ขึ้นไป: เลขเฉยๆ ไม่มีวงกลม */}
         <span
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums ${rankBadge(
+          className={`w-6 shrink-0 text-center text-[14px] font-semibold tabular-nums ${rankBadge(
             e.rank
           )}`}
         >
           {e.rank}
         </span>
-        <Avatar name={e.name} src={e.avatarUrl} size={40} />
+        {/* มือถือ 48px / sm ขึ้นไป 56px */}
+        <Avatar
+          name={e.name}
+          src={e.avatarUrl}
+          fill
+          className="h-12 w-12 text-[20px] sm:h-14 sm:w-14 sm:text-[23px]"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-[16px] font-semibold">
@@ -536,32 +541,18 @@ function RankView(props: RankProps) {
                 คุณ
               </span>
             )}
-          </div>
-          <OrgLine company={e.company} department={e.department} />
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            <GoalTag goalRank={e.goalRank ?? null} />
-            {e.goalRank != null && (
-              <span className="text-[11px] text-[#6B7A6E]">
-                ถึงเป้าลำดับที่ {e.goalRank}
+            {/* ทัน POINT_QUOTA คนแรก: ไอคอนติ๊กเขียวเล็กๆ (มีคำอธิบายใต้แท่นยืน) */}
+            {inQuota && (
+              <span
+                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#3F5E1F] text-[#C9F25B]"
+                aria-label={`ทัน ${POINT_QUOTA} คนแรก`}
+                title={`ถึงเป้าลำดับที่ ${e.goalRank}`}
+              >
+                <Icon d={ICONS.check} size={10} />
               </span>
             )}
           </div>
-          <div
-            className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]"
-            role="progressbar"
-            aria-label="ความคืบหน้าสู่เป้าหมายรายวัน"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(pct)}
-          >
-            <div
-              className="h-full rounded-full transition-[width] duration-500"
-              style={{
-                width: `${pct}%`,
-                background: reached ? "#3F5E1F" : "#A9B79A",
-              }}
-            />
-          </div>
+          <OrgLine company={e.company} department={e.department} />
         </div>
         <div className="text-right">
           <div className="text-[18px] font-semibold tabular-nums">
@@ -573,10 +564,11 @@ function RankView(props: RankProps) {
     );
   };
 
-  // ตัวสลับ บุคคล / แผนก
+  // ตัวสลับ บุคคล / แผนก (ตัวเล็ก อยู่ขวามือบรรทัดเดียวกับหัวข้อ "ตารางอันดับ")
   const tabs = (
-    <div className="mb-4">
+    <div className="w-32 shrink-0 sm:w-36">
       <Segmented<"person" | "dept">
+        small
         value={view}
         onChange={setView}
         options={
@@ -589,23 +581,41 @@ function RankView(props: RankProps) {
     </div>
   );
 
+  // หัวข้อ "ตารางอันดับ" ซ้าย + ตัวสลับ บุคคล/แผนก ขวา (บรรทัดเดียวกันทั้งมือถือและคอม)
+  const tableHead = (
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <h2 className="min-w-0 truncate px-1 text-[16px] font-semibold">
+        ตารางอันดับ
+      </h2>
+      {tabs}
+    </div>
+  );
+
   // มุมมองอันดับแผนก
   if (view === "dept") {
     return (
-      <>
-        <header className="mb-5">
-          <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
-            อันดับแผนก
-          </h1>
+      <div className={wrap}>
+        {/* โครงหัวหน้าเดียวกับอันดับบุคคล (บรรทัดเล็ก + ชื่อหน้า) ชื่อหน้าจะไม่กระโดดตอนสลับ */}
+        <header className="mb-5 flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="min-h-[18px] text-[13px] text-[#6B7A6E]">
+              คะแนนสะสมไม่รีเซ็ต
+            </p>
+            <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
+              อันดับแผนก
+            </h1>
+          </div>
+          {/* เท่าปุ่ม "ผลวันนี้" ด้านบุคคล กันความสูงหัวหน้าต่างกัน */}
+          <span aria-hidden className="mb-1 h-10 shrink-0" />
         </header>
-        {tabs}
+        {tableHead}
         <DepartmentRank hasDepartment={props.hasDepartment} />
-      </>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className={wrap}>
       <header className="mb-5 flex items-end justify-between gap-3">
         <div className="min-w-0">
           <p className="min-h-[18px] text-[13px] text-[#6B7A6E]">
@@ -618,14 +628,15 @@ function RankView(props: RankProps) {
         <button
           onClick={props.onOpenResult}
           disabled={!props.hasToday}
-          className="mb-1 flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#C9F25B] px-5 text-[15px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-95 active:bg-[#B8E348] disabled:opacity-40"
+          className="mb-1 flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#C9F25B] px-5 text-[15px] font-semibold text-[#1B2A21] transition-all duration-150 enabled:hover:bg-[#D6F77F] active:scale-95 active:bg-[#B8E348] disabled:opacity-40"
         >
           <Icon d={ICONS.trophy} size={18} />
           ผลวันนี้
         </button>
       </header>
 
-      {tabs}
+      {/* ยังไม่มีข้อมูล: แสดงหัวข้อ+ตัวสลับตรงนี้ (พอโหลดเสร็จจะอยู่ในคอลัมน์ตาราง) */}
+      {!board && tableHead}
 
       {!board && !boardErr && (
         <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
@@ -648,9 +659,9 @@ function RankView(props: RankProps) {
       )}
 
       {board && (
-        <div className="space-y-4">
+        <div className="space-y-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,23rem)] lg:items-start lg:gap-6 lg:space-y-0">
           <section>
-            <h2 className="mb-2 px-1 text-[16px] font-semibold">ตารางอันดับ</h2>
+            {tableHead}
             {board.entries.length === 0 ? (
               <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
                 ยังไม่มีอันดับ
@@ -659,9 +670,18 @@ function RankView(props: RankProps) {
               <>
                 <Podium entries={board.entries.slice(0, 3)} />
                 {board.entries.length > 3 && (
-                  <ul className="mt-3 space-y-2">
-                    {board.entries.slice(3).map(boardRow)}
-                  </ul>
+                  <>
+                    {/* คำอธิบายไอคอนติ๊กเขียวในแถวด้านล่าง */}
+                    <p className="mt-3 flex items-center gap-1.5 px-1 text-[12px] text-[#6B7A6E]">
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#3F5E1F] text-[#C9F25B]">
+                        <Icon d={ICONS.check} size={10} />
+                      </span>
+                      ติ๊กถูกสีเขียว = ทัน {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ
+                    </p>
+                    <ul className="mt-2 space-y-2">
+                      {board.entries.slice(3).map(boardRow)}
+                    </ul>
+                  </>
                 )}
               </>
             )}
@@ -669,7 +689,7 @@ function RankView(props: RankProps) {
               {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุกเที่ยงคืนเวลาไทย
             </p>
           </section>
-          <div className="pj-stagger space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
+          <div className="pj-stagger space-y-4">
             <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
               <div className="flex items-start justify-between gap-3">
                 <span className="text-[15px] font-semibold">
@@ -748,26 +768,22 @@ function RankView(props: RankProps) {
                 </>
               )}
             </section>
-          </div>
 
-          <div>
-          {(() => {
-            const mine = board.entries.find((e) => e.me);
-            const reached =
-              !!mine && (mine.goalRank != null || mine.total >= mine.goal);
-            return (
-              <div className="mb-4">
+            {(() => {
+              const mine = board.entries.find((e) => e.me);
+              const reached =
+                !!mine && (mine.goalRank != null || mine.total >= mine.goal);
+              return (
                 <PromoBanner
                   status={reached ? "done" : "open"}
                   total={mine?.total ?? 0}
                 />
-              </div>
-            );
-          })()}
+              );
+            })()}
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
