@@ -96,6 +96,8 @@ export default function DepartmentCard({
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
+  // closing = กำลังเล่นแอนิเมชันเลื่อนลง ก่อนถอด popup ออกจริง
+  const [closing, setClosing] = useState(false);
 
   useEffect(() => {
     if (!hasGroup) return;
@@ -123,11 +125,20 @@ export default function DepartmentCard({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") setClosing(true);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+
+  useEffect(() => {
+    if (!closing) return;
+    const t = setTimeout(() => {
+      setOpen(false);
+      setClosing(false);
+    }, 260);
+    return () => clearTimeout(t);
+  }, [closing]);
 
   if (!hasGroup) return null;
 
@@ -218,8 +229,13 @@ export default function DepartmentCard({
             role="dialog"
             aria-modal="true"
             aria-label={`สมาชิก${kind} ${title}`}
-            className="pj-in fixed inset-0 z-50 flex items-end justify-center bg-[#1B2A21]/70 p-0 sm:items-center sm:p-5"
-            onClick={() => setOpen(false)}
+            className="dc-anim fixed inset-0 z-50 flex items-end justify-center bg-[#1B2A21]/70 p-0 sm:items-center sm:p-5"
+            style={{
+              animation: closing
+                ? "dc-back-out .26s ease-in both"
+                : "dc-back-in .3s ease-out both",
+            }}
+            onClick={() => setClosing(true)}
           >
             <style>{`
               @keyframes dc-drop {
@@ -228,6 +244,16 @@ export default function DepartmentCard({
                 75% { transform: translateY(-8px) scale(.97,1.04); }
                 100% { transform: translateY(0) scale(1); opacity: 1; }
               }
+              @keyframes dc-back-in { from { opacity: 0; } to { opacity: 1; } }
+              @keyframes dc-back-out { from { opacity: 1; } to { opacity: 0; } }
+              @keyframes dc-sheet-in {
+                from { transform: translateY(100%); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+              }
+              @keyframes dc-sheet-out {
+                from { transform: translateY(0); opacity: 1; }
+                to { transform: translateY(100%); opacity: 0; }
+              }
               @keyframes dc-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
               @media (prefers-reduced-motion: reduce) {
                 .dc-anim { animation: none !important; opacity: 1 !important; }
@@ -235,7 +261,12 @@ export default function DepartmentCard({
             `}</style>
 
             <div
-              className="relative flex max-h-[88dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[32px] bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] text-[#1B2A21] shadow-2xl sm:max-w-2xl sm:rounded-[32px] lg:max-w-4xl"
+              className="dc-anim relative flex max-h-[88dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[32px] bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] text-[#1B2A21] shadow-2xl sm:max-w-2xl sm:rounded-[32px] lg:max-w-4xl"
+              style={{
+                animation: closing
+                  ? "dc-sheet-out .26s ease-in both"
+                  : "dc-sheet-in .38s cubic-bezier(.22,1,.36,1) both",
+              }}
               onClick={(e) => e.stopPropagation()}
             >
               {/* ลายตกแต่งพื้นหลัง เหมือนหน้า welcome */}
@@ -264,7 +295,7 @@ export default function DepartmentCard({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setOpen(false)}
+                  onClick={() => setClosing(true)}
                   aria-label="ปิด"
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/80 shadow-sm transition-transform active:scale-90"
                 >

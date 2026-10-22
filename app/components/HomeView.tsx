@@ -110,6 +110,31 @@ function PointBadge({ points }: { points: number }) {
   );
 }
 
+// สถิติเล็ก ๆ ในการ์ดเป้าหมายวันนี้ (ไอคอน + ตัวเลข + ป้าย)
+function MiniStat({
+  icon,
+  value,
+  label,
+  className = "",
+}: {
+  icon: string;
+  value: ReactNode;
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-[#C9F25B]">
+        <Icon d={icon} size={14} />
+      </span>
+      <div className="min-w-0 leading-tight">
+        <div className="text-[15px] font-semibold tabular-nums">{value}</div>
+        <div className="text-[11px] text-white/55">{label}</div>
+      </div>
+    </div>
+  );
+}
+
 // ตัวเลขนับขึ้นจาก 0 (ไม่นับถ้าผู้ใช้ตั้งค่าลดการเคลื่อนไหว)
 function CountUp({ value, ms = 700 }: { value: number; ms?: number }) {
   const [v, setV] = useState(0);
@@ -246,9 +271,9 @@ export default function Home({
   const goalPct = Math.min(1, todayTotal / Math.max(1, dailyGoal));
   const left = Math.max(0, dailyGoal - todayTotal);
   const org = orgOf(user);
-const orgLine = [org.company, org.department, org.branch]
-  .filter(Boolean)
-  .join(" · ");
+  const orgLine = [org.company, org.department, org.branch]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <>
@@ -267,10 +292,10 @@ const orgLine = [org.company, org.department, org.branch]
           พร้อมโดดไหม{user ? ` ${user.name}` : ""} 👋
         </h1>
         {orgLine && (
-  <p className="mt-1 text-[14px] font-semibold text-[#3F5E1F]">
-    {orgLine}
-  </p>
-)}
+          <p className="mt-1 text-[14px] font-semibold text-[#3F5E1F]">
+            {orgLine}
+          </p>
+        )}
         {user && (
           <div className="mt-1 hidden lg:block">
             <PointBadge points={user.points ?? 0} />
@@ -317,43 +342,27 @@ const orgLine = [org.company, org.department, org.branch]
                 <span className="text-[11px] text-white/60">ทำได้แล้ว</span>
               </Ring>
             </div>
-          </section>
 
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-            <div className={`${card} flex items-center gap-3 p-4`}>
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F5C1] text-[#3F5E1F]">
-                <Icon d={ICONS.clock} size={20} />
-              </span>
-              <div>
-                <div className="text-[20px] font-semibold tabular-nums">
-                  {formatTime(todayMs)}
-                </div>
-                <div className="text-[12px] text-[#6B7A6E]">นาทีที่กระโดด</div>
-              </div>
+            {/* สถิติวันนี้: เล็กกะทัดรัด อยู่ใต้ตัวเลขหลัก */}
+            <div className="mt-4 flex items-center gap-5 border-t border-white/10 pt-3.5">
+              <MiniStat
+                icon={ICONS.clock}
+                value={formatTime(todayMs)}
+                label="นาทีที่กระโดด"
+              />
+              <MiniStat
+                icon={ICONS.flame}
+                value={todayKcal}
+                label="กิโลแคลอรี่"
+              />
+              <MiniStat
+                icon={ICONS.bolt}
+                value={todayRounds}
+                label="รอบวันนี้"
+                className="hidden lg:flex"
+              />
             </div>
-            <div className={`${card} flex items-center gap-3 p-4`}>
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F5C1] text-[#3F5E1F]">
-                <Icon d={ICONS.flame} size={20} />
-              </span>
-              <div>
-                <div className="text-[20px] font-semibold tabular-nums">
-                  {todayKcal}
-                </div>
-                <div className="text-[12px] text-[#6B7A6E]">กิโลแคลอรี่</div>
-              </div>
-            </div>
-            <div className={`${card} hidden items-center gap-3 p-4 lg:flex`}>
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F5C1] text-[#3F5E1F]">
-                <Icon d={ICONS.bolt} size={20} />
-              </span>
-              <div>
-                <div className="text-[20px] font-semibold tabular-nums">
-                  {todayRounds}
-                </div>
-                <div className="text-[12px] text-[#6B7A6E]">รอบวันนี้</div>
-              </div>
-            </div>
-          </div>
+          </section>
 
           {error && (
             <p
@@ -365,18 +374,21 @@ const orgLine = [org.company, org.department, org.branch]
           )}
 
           <div className="relative">
-            <span aria-hidden className="pj-wave" />
-            <span aria-hidden className="pj-wave pj-wave-2" />
-            <span aria-hidden className="pj-wave pj-wave-3" />
+            <span
+              aria-hidden
+              className="absolute inset-x-2 -inset-y-1 animate-pulse rounded-full bg-[#E4FF4D] opacity-80 blur-xl motion-reduce:animate-none"
+            />
             <button
               onClick={onStart}
-              className="relative z-10 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#EEFF41] to-[#76FF03] text-[17px] font-bold text-[#1B2A21] shadow-lg shadow-[#76FF03]/50 transition-all duration-150 active:scale-[0.98] active:brightness-95"
+              className="relative z-10 flex h-16 w-full items-center justify-center gap-3 rounded-full bg-gradient-to-b from-[#F6FF8A] via-[#E2FC5C] to-[#C4F230] text-[18px] font-extrabold text-[#1B2A21] shadow-[0_0_28px_rgba(214,255,64,0.75),0_8px_20px_rgba(118,255,3,0.25)] ring-2 ring-inset ring-white/70 transition-all duration-150 hover:brightness-105 active:scale-[0.98] active:brightness-95"
             >
-              <Icon d={ICONS.play} size={20} fill />
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1B2A21] text-[#E2FC5C] shadow-md">
+                <Icon d={ICONS.play} size={18} fill />
+              </span>
               เริ่มกระโดด
             </button>
           </div>
-          
+
           {user && (
             <DepartmentCard
               companyId={user.companyId}
