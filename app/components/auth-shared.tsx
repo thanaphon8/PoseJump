@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 
 export const APP_NAME = "Daily Jump Challenge – ท้าให้กระโดด ลุ้นให้ได้แต้ม";
 // ชื่อสั้นสำหรับแสดงใน UI กันล้น APP_NAME เต็มใช้กับ document.title / meta
-export const APP_SHORT = "Daily Jump Challenge";
+export const APP_SHORT = "ท้าให้กระโดด ลุ้นให้ได้แต้ม";
 
 // point: 100 คนแรกของวันที่ทำเป้าหมายรายวันสำเร็จ ได้ 50 point (คำนวณฝั่งเซิร์ฟเวอร์)
 export const POINT_QUOTA = 100;
@@ -124,7 +124,7 @@ export function Logo({
   );
 }
 
-// โลโก้หน้า login/register: กรอบวงกลมสีขาว border-radius 100
+// โลโก้หน้า login/register: ไม่มีกรอบวงกลม แสดงโลโก้เต็มขนาด
 export function AuthLogo({
   size = 160,
   src = "/img/logo.PNG",
@@ -132,14 +132,7 @@ export function AuthLogo({
   size?: number;
   src?: string;
 }) {
-  return (
-    <span
-      className="flex shrink-0 items-center justify-center overflow-hidden rounded-[100px] border-4 border-white bg-white shadow-lg"
-      style={{ width: size, height: size }}
-    >
-      <Logo size={Math.round(size * 0.78)} src={src} />
-    </span>
-  );
+  return <Logo size={size} src={src} />;
 }
 
 export function Segmented<T extends string>({
@@ -342,7 +335,7 @@ export function AuthShell({
 
       <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
         <div className="flex min-w-0 flex-col items-start gap-3">
-          <AuthLogo size={96} />
+          <AuthLogo size={128} />
           <span className="min-w-0 text-[22px] font-bold leading-tight tracking-tight text-[#C9F25B]">
             {APP_SHORT}
           </span>
@@ -371,7 +364,7 @@ export function AuthShell({
 
       <div className="relative flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
         <div className="flex flex-col items-center gap-3 pt-4 lg:hidden">
-          <AuthLogo size={168} src="/img/com7logo.PNG" />
+          <AuthLogo size={220} src="/img/logo.PNG" />
           <span className="max-w-full text-center text-[22px] font-bold leading-tight tracking-tight text-[#C9F25B]">
             {APP_SHORT}
           </span>
