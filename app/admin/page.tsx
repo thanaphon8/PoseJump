@@ -8,7 +8,10 @@ import { DeptBoardView } from "../components/DepartmentRank";
 import type { DeptEntry } from "../components/DepartmentRank";
 import { buildGroups, matchesGroup } from "../components/adminGroups";
 
-const APP_NAME = "Pose Jump";
+const APP_NAME = "Daily Jump Challenge – ท้าให้กระโดด ลุ้นให้ได้แต้ม";
+// ชื่อสั้นสำหรับแสดงใน UI (แถบข้าง / หัวหน้าจอมือถือ) กันล้นและทับปุ่มอื่น
+// APP_NAME เต็มใช้เฉพาะ document.title
+const APP_SHORT = "Daily Jump Challenge";
 
 // ต้องตรงกับ lib/admin-stats.ts และฝั่งผู้ใช้
 const POINT_QUOTA = 100;
@@ -255,7 +258,7 @@ function Icon({
   );
 }
 
-// โลโก้เหมือนฝั่งผู้ใช้: public/img/logo.png พื้นหลังโปร่งใส ไม่ตัดกรอบ
+// โลโก้เหมือนฝั่งผู้ใช้: public/img/logo.PNG พื้นหลังโปร่งใส ไม่ตัดกรอบ
 function Logo({
   size = 32,
   className = "",
@@ -266,7 +269,7 @@ function Logo({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/img/logo.png"
+      src="/img/logo.PNG"
       alt=""
       onError={(e) => {
         e.currentTarget.style.display = "none";
@@ -478,9 +481,11 @@ function Shell({
   return (
     <div className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] lg:flex">
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-1 p-5 lg:flex">
-        <div className="mb-1 flex items-center gap-2 px-3 text-[20px] font-bold tracking-tight">
-          <Logo size={88} className="-my-[26px]" />
-          {APP_NAME}
+        <div className="mb-1 flex min-w-0 flex-col items-start gap-1 px-3">
+          <Logo size={72} />
+          <span className="min-w-0 text-[18px] font-bold leading-tight tracking-tight text-[#3F5E1F]">
+            {APP_SHORT}
+          </span>
         </div>
         <span className="mb-5 ml-3 mt-3 w-fit rounded-full bg-[#1B2A21] px-3 py-0.5 text-[12px] font-semibold text-[#C9F25B]">
           ผู้ดูแล
@@ -509,18 +514,18 @@ function Shell({
       </aside>
 
       <main className="pj-fade mx-auto w-full max-w-6xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12">
-        <div className="mb-4 flex h-10 items-center justify-between lg:hidden">
-          <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight">
-            <Logo size={64} className="-my-[6px]" />
-            {APP_NAME}
-            <span className="rounded-full bg-[#1B2A21] px-2.5 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
+        <div className="mb-4 flex h-10 items-center justify-between gap-3 lg:hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-2 text-[15px] font-bold tracking-tight">
+            <Logo size={48} className="-my-[4px]" />
+            <span className="min-w-0 truncate text-[#3F5E1F]">{APP_SHORT}</span>
+            <span className="shrink-0 rounded-full bg-[#1B2A21] px-2.5 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
               ผู้ดูแล
             </span>
           </div>
           <button
             onClick={onLogout}
             aria-label="ออกจากระบบ"
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#D92D20] shadow-sm transition-transform active:scale-90"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#D92D20] shadow-sm transition-transform active:scale-90"
           >
             <Icon d={ICONS.logout} size={18} />
           </button>
@@ -711,9 +716,11 @@ export default function AdminPage() {
       >
         <style>{STYLES}</style>
         <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
-          <div className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
-            <Logo size={88} className="-my-[26px]" />
-            {APP_NAME}
+          <div className="flex min-w-0 flex-col items-start gap-1">
+            <Logo size={80} />
+            <span className="min-w-0 text-[20px] font-bold leading-tight tracking-tight text-[#C9F25B]">
+              {APP_SHORT}
+            </span>
           </div>
           <div>
             <h2 className="text-[48px] font-bold leading-[1.1] tracking-tight">
@@ -744,9 +751,9 @@ export default function AdminPage() {
 
         <div className="pj-fade flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
           <div className="flex h-12 items-center lg:hidden">
-            <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight">
-              <Logo size={64} className="-my-[6px]" />
-              {APP_NAME}
+            <div className="flex min-w-0 items-center gap-2 text-[15px] font-bold tracking-tight">
+              <Logo size={48} className="-my-[4px]" />
+              <span className="min-w-0 truncate text-[#3F5E1F]">{APP_SHORT}</span>
             </div>
           </div>
           <form

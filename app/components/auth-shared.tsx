@@ -7,7 +7,9 @@ import type { ReactNode } from "react";
 /* ของที่ใช้ร่วมกันระหว่าง page.tsx / login / register                  */
 /* ------------------------------------------------------------------ */
 
-export const APP_NAME = "Pose Jump";
+export const APP_NAME = "Daily Jump Challenge – ท้าให้กระโดด ลุ้นให้ได้แต้ม";
+// ชื่อสั้นสำหรับแสดงใน UI กันล้น APP_NAME เต็มใช้กับ document.title / meta
+export const APP_SHORT = "Daily Jump Challenge";
 
 // point: 100 คนแรกของวันที่ทำเป้าหมายรายวันสำเร็จ ได้ 50 point (คำนวณฝั่งเซิร์ฟเวอร์)
 export const POINT_QUOTA = 100;
@@ -99,7 +101,7 @@ export function Icon({
 export function Logo({
   size = 32,
   className = "",
-  src = "/img/logo.png",
+  src = "/img/logo.PNG",
 }: {
   size?: number;
   className?: string;
@@ -125,7 +127,7 @@ export function Logo({
 // โลโก้หน้า login/register: กรอบวงกลมสีขาว border-radius 100
 export function AuthLogo({
   size = 160,
-  src = "/img/logo.png",
+  src = "/img/logo.PNG",
 }: {
   size?: number;
   src?: string;
@@ -339,9 +341,11 @@ export function AuthShell({
       </div>
 
       <aside className="hidden flex-col justify-between bg-[#1B2A21] p-12 text-white lg:flex">
-        <div className="flex items-center gap-4 text-[22px] font-bold tracking-tight">
+        <div className="flex min-w-0 flex-col items-start gap-3">
           <AuthLogo size={96} />
-          {APP_NAME}
+          <span className="min-w-0 text-[22px] font-bold leading-tight tracking-tight text-[#C9F25B]">
+            {APP_SHORT}
+          </span>
         </div>
         <div>
           <h2 className="text-[48px] font-bold leading-[1.1] tracking-tight">
@@ -367,8 +371,10 @@ export function AuthShell({
 
       <div className="relative flex min-h-dvh flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:px-12">
         <div className="flex flex-col items-center gap-3 pt-4 lg:hidden">
-          <AuthLogo size={168} src="/img/com7logo.png" />
-          <span className="text-[22px] font-bold tracking-tight">{APP_NAME}</span>
+          <AuthLogo size={168} src="/img/com7logo.PNG" />
+          <span className="max-w-full text-center text-[22px] font-bold leading-tight tracking-tight text-[#C9F25B]">
+            {APP_SHORT}
+          </span>
         </div>
 
         {children}

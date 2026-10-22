@@ -17,6 +17,7 @@ import type { Tab, NavItem } from "./components/Navbar";
 import type { Session } from "./components/History";
 import {
   APP_NAME,
+  APP_SHORT,
   ICONS,
   Icon,
   Logo,
@@ -270,7 +271,7 @@ function ProfileMenu({
   }, [menu]);
 
   return (
-    <div className="relative flex items-center gap-2">
+    <div className="relative flex shrink-0 items-center gap-2">
       {user && (
         <div
           className="flex items-center gap-1.5 rounded-full bg-white p-1 pr-3 shadow-sm"
@@ -449,6 +450,7 @@ function RewardModal({
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  // ข้อความแชร์ใช้ชื่อเต็ม
   const text = `ฉันเป็น ${POINT_QUOTA} คนแรกที่โดดถึงเป้าวันนี้ ได้ +${gain} point จาก ${APP_NAME}! มาโดดเชือกด้วยกันนะ`;
 
   const share = async () => {
@@ -489,9 +491,9 @@ function RewardModal({
       <Confetti count={160} />
 
       <div className="relative w-full max-w-sm rounded-[32px] bg-[#F3F6EC] p-6 text-center text-[#1B2A21] shadow-2xl">
-        <div className="flex items-center justify-center gap-2 text-[14px] font-bold tracking-tight text-[#3F5E1F]">
-          <Logo size={64} className="-my-4" />
-          {APP_NAME}
+        <div className="flex flex-col items-center gap-1 text-[15px] font-bold tracking-tight text-[#3F5E1F]">
+          <Logo size={64} />
+          <span className="leading-tight">{APP_SHORT}</span>
         </div>
         <span className="pj-stamp mx-auto mt-4 flex h-24 w-24 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21] ring-8 ring-[#C9F25B]/40">
           <Icon d={ICONS.star} size={52} fill />
@@ -594,9 +596,11 @@ function Shell({
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#F3F6EC] text-[#1B2A21] lg:flex">
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-1 p-5 lg:flex">
-        <div className="mb-6 flex items-center gap-2 px-3 text-[20px] font-bold tracking-tight">
-          <Logo size={88} className="-my-[26px]" />
-          {APP_NAME}
+        <div className="mb-6 flex min-w-0 flex-col items-start gap-1 px-3">
+          <Logo size={72} />
+          <span className="min-w-0 text-[18px] font-bold leading-tight tracking-tight text-[#3F5E1F]">
+            {APP_SHORT}
+          </span>
         </div>
         {items.map(([t, label, d]) => (
           <button
@@ -623,10 +627,10 @@ function Shell({
       <main
         className="pj-fade mx-auto w-full max-w-6xl px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12"
       >
-        <div className="mb-4 flex h-10 items-center justify-between lg:hidden">
-          <div className="flex items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
-            <Logo size={64} className="-my-[6px]" />
-            {APP_NAME}
+        <div className="mb-4 flex h-10 items-center justify-between gap-3 lg:hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-2 text-[15px] font-bold tracking-tight lg:hidden">
+            <Logo size={48} className="-my-[4px]" />
+            <span className="min-w-0 truncate text-[#3F5E1F]">{APP_SHORT}</span>
           </div>
           {profile}
         </div>
@@ -1203,9 +1207,9 @@ export default function Home() {
           >
             <Icon d={ICONS.close} size={18} />
           </button>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-[22px] font-bold leading-tight">
-              {dayMode ? "ผลวันนี้" : `${APP_NAME} · สรุปผล`}
+              {dayMode ? "ผลวันนี้" : `${APP_SHORT} · สรุปผล`}
             </h1>
             <p className="text-[13px] text-[#6B7A6E]">{sub}</p>
           </div>
