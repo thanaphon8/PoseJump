@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
   FormEvent,
@@ -8,7 +8,7 @@ import type {
   ReactNode,
   Ref,
 } from "react";
-import { EyeButton, Field } from "./auth-shared";
+import { EyeButton } from "./auth-shared";
 import type {
   AuthErrors,
   AuthFormProps,
@@ -29,9 +29,17 @@ import {
 /* ค่าคงที่ / ตัวช่วย                                                    */
 /* ------------------------------------------------------------------ */
 
-// ลำดับขั้น: 0 ชื่อเล่น → 1 บริษัท → 2 ที่ทำงาน (สำนักงานใหญ่/หน้าร้าน) → 3 แผนกหรือสาขา → 4 บัญชี → 5 โปรไฟล์
+// ลำดับขั้น: 0 ชื่อเล่น → 1 บริษัท → 2 ที่ทำงาน (สำนักงานใหญ่/หน้าร้าน) → 3 แผนกหรือสาขา → 4 บัญชี → 5 โปรไฟล์ → 6 ยินยอม
 // ขั้น 2 จะข้ามไปเองถ้าบริษัทนั้นมีแค่แผนกหรือแค่สาขาอย่างเดียว
-const STEPS = ["ชื่อเล่น", "บริษัท", "ที่ทำงาน", "แผนก/สาขา", "บัญชี", "โปรไฟล์"] as const;
+const STEPS = [
+  "ชื่อเล่น",
+  "บริษัท",
+  "ที่ทำงาน",
+  "แผนก/สาขา",
+  "บัญชี",
+  "โปรไฟล์",
+  "ยินยอม",
+] as const;
 // ข้อความใต้วงกลมแต่ละขั้น: บอกว่าผู้ใช้ต้องทำอะไร (ขั้น 3 เปลี่ยนเป็น "เลือกสาขา" ตอนเลือกหน้าร้าน)
 const STEP_LABELS = [
   "ใส่ชื่อเล่น",
@@ -40,9 +48,14 @@ const STEP_LABELS = [
   "เลือกแผนก",
   "ตั้งรหัสผ่าน",
   "เพิ่มรูป",
+  "ยอมรับ",
 ] as const;
-const LAST_STEP = STEPS.length - 1; // 5 = หน้าตั้งค่าโปรไฟล์
-const WELCOME = STEPS.length; // 6 = หน้า welcome
+const LAST_STEP = STEPS.length - 1; // 6 = หน้ายินยอม (กดสร้างบัญชีที่หน้านี้)
+const WELCOME = STEPS.length; // 7 = หน้า welcome
+const CONSENT_STEP = LAST_STEP;
+
+// แก้ทุกครั้งที่ข้อความยินยอมเปลี่ยน เซิร์ฟเวอร์ใช้บันทึกว่าผู้ใช้ยอมรับฉบับไหน
+const CONSENT_VERSION = "2026-10-v1";
 
 // สาขาที่แสดงก่อนพิมพ์ค้นหา (Com7 มี 1,000+ สาขา)
 const BRANCH_PREVIEW = 80;
@@ -530,11 +543,156 @@ function CameraCapture({
   );
 }
 
+// ช่องกรอกของหน้าสมัคร: กรอบครบทุกด้าน มนเต็ม (pill) และใหญ่ขึ้น ใช้ธีมเข้มเหมือนมือถือทุกขนาดจอ
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder,
+  error,
+  hint,
+  maxLength,
+  autoComplete,
+  autoFocus,
+  trailing,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  placeholder?: string;
+  error?: string;
+  hint?: string;
+  maxLength?: number;
+  autoComplete?: string;
+  autoFocus?: boolean;
+  trailing?: ReactNode;
+}) {
+  const id = useId();
+  const msgId = `${id}-msg`;
+  return (
+    <div>
+      <label
+        htmlFor={id}
+        className="mb-2 block px-2 text-[14px] font-semibold text-white/90"
+      >
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          maxLength={maxLength}
+          autoComplete={autoComplete}
+          autoFocus={autoFocus}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error || hint ? msgId : undefined}
+          className={`block h-14 w-full appearance-none rounded-full border-2 bg-white/[0.06] px-6 text-[17px] text-white outline-none transition-[border-color,box-shadow] [color-scheme:dark] placeholder:text-white/40 focus:ring-4 lg:h-16 lg:px-7 lg:text-[18px] ${
+            error
+              ? "border-[#F97066] focus:border-[#F97066] focus:ring-[#F97066]/25"
+              : "border-white/35 hover:border-white/55 focus:border-[#C9F25B] focus:ring-[#C9F25B]/25"
+          } ${trailing ? "pr-16" : ""}`}
+        />
+        {trailing && (
+          <div className="absolute inset-y-0 right-3 flex items-center">
+            {trailing}
+          </div>
+        )}
+      </div>
+      {error ? (
+        <p id={msgId} role="alert" className="mt-1.5 px-3 text-[13px] text-[#FDA29B]">
+          {error}
+        </p>
+      ) : hint ? (
+        <p id={msgId} className="mt-1.5 px-3 text-[12px] text-white/60">
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// ไอคอนเส้นเล็กๆ สำหรับสรุปความยินยอม
+function FactIcon({ kind }: { kind: "camera" | "shield" | "search" | "clock" }) {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {kind === "camera" && (
+        <>
+          <path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" />
+          <circle cx="12" cy="13" r="3.5" />
+        </>
+      )}
+      {kind === "shield" && (
+        <>
+          <path d="M12 3l8 3v6c0 4.5-3.2 8.2-8 9-4.8-.8-8-4.5-8-9V6l8-3z" />
+          <path d="M9 12l2 2 4-4" />
+        </>
+      )}
+      {kind === "search" && (
+        <>
+          <circle cx="11" cy="11" r="7" />
+          <path d="M21 21l-4.3-4.3" />
+        </>
+      )}
+      {kind === "clock" && (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+// สรุปสั้นๆ ที่ผู้ใช้ควรรู้ก่อนติ๊ก (รายละเอียดเต็มอยู่ในส่วนขยายด้านล่าง)
+const CONSENT_FACTS: {
+  icon: "camera" | "shield" | "search" | "clock";
+  title: string;
+  text: string;
+}[] = [
+  {
+    icon: "camera",
+    title: "ถ่ายภาพนิ่งไม่เกิน 2 ภาพต่อวัน",
+    text: "ตอนสแกนตัวครั้งแรกของวัน และตอนใกล้ถึงเป้าหมายประจำวัน ไม่บันทึกวิดีโอ",
+  },
+  {
+    icon: "search",
+    title: "ใช้ตรวจสอบการทุจริตเท่านั้น",
+    text: "ดูว่าเจ้าของบัญชีกระโดดเองจริง ไม่มีคนอื่นกระโดดแทน ไม่ใช้ประเมินผลงาน",
+  },
+  {
+    icon: "shield",
+    title: "เห็นได้เฉพาะแอดมิน",
+    text: "เพื่อนร่วมงานและผู้เล่นทั่วไปไม่เห็นภาพ และไม่แสดงในหน้าอันดับ",
+  },
+  {
+    icon: "clock",
+    title: "เก็บภาพ [ระยะเวลา]",
+    text: "เช่น ลบภายใน 30 วันหลังประกาศผลรางวัล ถอนความยินยอมได้ทุกเมื่อ",
+  },
+];
+
 // กรอบหน้าสมัคร (ไม่มีโลโก้/ชื่อแอป): มือถือ = กรอบเต็มจอ / จอ ≥640px = การ์ดลอยบนพื้นเขียวอ่อนเหมือนหน้า welcome
 // การ์ดเป็นสีเข้มจนถึง lg แล้วเปลี่ยนเป็นสีขาว ให้ตรงกับที่ Field ถูกออกแบบไว้
 function RegShell({ children }: { children: ReactNode }) {
   return (
-    <div className="fixed inset-0 z-40 overflow-y-auto bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85]">
+    <div
+      style={{ touchAction: "pan-y", overscrollBehaviorX: "none" }}
+      className="fixed inset-0 z-40 overflow-x-hidden overflow-y-auto bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85]"
+    >
       <span
         aria-hidden
         className="pointer-events-none absolute -left-16 top-24 h-56 w-56 rounded-full bg-white/40 blur-2xl"
@@ -543,8 +701,8 @@ function RegShell({ children }: { children: ReactNode }) {
         aria-hidden
         className="pointer-events-none absolute -right-20 bottom-20 h-64 w-64 rounded-full bg-[#C9F25B]/50 blur-2xl"
       />
-      <div className="relative mx-auto flex min-h-dvh w-full max-w-lg items-stretch justify-center sm:items-center sm:px-4 sm:py-8">
-        <div className="flex min-h-dvh w-full flex-col justify-start bg-[#1B2A21] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.75rem,env(safe-area-inset-top))] text-white sm:min-h-0 sm:rounded-[32px] sm:p-6 sm:shadow-2xl sm:ring-1 sm:ring-black/5 lg:bg-white lg:text-[#1B2A21]">
+      <div className="relative mx-auto flex min-h-dvh w-full max-w-lg items-stretch justify-center sm:items-center sm:px-4 sm:py-8 lg:max-w-2xl">
+        <div className="flex min-h-dvh w-full flex-col justify-start bg-[#1B2A21] px-6 pb-0 pt-[max(1.75rem,env(safe-area-inset-top))] text-white sm:min-h-0 sm:rounded-[32px] sm:p-6 sm:shadow-2xl sm:ring-1 sm:ring-black/5 lg:max-h-[calc(100dvh-4rem)] lg:p-8">
           {children}
         </div>
       </div>
@@ -555,7 +713,7 @@ function RegShell({ children }: { children: ReactNode }) {
 const primaryBtn =
   "flex h-14 w-full items-center justify-center rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348] disabled:opacity-60";
 const ghostBtn =
-  "mt-3 flex h-11 w-full items-center justify-center rounded-full text-[15px] font-semibold text-white/80 transition-colors hover:text-white disabled:opacity-60 lg:text-[#6B7A6E] lg:hover:text-[#1B2A21]";
+  "mt-3 flex h-11 w-full items-center justify-center rounded-full text-[15px] font-semibold text-white/80 transition-colors hover:text-white disabled:opacity-60";
 
 /* ------------------------------------------------------------------ */
 /* ฟอร์มสมัครสมาชิกแบบทีละขั้น                                             */
@@ -578,6 +736,11 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
   const [show, setShow] = useState(false);
   const [errors, setErrors] = useState<AuthErrors>({});
   const [busy, setBusy] = useState(false);
+
+  // ความยินยอม: ต้องติ๊กครบทุกข้อ (ไม่ติ๊กไว้ล่วงหน้า) ถึงจะสร้างบัญชีได้
+  const [consentPhoto, setConsentPhoto] = useState(false);
+  const [consentRank, setConsentRank] = useState(false);
+  const allConsented = consentPhoto && consentRank;
 
   // รูปโปรไฟล์ (ไม่บังคับ)
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -639,7 +802,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
         ? "store"
         : "";
   // ขั้นที่ผู้ใช้ต้องผ่านจริง (ข้ามขั้น 2 ถ้าไม่ต้องถาม)
-  const flow = askType ? [0, 1, 2, 3, 4, 5] : [0, 1, 3, 4, 5];
+  const flow = askType ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 3, 4, 5, 6];
   const stepLabel = (id: number) =>
     id === 3 && place === "store" ? "เลือกสาขา" : STEP_LABELS[id];
 
@@ -813,6 +976,10 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
         err.password = "รหัสผ่านอย่างน้อย 6 ตัวอักษร";
       if (!err.password && confirm !== password)
         err.confirm = "รหัสผ่านไม่ตรงกัน";
+    } else if (s === CONSENT_STEP) {
+      // ต้องติ๊กครบทุกข้อเท่านั้น
+      if (!consentPhoto || !consentRank)
+        err.form = "ต้องยินยอมครบทั้ง 2 ข้อ จึงจะสมัครและเข้าร่วมกิจกรรมได้";
     }
     return err;
   };
@@ -832,7 +999,8 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
 
   const register = async (withAvatar: boolean) => {
     if (busy) return;
-    for (let s = 0; s <= 4; s++) {
+    // ตรวจทุกขั้นก่อนส่ง (ขั้น 5 โปรไฟล์ไม่บังคับ จึงไม่ตรวจ) รวมขั้นยินยอมด้วย
+    for (const s of [0, 1, 2, 3, 4, CONSENT_STEP]) {
       const err = validate(s);
       if (Object.keys(err).length > 0) {
         setErrors(err);
@@ -857,6 +1025,10 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       if (place === "store" && branchId) formData.append("branchId", branchId);
       formData.append("password", password);
       if (withAvatar && avatarFile) formData.append("avatar", avatarFile);
+      // ความยินยอม: เซิร์ฟเวอร์ต้องตรวจซ้ำ ปฏิเสธถ้าไม่ใช่ "true" ทั้งคู่ และประทับเวลาเอง
+      formData.append("consentPhoto", String(consentPhoto));
+      formData.append("consentRank", String(consentRank));
+      formData.append("consentVersion", CONSENT_VERSION);
 
       const res = await fetch("/api/auth/register", {
         method: "POST",
@@ -920,6 +1092,15 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     setStep(i);
   };
 
+  // ข้ามขั้นรูปโปรไฟล์ไปหน้ายินยอม (ล้างรูปที่เลือกไว้)
+  const skipAvatar = () => {
+    if (busy) return;
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setErrors({});
+    setStep(CONSENT_STEP);
+  };
+
   /* ---------------- หน้า welcome (เต็มจอ สีเขียวอ่อน) ---------------- */
 
   if (step === WELCOME && user) {
@@ -949,7 +1130,10 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     const groupLabel = selectedDept ? "แผนก" : "สาขา";
 
     return (
-      <div className="fixed inset-0 z-50 overflow-y-auto bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] text-[#1B2A21]">
+      <div
+        style={{ touchAction: "pan-y", overscrollBehaviorX: "none" }}
+        className="fixed inset-0 z-50 overflow-x-hidden overflow-y-auto bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] text-[#1B2A21]"
+      >
         <style>{`
           @keyframes rf-drop {
             0% { transform: translateY(-170px) scale(.8,1.15); opacity: 0; }
@@ -1176,28 +1360,46 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
         },
     { t: "ตั้งค่าบัญชี", s: "ใช้ username และรหัสผ่านนี้เข้าสู่ระบบ" },
     { t: "ใส่รูปโปรไฟล์", s: "เลือกรูปให้เพื่อนจำคุณได้ หรือข้ามไปก่อนก็ได้" },
+    { t: "ข้อตกลงและความยินยอม", s: "อ่านให้ครบ และติ๊กยินยอมทั้ง 2 ข้อก่อนสร้างบัญชี" },
   ][step];
 
   // ตำแหน่งของขั้นปัจจุบันในลำดับที่แสดงจริง (ใช้วาดวงกลมลำดับขั้น)
   const pos = Math.max(0, flow.indexOf(step));
 
   const noItemsCls =
-    "mt-4 rounded-2xl bg-white/10 px-4 py-5 text-center text-[14px] lg:bg-[#1B2A21]/5";
+    "mt-4 rounded-2xl bg-white/10 px-4 py-5 text-center text-[14px]";
+
+  const consentItems: [boolean, (v: boolean) => void, string][] = [
+    [
+      consentPhoto,
+      setConsentPhoto,
+      "ฉันยินยอมให้ถ่ายและเก็บภาพนิ่งจากกล้อง (สูงสุด 2 ภาพต่อวัน) เพื่อให้แอดมินและผู้ดูแลกิจกรรมตรวจสอบการทุจริต",
+    ],
+    [
+      consentRank,
+      setConsentRank,
+      "ฉันยินยอมให้แสดงชื่อเล่น คะแนน และอันดับของฉันแก่ผู้เข้าร่วมกิจกรรม",
+    ],
+  ];
 
   return (
     <RegShell>
-      <form onSubmit={next} noValidate className="w-full">
+      <form
+        onSubmit={next}
+        noValidate
+        className="flex w-full flex-col lg:min-h-0 lg:flex-1"
+      >
         {/* ขั้นตอน: วงกลมมีลำดับที่ + ข้อความบอกว่าต้องทำอะไร (แตะขั้นที่ผ่านแล้วเพื่อย้อนกลับ) */}
-        <ol className="flex items-start" aria-label="ขั้นตอนการสมัคร">
+        <ol className="flex shrink-0 items-start" aria-label="ขั้นตอนการสมัคร">
           {flow.map((id, p) => {
             const label = stepLabel(id);
             const done = p < pos;
             const cur = p === pos;
             const circle = done
-              ? "bg-[#C9F25B] text-[#1B2A21] lg:bg-[#3F5E1F] lg:text-white"
+              ? "bg-[#C9F25B] text-[#1B2A21]"
               : cur
-                ? "bg-[#C9F25B] text-[#1B2A21] ring-4 ring-[#C9F25B]/30 lg:bg-[#3F5E1F] lg:text-white lg:ring-[#3F5E1F]/20"
-                : "border border-white/30 text-white/60 lg:border-[#1B2A21]/20 lg:text-[#6B7A6E]";
+                ? "bg-[#C9F25B] text-[#1B2A21] ring-4 ring-[#C9F25B]/30"
+                : "border border-white/30 text-white/60";
             const inner = done ? (
               <svg
                 className="h-4 w-4"
@@ -1227,8 +1429,8 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                     aria-hidden
                     className={`absolute left-[calc(50%+22px)] top-[17px] h-0.5 w-[calc(100%-44px)] transition-colors duration-300 ${
                       done
-                        ? "bg-[#C9F25B] lg:bg-[#3F5E1F]"
-                        : "bg-white/20 lg:bg-[#1B2A21]/10"
+                        ? "bg-[#C9F25B]"
+                        : "bg-white/20"
                     }`}
                   />
                 )}
@@ -1246,12 +1448,12 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                   <span className={circleCls}>{inner}</span>
                 )}
                 <span
-                  className={`mt-1.5 px-0.5 text-center text-[11px] font-semibold leading-tight ${
+                  className={`mt-1.5 px-0.5 text-center text-[10px] font-semibold leading-tight sm:text-[11px] ${
                     cur
-                      ? "text-white lg:text-[#1B2A21]"
+                      ? "text-white"
                       : done
-                        ? "text-white/80 lg:text-[#3F5E1F]"
-                        : "text-white/50 lg:text-[#6B7A6E]"
+                        ? "text-white/80"
+                        : "text-white/50"
                   }`}
                 >
                   {label}
@@ -1261,11 +1463,13 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
           })}
         </ol>
 
+        {/* โซนเนื้อหา: คอมพิวเตอร์เลื่อนในกรอบนี้ ปุ่มด้านล่างจึงอยู่ในจอเสมอ */}
+        <div className="pb-2 lg:-mx-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-4 lg:py-1">
         <div key={step} className="pj-in">
           <h1 className="mt-6 text-[30px] font-bold leading-tight tracking-tight">
             {heading.t}
           </h1>
-          <p className="mt-1 text-[14px] text-white/80 lg:text-[#6B7A6E]">
+          <p className="mt-1 text-[14px] text-white/80">
             {heading.s}
           </p>
 
@@ -1299,7 +1503,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
               {errors.companyId && (
                 <p
                   role="alert"
-                  className="mt-2 text-[13px] text-[#FDA29B] lg:text-[#D92D20]"
+                  className="mt-2 text-[13px] text-[#FDA29B]"
                 >
                   {errors.companyId}
                 </p>
@@ -1479,7 +1683,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 aria-label="เลือกรูปโปรไฟล์"
-                className="group relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-white/40 bg-white/10 transition-all hover:border-[#C9F25B] active:scale-95 lg:border-[#6B7A6E]"
+                className="group relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-white/40 bg-white/10 transition-all hover:border-[#C9F25B] active:scale-95"
               >
                 {avatarPreview ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -1489,7 +1693,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="flex flex-col items-center text-[13px] text-white/70 group-hover:text-[#C9F25B] lg:text-[#6B7A6E]">
+                  <div className="flex flex-col items-center text-[13px] text-white/70 group-hover:text-[#C9F25B]">
                     <svg
                       className="mb-1 h-8 w-8"
                       fill="none"
@@ -1534,14 +1738,163 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex h-11 items-center rounded-full border border-white/30 px-5 text-[14px] font-semibold text-white/90 transition-colors hover:bg-white/10 active:scale-95 lg:border-[#1B2A21]/20 lg:text-[#1B2A21] lg:hover:bg-[#1B2A21]/5"
+                  className="flex h-11 items-center rounded-full border border-white/30 px-5 text-[14px] font-semibold text-white/90 transition-colors hover:bg-white/10 active:scale-95"
                 >
                   {avatarFile ? "เลือกรูปใหม่" : "เลือกรูป"}
                 </button>
               </div>
-              <span className="mt-3 text-[12px] text-white/60 lg:text-[#6B7A6E]">
+              <span className="mt-3 text-[12px] text-white/60">
                 ไฟล์ไม่เกิน 5MB
               </span>
+            </div>
+          )}
+
+          {/* ขั้น 7: ข้อตกลงและความยินยอม (ต้องติ๊กครบทุกข้อถึงจะสร้างบัญชีได้) */}
+          {step === CONSENT_STEP && (
+            <div className="mt-5">
+              {/* สรุป 4 ข้อที่ควรรู้ */}
+              <ul
+                aria-label="สรุปการใช้ข้อมูล"
+                className="divide-y divide-white/10 overflow-hidden rounded-2xl bg-white/10"
+              >
+                {CONSENT_FACTS.map((f) => (
+                  <li key={f.title} className="flex items-start gap-3 p-3.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
+                      <FactIcon kind={f.icon} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[15px] font-semibold leading-snug">
+                        {f.title}
+                      </span>
+                      <span className="mt-0.5 block text-[13px] leading-5 text-white/75">
+                        {f.text}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              {/* รายละเอียดฉบับเต็ม (พับเก็บไว้ ไม่ให้หน้ายาวเกินไป) */}
+              <details className="group mt-3 rounded-2xl border border-white/15">
+                <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-[14px] font-semibold [&::-webkit-details-marker]:hidden">
+                  อ่านรายละเอียดฉบับเต็ม
+                  <svg
+                    className="h-4 w-4 shrink-0 transition-transform duration-200 group-open:rotate-180"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </summary>
+                <div
+                  tabIndex={0}
+                  className="max-h-[34dvh] space-y-3 overflow-y-auto border-t border-white/10 px-4 py-3 text-[13px] leading-6 text-white/85"
+                >
+                  <p className="font-semibold">
+                    ผู้ควบคุมข้อมูล: [ชื่อบริษัท] ติดต่อ [อีเมล/โทร/DPO]
+                  </p>
+                  <p>
+                    <b>ข้อมูลที่เก็บ:</b> ชื่อเล่น username บริษัท แผนก/สาขา
+                    รูปโปรไฟล์ (ถ้าใส่) ผลการกระโดด (จำนวนครั้ง เวลา ครั้งต่อนาที
+                    ความสม่ำเสมอ ประวัติ คะแนน อันดับ) และ{" "}
+                    <b>ภาพนิ่งจากกล้องสูงสุด 2 ภาพต่อวัน</b>{" "}
+                    คือภาพตอนสแกนตัวก่อนเริ่มกระโดดครั้งแรกของวัน
+                    และภาพตอนยอดรวมของวันใกล้ถึงเป้าหมาย พร้อมเวลาที่ถ่าย
+                    เมื่อถ่ายครบแล้ว การเล่นรอบต่อๆ ไปในวันเดียวกันจะไม่ถ่ายเพิ่ม
+                  </p>
+                  <p>
+                    <b>วิธีทำงาน:</b> กล้องตรวจท่าทางเพื่อนับการกระโดดโดยประมวลผลบนอุปกรณ์ของคุณ
+                    วิดีโอสดไม่ถูกบันทึก มีเฉพาะภาพนิ่งข้างต้น
+                    ภาพอาจเห็นฉากหลังหรือผู้อื่น โปรดเลือกจุดที่เหมาะสม
+                  </p>
+                  <p>
+                    <b>วัตถุประสงค์ของภาพ:</b> ตรวจสอบว่าเจ้าของบัญชีกระโดดด้วยตนเองจริง
+                    ไม่มีผู้อื่นกระโดดแทน และไม่มีการทุจริต เพื่อความยุติธรรมของการชิงรางวัล
+                    จะไม่ใช้ประเมินผลงาน หรือลงโทษทางวินัยที่ไม่เกี่ยวกับการทุจริตในกิจกรรมนี้
+                  </p>
+                  <p>
+                    <b>ใครเห็นข้อมูล:</b> ภาพเข้าถึงได้เฉพาะแอดมินและผู้ดูแลกิจกรรม{" "}
+                    <b>ผู้เล่นทั่วไปและเพื่อนร่วมงานไม่เห็นภาพ</b> และไม่แสดงในหน้าอันดับ
+                    ส่วนชื่อเล่น คะแนน และอันดับ แสดงแก่ [ผู้เข้าร่วมทุกคน]
+                  </p>
+                  <p>
+                    <b>เก็บนานแค่ไหน:</b> ภาพถ่าย [เช่น ลบภายใน 30 วันหลังประกาศผลรางวัล]
+                    ข้อมูลคะแนน [ระบุ] ข้อมูลเก็บที่ [ผู้ให้บริการ/ประเทศ]
+                  </p>
+                  <p>
+                    <b>สิทธิของคุณ:</b> ขอเข้าถึง แก้ไข ลบ ระงับ คัดค้าน
+                    และถอนความยินยอมได้ทุกเมื่อที่ [ช่องทาง] การถอนไม่กระทบข้อมูลที่ใช้ไปแล้ว
+                    และสามารถร้องเรียนต่อสำนักงานคณะกรรมการคุ้มครองข้อมูลส่วนบุคคล (สคส.) ได้
+                    หากถอนความยินยอมเรื่องภาพถ่าย คุณจะไม่สามารถร่วมชิงรางวัลได้
+                    การเข้าร่วมเป็นไปโดยสมัครใจ ไม่มีผลต่อการจ้างงานหรือสิทธิประโยชน์อื่น
+                  </p>
+                </div>
+              </details>
+
+              {/* ช่องติ๊กยินยอม: การ์ดใหญ่ แตะง่ายบนมือถือ */}
+              <div className="mt-4 flex items-center justify-between">
+                <p className="text-[13px] font-semibold text-white/80">
+                  ติ๊กยินยอมให้ครบทั้ง 2 ข้อ
+                </p>
+                <p
+                  aria-live="polite"
+                  className={`rounded-full px-2.5 py-0.5 text-[12px] font-bold tabular-nums ${
+                    allConsented
+                      ? "bg-[#C9F25B] text-[#1B2A21]"
+                      : "bg-white/10 text-white/70"
+                  }`}
+                >
+                  {Number(consentPhoto) + Number(consentRank)}/2
+                </p>
+              </div>
+              <div className="mt-2 space-y-2.5">
+                {consentItems.map(([val, set, text]) => (
+                  <label
+                    key={text}
+                    className={`flex min-h-[64px] cursor-pointer items-start gap-3 rounded-2xl border-2 px-4 py-3.5 text-[14px] leading-6 transition-colors active:scale-[0.99] ${
+                      val
+                        ? "border-[#C9F25B] bg-[#C9F25B]/10"
+                        : "border-white/20"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={val}
+                      onChange={(e) => {
+                        set(e.target.checked);
+                        clearErr("form");
+                      }}
+                      className="peer sr-only"
+                    />
+                    <span
+                      aria-hidden
+                      className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 transition-colors peer-focus-visible:ring-4 peer-focus-visible:ring-[#C9F25B]/40 ${
+                        val
+                          ? "border-[#C9F25B] bg-[#C9F25B] text-[#1B2A21]"
+                          : "border-white/50 text-transparent"
+                      }`}
+                    >
+                      <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={3.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 12l5 5 9-10" />
+                      </svg>
+                    </span>
+                    <span className="min-w-0">{text}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1554,49 +1907,43 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
             {errors.form}
           </p>
         )}
+        </div>
 
         {/* ปุ่มหลัก: ย้อนกลับ + ถัดไป อยู่แถวเดียวกัน (ไม่ต้องเลื่อนหน้าจอ) */}
-        <div className="mt-5 flex items-center gap-3">
+        {/* แถบปุ่มล่าง: มือถือ/แท็บเล็ตติดขอบล่างจอ คอมพิวเตอร์อยู่ใต้โซนเนื้อหาในกรอบเสมอ */}
+        <div className="sticky bottom-0 z-10 -mx-6 mt-4 shrink-0 border-t border-white/10 bg-[#1B2A21] px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:pt-4">
+        <div className="flex items-center gap-3">
           {step > 0 && (
             <button
               type="button"
               onClick={back}
               disabled={busy}
-              className="flex h-14 shrink-0 items-center justify-center rounded-full border border-white/30 px-5 text-[15px] font-semibold text-white/90 transition-colors hover:bg-white/10 disabled:opacity-60 lg:border-[#1B2A21]/20 lg:text-[#1B2A21] lg:hover:bg-[#1B2A21]/5"
+              className="flex h-14 shrink-0 items-center justify-center rounded-full border border-white/30 px-5 text-[15px] font-semibold text-white/90 transition-colors hover:bg-white/10 disabled:opacity-60"
             >
               ย้อนกลับ
             </button>
           )}
           {step < LAST_STEP ? (
             <button type="submit" className={`${primaryBtn} flex-1`}>
-              ถัดไป
-            </button>
-          ) : avatarFile ? (
-            <button
-              type="submit"
-              disabled={busy}
-              className={`${primaryBtn} flex-1`}
-            >
-              {busy ? "กำลังสร้างบัญชี" : "เสร็จสิ้น"}
+              {step === 5 && !avatarFile ? "ข้ามไปก่อน" : "ถัดไป"}
             </button>
           ) : (
             <button
-              type="button"
-              disabled={busy}
-              onClick={() => register(false)}
+              type="submit"
+              disabled={busy || !allConsented}
               className={`${primaryBtn} flex-1`}
             >
-              {busy ? "กำลังสร้างบัญชี" : "ข้ามไปก่อน"}
+              {busy ? "กำลังสร้างบัญชี" : "ยอมรับและสร้างบัญชี"}
             </button>
           )}
         </div>
 
-        {/* ขั้นสุดท้ายที่เลือกรูปแล้ว ยังข้ามได้ */}
-        {step === LAST_STEP && avatarFile && (
+        {/* ขั้นรูปโปรไฟล์: เลือกรูปแล้วก็ยังข้ามได้ */}
+        {step === 5 && avatarFile && (
           <button
             type="button"
             disabled={busy}
-            onClick={() => register(false)}
+            onClick={skipAvatar}
             className={ghostBtn}
           >
             ข้ามขั้นตอนนี้
@@ -1605,12 +1952,12 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
 
         {step === 0 && (
           <>
-            <p className="mt-5 text-center text-[14px] text-white/80 lg:text-[#6B7A6E]">
+            <p className="mt-5 text-center text-[14px] text-white/80">
               มีบัญชีอยู่แล้ว?{" "}
               <button
                 type="button"
                 onClick={() => onSwitch("login")}
-                className="font-semibold text-[#C9F25B] underline-offset-2 hover:underline lg:text-[#3F5E1F]"
+                className="font-semibold text-[#C9F25B] underline-offset-2 hover:underline"
               >
                 เข้าสู่ระบบ
               </button>
@@ -1620,6 +1967,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
             </p>
           </>
         )}
+        </div>
       </form>
 
       {camOpen && (

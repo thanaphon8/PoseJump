@@ -75,7 +75,8 @@ export default function LoginForm({ onAuthed, onSwitch }: AuthFormProps) {
           เข้าสู่ระบบเพื่อไปต่อจากรอบล่าสุด
         </p>
 
-        <div className="mt-6 space-y-4">
+        {/* ช่องกรอกใหญ่ขึ้น (h-16, ตัวอักษร 18px) + ขอบมนสุด (rounded-full = 9999px) */}
+        <div className="mt-6 space-y-5 [&_input]:h-16 [&_input]:rounded-full [&_input]:text-[18px] [&_div:has(>input)]:h-16 [&_div:has(>input)]:rounded-full">
           <Field
             label="Username"
             value={username}
