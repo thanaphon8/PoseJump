@@ -140,18 +140,18 @@ export default function DepartmentCard({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="pj-lift block w-full rounded-3xl bg-white p-4 text-left transition-transform active:scale-[0.99] lg:p-5"
+        className="pj-lift block w-full rounded-3xl bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] p-4 text-left transition-transform active:scale-[0.99] lg:p-5"
         aria-haspopup="dialog"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[12px] text-[#6B7A6E]">{kind}ของคุณ</div>
+            <div className="text-[12px] text-[#3F5E1F]">{kind}ของคุณ</div>
             <h2 className="truncate text-[17px] font-bold">{title}</h2>
             {sub && (
-              <div className="truncate text-[12px] text-[#6B7A6E]">{sub}</div>
+              <div className="truncate text-[12px] text-[#3F5E1F]">{sub}</div>
             )}
           </div>
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#E8F5C1] text-[#3F5E1F]">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/80 text-[#3F5E1F]">
             <Icon d={ICONS.right} size={18} />
           </span>
         </div>
@@ -177,15 +177,15 @@ export default function DepartmentCard({
 
         <div className="mt-3 flex items-center justify-between gap-3">
           {failed ? (
-            <span className="text-[13px] text-[#6B7A6E]">
+            <span className="text-[13px] text-[#3F5E1F]">
               โหลดรายชื่อไม่สำเร็จ
             </span>
           ) : !data ? (
-            <span className="pj-pulse text-[13px] text-[#6B7A6E]">
+            <span className="pj-pulse text-[13px] text-[#3F5E1F]">
               กำลังโหลด...
             </span>
           ) : members.length === 0 ? (
-            <span className="text-[13px] text-[#6B7A6E]">ยังไม่มีสมาชิก</span>
+            <span className="text-[13px] text-[#3F5E1F]">ยังไม่มีสมาชิก</span>
           ) : (
             <div className="flex items-center">
               <div className="flex -space-x-3">
@@ -235,7 +235,7 @@ export default function DepartmentCard({
             `}</style>
 
             <div
-              className="relative flex max-h-[88dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[32px] bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] text-[#1B2A21] shadow-2xl sm:rounded-[32px]"
+              className="relative flex max-h-[88dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[32px] bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] text-[#1B2A21] shadow-2xl sm:max-w-2xl sm:rounded-[32px] lg:max-w-4xl"
               onClick={(e) => e.stopPropagation()}
             >
               {/* ลายตกแต่งพื้นหลัง เหมือนหน้า welcome */}
@@ -285,7 +285,7 @@ export default function DepartmentCard({
                 )}
               </div>
 
-              <ul className="relative grid grid-cols-3 gap-x-2 gap-y-5 overflow-y-auto px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 sm:grid-cols-4">
+              <ul className="relative grid grid-cols-3 gap-x-2 gap-y-5 overflow-y-auto px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 sm:grid-cols-4 lg:grid-cols-6">
                 {members.map((m, i) => {
                   const me = m.isMe || m.username === myUsername;
                   // ดีเลย์สูงสุด 12 คนแรก ที่เหลือโผล่พร้อมกัน ไม่ให้รอนาน
@@ -306,7 +306,7 @@ export default function DepartmentCard({
                               : "ring-[3px] ring-white"
                           }`}
                         >
-                          <Avatar name={m.name} src={m.avatarUrl} size={64} />
+                          <Avatar name={m.name} src={m.avatarUrl} size={80} />
                           {me && (
                             <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#1B2A21] px-2 py-0.5 text-[10px] font-bold text-[#C9F25B]">
                               คุณ
