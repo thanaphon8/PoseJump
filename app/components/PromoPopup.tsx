@@ -40,7 +40,7 @@ export default function PromoPopup({
         {imgOk && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src="/img/jump.jpg"
+            src="/img/jump.PNG"
             alt=""
             draggable={false}
             onError={() => setImgOk(false)}
