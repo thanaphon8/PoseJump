@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Prompt } from "next/font/google";
 import UserDayModal from "../components/UserDayModal";
+import { DeptBoardView } from "../components/DepartmentRank";
+import type { DeptEntry } from "../components/DepartmentRank";
+import { buildGroups, matchesGroup } from "../components/adminGroups";
 
 const APP_NAME = "Pose Jump";
 
@@ -27,7 +30,13 @@ const STYLES = `
 .pj-stagger > *:nth-child(2) { animation-delay: .06s; }
 .pj-stagger > *:nth-child(3) { animation-delay: .12s; }
 .pj-stagger > *:nth-child(4) { animation-delay: .18s; }
-@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-in, .pj-stagger > * { animation: none; } }
+@keyframes pj-rise { from { transform: scaleY(.2); opacity: 0; } to { opacity: 1; transform: scaleY(1); } }
+@keyframes pj-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.pj-rise { transform-origin: bottom; animation: pj-rise .6s cubic-bezier(.2,.8,.2,1) both; }
+.pj-float { animation: pj-float 2.4s ease-in-out infinite; }
+.pj-lift { transition: transform .15s ease, box-shadow .15s ease; }
+.pj-lift:hover { box-shadow: 0 4px 14px rgba(27,42,33,.08); }
+@media (prefers-reduced-motion: reduce) { .pj-fade, .pj-in, .pj-stagger > *, .pj-rise, .pj-float { animation: none; } }
 `;
 
 /* ---------------- ชนิดข้อมูล ---------------- */
@@ -52,6 +61,8 @@ type DayData = {
   reachedCount: number;
   awardedCount: number;
   entries: DayEntry[];
+  // ยอดสะสมรายกลุ่ม key "d:<id>" / "b:<id>" ตรงกับหน้าอันดับฝั่งผู้ใช้
+  deptTotals?: Record<string, number>;
 };
 type WeekEntry = {
   rank: number;
@@ -577,147 +588,6 @@ function OrgLine({ org }: { org?: OrgInfo }) {
   );
 }
 
-type GroupRow = {
-  key: string;
-  rank: number;
-  name: string;
-  sub: string;
-  players: number;
-  total: number;
-  points: number;
-};
-
-// รวมผู้เล่นเป็นกลุ่ม: สำนักงานใหญ่ = 1 แผนก / หน้าร้าน = 1 สาขา (เหมือนอันดับฝั่งผู้ใช้)
-function buildGroups(
-  rows: { total: number; points: number; org?: OrgInfo }[],
-  sort: Sort
-): GroupRow[] {
-  const m = new Map<string, Omit<GroupRow, "rank">>();
-  for (const e of rows) {
-    const o = e.org;
-    const key = o?.groupKey ?? "none";
-    const g = m.get(key) ?? {
-      key,
-      name: o?.groupName ?? "ไม่ระบุสังกัด",
-      sub: o?.groupKey
-        ? [o.company, o.workplace, o.branchCode ? `ID ${o.branchCode}` : null, o.province]
-            .filter(Boolean)
-            .join(" · ")
-        : "",
-      players: 0,
-      total: 0,
-      points: 0,
-    };
-    g.players += 1;
-    g.total += e.total;
-    g.points += e.points;
-    m.set(key, g);
-  }
-  return [...m.values()]
-    .sort(
-      sort === "total"
-        ? (a, b) => b.total - a.total || b.points - a.points
-        : (a, b) => b.points - a.points || b.total - a.total
-    )
-    .map((g, i) => ({ ...g, rank: i + 1 }));
-}
-
-const matchesGroup = (q: string, g: GroupRow) => {
-  const s = q.trim().toLowerCase();
-  if (!s) return true;
-  return `${g.name} ${g.sub}`.toLowerCase().includes(s);
-};
-
-function GroupBoard({ rows, sort }: { rows: GroupRow[]; sort: Sort }) {
-  const th =
-    "px-4 py-3 text-left text-[12px] font-medium text-[#6B7A6E] whitespace-nowrap";
-  return (
-    <>
-      <section className="mt-4 overflow-hidden rounded-3xl bg-white">
-        {rows.length === 0 ? (
-          <p className="px-4 py-10 text-center text-[14px] text-[#6B7A6E]">
-            ไม่มีข้อมูล
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse">
-              <thead>
-                <tr className="border-b border-[#EEF2E4]">
-                  <th className={`${th} w-16`}>#</th>
-                  <th className={th}>แผนก / สาขา</th>
-                  <th className={`${th} text-right`}>คน</th>
-                  <th className={`${th} hidden text-right md:table-cell`}>
-                    เฉลี่ย/คน
-                  </th>
-                  <th className={`${th} text-right`}>โดดรวม</th>
-                  <th className={`${th} text-right`}>point รวม</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#EEF2E4]">
-                {rows.map((g) => (
-                  <tr key={g.key}>
-                    <td className="px-4 py-3">
-                      <Rank rank={g.rank} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <Avatar name={g.name} />
-                        <div className="min-w-0">
-                          <div className="truncate text-[15px] font-semibold">
-                            {g.name}
-                          </div>
-                          {g.sub && (
-                            <div
-                              className="truncate text-[12px] text-[#6B7A6E]"
-                              title={g.sub}
-                            >
-                              {g.sub}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right text-[14px] tabular-nums text-[#6B7A6E]">
-                      {fmtNum(g.players)}
-                    </td>
-                    <td className="hidden px-4 py-3 text-right text-[14px] tabular-nums text-[#6B7A6E] md:table-cell">
-                      {fmtNum(Math.round(g.total / Math.max(1, g.players)))}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-right tabular-nums ${
-                        sort === "total"
-                          ? "text-[22px] font-semibold text-[#3F5E1F]"
-                          : "text-[15px] text-[#6B7A6E]"
-                      }`}
-                    >
-                      {fmtNum(g.total)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span
-                        className={`font-semibold tabular-nums ${
-                          sort === "total" ? "text-[15px]" : "text-[22px]"
-                        } ${g.points > 0 ? "text-[#3F5E1F]" : "text-[#A9B79A]"}`}
-                      >
-                        {fmtNum(g.points)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-      <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-        กลุ่ม = แผนก (สำนักงานใหญ่) หรือ 1 สาขา (หน้าร้าน) นับเฉพาะคนที่โดดในช่วงนี้และตรงตัวกรอง ·{" "}
-        {sort === "total"
-          ? "เรียงตามยอดโดดรวม ถ้าเท่ากันเรียงตาม point"
-          : "เรียงตาม point รวม ถ้าเท่ากันเรียงตามยอดโดดรวม"}
-      </p>
-    </>
-  );
-}
-
 /* ---------------- หน้าหลัก ---------------- */
 
 export default function AdminPage() {
@@ -729,7 +599,7 @@ export default function AdminPage() {
   const [onlyAwarded, setOnlyAwarded] = useState(false);
   const [sort, setSort] = useState<Sort>("points");
   const [scope, setScope] = useState<Scope>("month");
-  // มุมมอง (รายคน / แผนก-สาขา) และตัวกรองสังกัด ใช้ร่วมกันทั้ง 3 หน้า
+  // มุมมอง (รายคน / แผนก-สาขา) ใช้ได้เฉพาะหน้ารายวัน ตัวกรองสังกัดใช้ร่วมกันทั้ง 3 หน้า
   const [group, setGroup] = useState<Group>("player");
   const [fCompany, setFCompany] = useState("");
   const [fWork, setFWork] = useState<WorkFilter>("all");
@@ -1033,10 +903,65 @@ export default function AdminPage() {
   const monthPoints = sum(monthScoped, (e) => e.points);
   const monthTotal = sum(monthScoped, (e) => e.total);
 
-  // มุมมองแผนก/สาขา
+  // มุมมองแผนก/สาขา (ใช้เฉพาะหน้ารายวัน)
+  // หน้ารายวัน: ยอดสะสม (ตรงหน้าผู้ใช้) เป็นตัวเลขหลัก + ยอดโดดวันนี้
   const groupSource = view === "day" ? dayScoped : view === "week" ? weekScoped : monthScoped;
-  const groupList = buildGroups(groupSource, sort).filter((g) =>
-    matchesGroup(q, g)
+  const dayCum = view === "day" ? day?.deptTotals : undefined;
+  const isDayGroup = !!dayCum;
+  const groupList =
+    view === "day"
+      ? buildGroups(groupSource, sort, dayCum).filter((g) => matchesGroup(q, g))
+      : [];
+
+  const groupUnit =
+    sort === "total"
+      ? isDayGroup
+        ? "ครั้งวันนี้"
+        : "ครั้ง"
+      : isDayGroup
+        ? "ครั้งสะสม"
+        : "point";
+  const deptEntries: DeptEntry[] = groupList.map((g) => ({
+    rank: g.rank,
+    id: 0,
+    key: g.key,
+    kind: g.kind ?? undefined,
+    name: g.name,
+    en: "",
+    company: g.company,
+    total: sort === "total" ? g.total : isDayGroup ? g.cum : g.points,
+    // ค่าอีกตัว แสดงใต้ตัวเลขหลัก
+    sub:
+      sort === "total"
+        ? isDayGroup
+          ? `สะสม ${fmtNum(g.cum)} ครั้ง`
+          : `${fmtNum(g.points)} point`
+        : isDayGroup
+          ? `วันนี้ ${fmtNum(g.total)} ครั้ง`
+          : `${fmtNum(g.total)} ครั้ง`,
+    active: g.players,
+    me: false,
+    memberCount: g.players,
+    members: g.members.map((mb) => ({
+      name: mb.name,
+      username: mb.username || mb.userId,
+      avatarUrl: mb.avatarUrl,
+      total: mb.total,
+    })),
+  }));
+  const groupBoard = (
+    <div className="mt-4">
+      <DeptBoardView
+        entries={deptEntries}
+        unit={groupUnit}
+        cumulative={false}
+        emptyText="ไม่มีข้อมูล"
+      />
+      <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
+        กลุ่ม = แผนก (สำนักงานใหญ่) หรือ 1 สาขา (หน้าร้าน) นับเฉพาะคนที่โดดในช่วงนี้และตรงตัวกรอง{isDayGroup && " · ยอดสะสมนับทุกคนในกลุ่มตั้งแต่เริ่ม เหมือนหน้าอันดับของผู้ใช้ แต่แสดงเฉพาะกลุ่มที่มีคนโดดวันนี้"} · ตัวเลขหลัก ={" "}
+        {groupUnit} (เรียงตามนี้) · กดที่กลุ่มเพื่อดูสมาชิก
+      </p>
+    </div>
   );
 
   const periodTag =
@@ -1062,7 +987,15 @@ export default function AdminPage() {
     if (group === "group") {
       downloadCsv(
         `pose-jump-groups-${view}-${periodTag}`,
-        ["#", "กลุ่ม", "รายละเอียด", "จำนวนคน", "โดดรวม", "เฉลี่ยต่อคน", "point"],
+        [
+          "#",
+          "กลุ่ม",
+          "รายละเอียด",
+          "จำนวนคน",
+          "โดดรวม",
+          "เฉลี่ยต่อคน",
+          view === "day" ? "ยอดสะสม" : "point",
+        ],
         groupList.map((g) => [
           g.rank,
           g.name,
@@ -1070,7 +1003,7 @@ export default function AdminPage() {
           g.players,
           g.total,
           Math.round(g.total / Math.max(1, g.players)),
-          g.points,
+          view === "day" ? g.cum : g.points,
         ])
       );
     } else if (view === "day") {
@@ -1172,6 +1105,8 @@ export default function AdminPage() {
           setView(v);
           setQ("");
           setDetail(null);
+          // มุมมองแผนกมีเฉพาะหน้ารายวัน
+          if (v !== "day") setGroup("player");
         }}
         onLogout={logout}
       >
@@ -1250,18 +1185,20 @@ export default function AdminPage() {
           )}
 
           <div className="flex flex-1 flex-wrap items-center gap-3 lg:justify-end">
-            <div className="w-56 shrink-0">
-              <Segmented<Group>
-                value={group}
-                onChange={setGroup}
-                options={
-                  [
-                    ["player", "รายคน"],
-                    ["group", "แผนก/สาขา"],
-                  ] as const
-                }
-              />
-            </div>
+            {view === "day" && (
+              <div className="w-56 shrink-0">
+                <Segmented<Group>
+                  value={group}
+                  onChange={setGroup}
+                  options={
+                    [
+                      ["player", "รายคน"],
+                      ["group", "แผนก"],
+                    ] as const
+                  }
+                />
+              </div>
+            )}
             <label className="relative block min-w-0 flex-1 lg:max-w-xs lg:flex-none">
               <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6B7A6E]">
                 <Icon d={ICONS.search} size={16} />
@@ -1280,8 +1217,8 @@ export default function AdminPage() {
                   onChange={setSort}
                   options={
                     [
-                      ["points", "point สูงสุด"],
-                      ["total", "โดดมากสุด"],
+                      ["points", view === "day" ? "ยอดสะสม" : "point สูงสุด"],
+                      ["total", view === "day" ? "โดดวันนี้" : "โดดมากสุด"],
                     ] as const
                   }
                 />
@@ -1428,7 +1365,7 @@ export default function AdminPage() {
             </div>
 
             {group === "group" ? (
-              <GroupBoard rows={groupList} sort={sort} />
+              groupBoard
             ) : (
               <>
             <section className={`${card} mt-4 overflow-hidden`}>
@@ -1588,7 +1525,7 @@ export default function AdminPage() {
             </div>
 
             {group === "group" ? (
-              <GroupBoard rows={groupList} sort={sort} />
+              groupBoard
             ) : (
               <>
             <section className={`${card} mt-4 overflow-hidden`}>
@@ -1717,7 +1654,7 @@ export default function AdminPage() {
             </div>
 
             {group === "group" ? (
-              <GroupBoard rows={groupList} sort={sort} />
+              groupBoard
             ) : (
               <>
             <section className={`${card} mt-4 overflow-hidden`}>

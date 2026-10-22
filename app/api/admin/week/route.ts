@@ -38,7 +38,6 @@ export async function GET(req: Request) {
   >();
   perDay.forEach((list, di) => {
     for (const e of list) {
-      // name / avatarUrl / org มากับแถวรายวันจาก computeDay อยู่แล้ว
       const a = acc.get(e.userId) ?? {
         name: e.name,
         username: e.username,

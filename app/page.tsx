@@ -587,7 +587,7 @@ function Shell({
 }) {
   const items: NavItem[] = [
     ["home", "หน้าหลัก", ICONS.home],
-    ["today", "วันนี้", ICONS.trophy],
+    ["today", "อันดับ", ICONS.trophy],
     ["history", "ประวัติ", ICONS.chart],
     ["settings", "ตั้งค่า", ICONS.gear],
   ];

@@ -12,17 +12,19 @@ import { ICONS, Icon } from "./auth-shared";
 const fmtNum = (n: number) => n.toLocaleString("en-US");
 const STACK_MAX = 5;
 
-type Member = {
+export type Member = {
   name: string;
   username: string;
   avatarUrl?: string | null;
   isMe?: boolean;
+  // จำนวนครั้งของคนนี้ (ถ้าส่งมา จะแสดงใต้ชื่อในหน้าต่างสมาชิก ฝั่งแอดมินใช้)
+  total?: number;
 };
 
 // 1 แถว = 1 กลุ่ม (แผนกของสำนักงานใหญ่ หรือ 1 สาขาของหน้าร้าน)
 // key = รหัสไม่ซ้ำข้ามประเภท เช่น "d:3" / "b:3" (id แผนกกับ id สาขาอาจซ้ำกันได้)
 // ถ้า API ยังไม่ส่ง key มา จะใช้ id เดิม
-type DeptEntry = {
+export type DeptEntry = {
   rank: number;
   id: number;
   key?: string;
@@ -31,6 +33,8 @@ type DeptEntry = {
   en: string;
   // ชื่อบริษัทของกลุ่มนั้น (API ต้องส่งมา ถ้าไม่มีจะไม่แสดง)
   company?: string | null;
+  // ข้อความรองใต้ตัวเลขหลัก เช่น "320 ครั้ง" (ฝั่งแอดมินใช้ หน้าผู้ใช้ไม่ส่ง)
+  sub?: string;
   total: number;
   active: number;
   me: boolean;
@@ -268,12 +272,15 @@ function Confetti({
 
 // แท่นยืน 3 กลุ่มแรก (แผนก/สาขา): เรียงซ้าย→ขวา = อันดับ 2, 1, 3 (เหมือนอันดับบุคคล)
 // มือถือ: คอลัมน์แคบ ชื่อตัดได้ 2 บรรทัด / คอม: แท่นสูงขึ้น ตัวอักษรใหญ่ขึ้น
+// unit = หน่วยของตัวเลข (หน้าผู้ใช้ = "ครั้ง", แอดมินเปลี่ยนเป็น "ไลค์" / "point" ได้)
 function DeptPodium({
   entries,
   onOpen,
+  unit,
 }: {
   entries: DeptEntry[];
   onOpen: (key: string) => void;
+  unit: string;
 }) {
   const lg = useIsLg();
   const slots: { place: 1 | 2 | 3; e?: DeptEntry }[] = [
@@ -348,8 +355,13 @@ function DeptPodium({
                         {fmtNum(e.total)}
                       </div>
                       <div className="mt-1 text-[11px] text-[#6B7A6E]">
-                        ครั้ง · {e.memberCount} คน
+                        {unit} · {e.memberCount} คน
                       </div>
+                      {e.sub && (
+                        <div className="text-[11px] font-semibold text-[#3F5E1F]">
+                          {e.sub}
+                        </div>
+                      )}
                     </button>
                   </>
                 ) : (
@@ -409,34 +421,21 @@ function DeptPodium({
   );
 }
 
-export default function DepartmentRank({
-  hasDepartment,
+// ส่วนแสดงอันดับแผนก/สาขา (แท่นยืน + รายการ + หน้าต่างสมาชิก)
+// ใช้ร่วมกันทั้งหน้าผู้ใช้ และหน้าแอดมิน (แอดมินส่ง entries ที่รวมเองตามช่วงเวลา/ตัวกรอง)
+// unit = หน่วยของ entries[].total / cumulative = true แสดงว่า "สะสม"
+export function DeptBoardView({
+  entries,
+  unit = "ครั้ง",
+  cumulative = true,
+  emptyText = "ยังไม่มีแผนกหรือสาขาไหนทำคะแนน ชวนเพื่อนมาโดดเลย",
 }: {
-  // true = ผู้ใช้มีแผนก หรือ สาขา อย่างใดอย่างหนึ่ง
-  hasDepartment: boolean;
+  entries: DeptEntry[];
+  unit?: string;
+  cumulative?: boolean;
+  emptyText?: string;
 }) {
-  const [board, setBoard] = useState<DeptBoard | null>(null);
-  const [err, setErr] = useState(false);
   const [openKey, setOpenKey] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const r = await fetch("/api/leaderboard/departments", {
-        cache: "no-store",
-      });
-      if (!r.ok) throw new Error("load failed");
-      setBoard((await r.json()) as DeptBoard);
-      setErr(false);
-    } catch {
-      setErr(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 30000);
-    return () => clearInterval(t);
-  }, [load]);
 
   useEffect(() => {
     if (openKey == null) return;
@@ -447,122 +446,91 @@ export default function DepartmentRank({
     return () => window.removeEventListener("keydown", onKey);
   }, [openKey]);
 
-  if (!board && !err) {
+  if (entries.length === 0) {
     return (
       <p className="rounded-3xl bg-white px-4 py-6 text-center text-[14px] text-[#6B7A6E]">
-        กำลังโหลดอันดับ
+        {emptyText}
       </p>
     );
   }
-  if (!board) {
-    return (
-      <div className="rounded-3xl bg-white px-4 py-6 text-center">
-        <p className="text-[14px] text-[#D92D20]">โหลดอันดับไม่สำเร็จ</p>
-        <button
-          onClick={load}
-          className="mt-3 h-10 rounded-full bg-[#C9F25B] px-6 text-[14px] font-semibold text-[#1B2A21] transition-transform active:scale-95"
-        >
-          ลองใหม่
-        </button>
-      </div>
-    );
-  }
 
-  const max = Math.max(1, board.entries[0]?.total ?? 1);
-  const rest = board.entries.slice(3);
-  const opened = board.entries.find((e) => gid(e) === openKey) ?? null;
+  const max = Math.max(1, ...entries.map((e) => e.total));
+  const rest = entries.slice(3);
+  const opened = entries.find((e) => gid(e) === openKey) ?? null;
+  const totalLabel = cumulative && unit === "ครั้ง" ? "ครั้งสะสม" : unit;
 
   return (
-    <div className="mx-auto w-full space-y-4 lg:max-w-3xl">
-      <p className="px-1 text-[13px] text-[#6B7A6E]">
-        คะแนนสะสมไม่รีเซ็ต · {board.count} กลุ่มลงสนาม
-        {!hasDepartment && " · บัญชีนี้ยังไม่ได้เลือกแผนกหรือสาขา"}
-      </p>
-
-      <section>
-        <h2 className="mb-2 px-1 text-[16px] font-semibold">
-          ตารางอันดับแผนก / สาขา
-        </h2>
-        {board.entries.length === 0 ? (
-          <p className="rounded-3xl bg-white px-4 py-6 text-center text-[14px] text-[#6B7A6E]">
-            ยังไม่มีแผนกหรือสาขาไหนทำคะแนน ชวนเพื่อนมาโดดเลย
-          </p>
-        ) : (
-          <>
-            <DeptPodium
-              entries={board.entries.slice(0, 3)}
-              onOpen={setOpenKey}
-            />
-            {rest.length > 0 && (
-              <ul className="mt-3 space-y-2">
-                {rest.map((e) => (
-                  <li key={gid(e)}>
-                    <button
-                      type="button"
-                      onClick={() => setOpenKey(gid(e))}
-                      aria-haspopup="dialog"
-                      className={`pj-lift flex w-full items-center gap-3 rounded-3xl px-4 py-3 text-left transition-transform active:scale-[0.99] ${
-                        e.me ? "bg-[#E8F5C1]" : "bg-white"
-                      }`}
-                    >
-                      <span
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums ${badge(
-                          e.rank
-                        )}`}
-                      >
-                        {e.rank}
+    <>
+      <DeptPodium entries={entries.slice(0, 3)} onOpen={setOpenKey} unit={unit} />
+      {rest.length > 0 && (
+        <ul className="mt-3 space-y-2">
+          {rest.map((e) => (
+            <li key={gid(e)}>
+              <button
+                type="button"
+                onClick={() => setOpenKey(gid(e))}
+                aria-haspopup="dialog"
+                className={`pj-lift flex w-full items-center gap-3 rounded-3xl px-4 py-3 text-left transition-transform active:scale-[0.99] ${
+                  e.me ? "bg-[#E8F5C1]" : "bg-white"
+                }`}
+              >
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums ${badge(
+                    e.rank
+                  )}`}
+                >
+                  {e.rank}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[15px] font-semibold">
+                      {e.name}
+                    </span>
+                    {e.me && (
+                      <span className="shrink-0 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
+                        ของคุณ
                       </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-[15px] font-semibold">
-                            {e.name}
-                          </span>
-                          {e.me && (
-                            <span className="shrink-0 rounded-full bg-[#1B2A21] px-2 py-0.5 text-[11px] font-semibold text-[#C9F25B]">
-                              ของคุณ
-                            </span>
-                          )}
-                        </div>
-                        {e.company && (
-                          <div className="truncate text-[12px] font-bold text-[#3F5E1F]">
-                            {e.company}
-                          </div>
-                        )}
-                        <div className="mt-1.5 flex items-center gap-2">
-                          <AvatarStack
-                            members={e.members}
-                            total={e.memberCount}
-                            size={28}
-                            ringClass={e.me ? "ring-[#E8F5C1]" : "ring-white"}
-                          />
-                          <span className="text-[11px] text-[#6B7A6E]">
-                            {e.memberCount} คน
-                          </span>
-                        </div>
-                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]">
-                          <div
-                            className="h-full rounded-full bg-[#3F5E1F] transition-[width] duration-500"
-                            style={{ width: `${(e.total / max) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[18px] font-semibold tabular-nums">
-                          {fmtNum(e.total)}
-                        </div>
-                        <div className="text-[11px] text-[#6B7A6E]">ครั้ง</div>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-        <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-          คะแนน = ผลรวมครั้งกระโดดของทุกคนในกลุ่ม (สำนักงานใหญ่นับเป็นแผนก หน้าร้านนับ 1 สาขาเป็น 1 กลุ่ม) นับสะสมตั้งแต่เริ่มและไม่รีเซ็ต แสดง 20 อันดับแรก กดที่กลุ่มเพื่อดูสมาชิก
-        </p>
-      </section>
+                    )}
+                  </div>
+                  {e.company && (
+                    <div className="truncate text-[12px] font-bold text-[#3F5E1F]">
+                      {e.company}
+                    </div>
+                  )}
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <AvatarStack
+                      members={e.members}
+                      total={e.memberCount}
+                      size={28}
+                      ringClass={e.me ? "ring-[#E8F5C1]" : "ring-white"}
+                    />
+                    <span className="text-[11px] text-[#6B7A6E]">
+                      {e.memberCount} คน
+                    </span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#EEF2E4]">
+                    <div
+                      className="h-full rounded-full bg-[#3F5E1F] transition-[width] duration-500"
+                      style={{ width: `${(e.total / max) * 100}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[18px] font-semibold tabular-nums">
+                    {fmtNum(e.total)}
+                  </div>
+                  <div className="text-[11px] text-[#6B7A6E]">{unit}</div>
+                  {e.sub && (
+                    <div className="text-[11px] font-semibold text-[#3F5E1F]">
+                      {e.sub}
+                    </div>
+                  )}
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {opened &&
         createPortal(
@@ -631,7 +599,8 @@ export default function DepartmentRank({
                 </span>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1B2A21] px-3.5 py-1.5 text-[13px] font-semibold text-[#C9F25B]">
                   <Icon d={ICONS.bolt} size={14} />
-                  <span className="tabular-nums">{fmtNum(opened.total)}</span> ครั้งสะสม
+                  <span className="tabular-nums">{fmtNum(opened.total)}</span>{" "}
+                  {totalLabel}
                 </span>
               </div>
 
@@ -673,6 +642,14 @@ export default function DepartmentRank({
                       >
                         @{mb.username}
                       </span>
+                      {mb.total !== undefined && (
+                        <span
+                          className="dr-anim text-[11px] font-semibold tabular-nums"
+                          style={{ animation: `dr-fade .4s ease-out ${delay + 0.45}s both` }}
+                        >
+                          {fmtNum(mb.total)} ครั้ง
+                        </span>
+                      )}
                     </li>
                   );
                 })}
@@ -686,6 +663,75 @@ export default function DepartmentRank({
           </div>,
           document.body
         )}
+    </>
+  );
+}
+
+export default function DepartmentRank({
+  hasDepartment,
+}: {
+  // true = ผู้ใช้มีแผนก หรือ สาขา อย่างใดอย่างหนึ่ง
+  hasDepartment: boolean;
+}) {
+  const [board, setBoard] = useState<DeptBoard | null>(null);
+  const [err, setErr] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch("/api/leaderboard/departments", {
+        cache: "no-store",
+      });
+      if (!r.ok) throw new Error("load failed");
+      setBoard((await r.json()) as DeptBoard);
+      setErr(false);
+    } catch {
+      setErr(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  if (!board && !err) {
+    return (
+      <p className="rounded-3xl bg-white px-4 py-6 text-center text-[14px] text-[#6B7A6E]">
+        กำลังโหลดอันดับ
+      </p>
+    );
+  }
+  if (!board) {
+    return (
+      <div className="rounded-3xl bg-white px-4 py-6 text-center">
+        <p className="text-[14px] text-[#D92D20]">โหลดอันดับไม่สำเร็จ</p>
+        <button
+          onClick={load}
+          className="mt-3 h-10 rounded-full bg-[#C9F25B] px-6 text-[14px] font-semibold text-[#1B2A21] transition-transform active:scale-95"
+        >
+          ลองใหม่
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full space-y-4 lg:max-w-3xl">
+      <p className="px-1 text-[13px] text-[#6B7A6E]">
+        คะแนนสะสมไม่รีเซ็ต · {board.count} กลุ่มลงสนาม
+        {!hasDepartment && " · บัญชีนี้ยังไม่ได้เลือกแผนกหรือสาขา"}
+      </p>
+
+      <section>
+        <h2 className="mb-2 px-1 text-[16px] font-semibold">
+          ตารางอันดับแผนก / สาขา
+        </h2>
+        <DeptBoardView entries={board.entries} />
+        <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
+          คะแนน = ผลรวมครั้งกระโดดของทุกคนในกลุ่ม (สำนักงานใหญ่นับเป็นแผนก หน้าร้านนับ 1 สาขาเป็น 1 กลุ่ม) นับสะสมตั้งแต่เริ่มและไม่รีเซ็ต แสดง 20 อันดับแรก กดที่กลุ่มเพื่อดูสมาชิก
+        </p>
+      </section>
     </div>
   );
 }
