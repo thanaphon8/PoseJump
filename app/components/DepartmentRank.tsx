@@ -42,7 +42,8 @@ type DeptBoard = {
   entries: DeptEntry[];
   me: { rank: number; total: number; gap: number } | null;
   count: number;
-  resetAt: number;
+  // สะสมไม่รีเซ็ต (API ส่ง null)
+  resetAt?: number | null;
 };
 
 const gid = (e: DeptEntry) => e.key ?? String(e.id);
@@ -416,7 +417,6 @@ export default function DepartmentRank({
 }) {
   const [board, setBoard] = useState<DeptBoard | null>(null);
   const [err, setErr] = useState(false);
-  const [now, setNow] = useState(0);
   const [openKey, setOpenKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -430,7 +430,6 @@ export default function DepartmentRank({
     } catch {
       setErr(true);
     }
-    setNow(Date.now());
   }, []);
 
   useEffect(() => {
@@ -447,12 +446,6 @@ export default function DepartmentRank({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [openKey]);
-
-  const leftMs = Math.max(0, (board?.resetAt ?? 0) - now);
-  const d = Math.floor(leftMs / 86400000);
-  const h = Math.floor((leftMs % 86400000) / 3600000);
-  const m = Math.floor((leftMs % 3600000) / 60000);
-  const resetText = `${d} วัน ${h} ชม. ${m} นาที`;
 
   if (!board && !err) {
     return (
@@ -482,7 +475,7 @@ export default function DepartmentRank({
   return (
     <div className="mx-auto w-full space-y-4 lg:max-w-3xl">
       <p className="px-1 text-[13px] text-[#6B7A6E]">
-        รีเซ็ตคะแนนใน {resetText} (ทุกวันจันทร์ 00:00 น.) · {board.count} กลุ่มลงสนาม
+        คะแนนสะสมไม่รีเซ็ต · {board.count} กลุ่มลงสนาม
         {!hasDepartment && " · บัญชีนี้ยังไม่ได้เลือกแผนกหรือสาขา"}
       </p>
 
@@ -567,7 +560,7 @@ export default function DepartmentRank({
           </>
         )}
         <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-          คะแนน = ผลรวมครั้งกระโดดของทุกคนในกลุ่ม (สำนักงานใหญ่นับเป็นแผนก หน้าร้านนับ 1 สาขาเป็น 1 กลุ่ม) นับเฉพาะสัปดาห์นี้ (จันทร์–อาทิตย์ เวลาไทย) แสดง 20 อันดับแรก กดที่กลุ่มเพื่อดูสมาชิก
+          คะแนน = ผลรวมครั้งกระโดดของทุกคนในกลุ่ม (สำนักงานใหญ่นับเป็นแผนก หน้าร้านนับ 1 สาขาเป็น 1 กลุ่ม) นับสะสมตั้งแต่เริ่มและไม่รีเซ็ต แสดง 20 อันดับแรก กดที่กลุ่มเพื่อดูสมาชิก
         </p>
       </section>
 
@@ -638,7 +631,7 @@ export default function DepartmentRank({
                 </span>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1B2A21] px-3.5 py-1.5 text-[13px] font-semibold text-[#C9F25B]">
                   <Icon d={ICONS.bolt} size={14} />
-                  <span className="tabular-nums">{fmtNum(opened.total)}</span> ครั้งสัปดาห์นี้
+                  <span className="tabular-nums">{fmtNum(opened.total)}</span> ครั้งสะสม
                 </span>
               </div>
 

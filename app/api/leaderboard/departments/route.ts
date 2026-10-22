@@ -5,21 +5,8 @@ import { getDb } from "../../../../lib/mongodb";
 import { DEPARTMENTS, getCompany } from "../../../components/departments";
 import { branchLabel, getBranch } from "../../../components/branches";
 
-const HOUR = 3600e3;
-const DAY = 24 * HOUR;
-const TH_OFFSET = 7 * HOUR;
 const TOP = 20; // จำนวนกลุ่ม (แผนก/สาขา) ที่แสดง
 const MEMBERS_PER_GROUP = 100; // จำกัดสมาชิกที่ส่งต่อกลุ่ม (กัน response ใหญ่)
-
-// สัปดาห์ = จันทร์ 00:00 → จันทร์ถัดไป 00:00 (เวลาไทย)
-function weekRange(now = Date.now()) {
-  const d = new Date(now + TH_OFFSET);
-  const dow = (d.getUTCDay() + 6) % 7; // จันทร์ = 0
-  const startLocal =
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - dow * DAY;
-  const weekStart = startLocal - TH_OFFSET;
-  return { weekStart, resetAt: weekStart + 7 * DAY };
-}
 
 type Member = {
   name: string;
@@ -60,8 +47,8 @@ function describe(kind: Kind, id: number) {
   };
 }
 
-// GET /api/leaderboard/departments → อันดับแผนก/สาขารายสัปดาห์ + สมาชิก (ไว้แสดงรูปซ้อน)
-// คะแนนมาจาก collection "dept_jumps" (บันทึกโดย /api/sessions)
+// GET /api/leaderboard/departments → อันดับแผนก/สาขาแบบสะสม (ไม่รีเซ็ต) + สมาชิก (ไว้แสดงรูปซ้อน)
+// คะแนนมาจาก collection "dept_jumps" (บันทึกโดย /api/sessions) รวมทุกแถวตั้งแต่เริ่มเก็บ
 // ใช้ departmentId / branchId ที่บันทึกในแถวคะแนนก่อน ถ้าแถวไม่มีทั้งสองอย่าง
 // จะดูจากข้อมูลผู้ใช้ปัจจุบัน (กรณี /api/sessions ยังไม่ได้เก็บ branchId)
 export async function GET() {
@@ -72,16 +59,15 @@ export async function GET() {
       departmentId?: number | null;
       branchId?: number | null;
     } | null;
-    const { weekStart, resetAt } = weekRange();
     const db = await getDb();
 
+    // รวมคะแนนทั้งหมด ไม่กรองช่วงเวลา
     const rows = await db
       .collection("dept_jumps")
       .aggregate<{
         _id: { u: ObjectId; d: number | null; b: number | null };
         total: number;
       }>([
-        { $match: { ts: { $gte: weekStart, $lt: resetAt } } },
         {
           $group: {
             _id: { u: "$userId", d: "$departmentId", b: "$branchId" },
@@ -241,12 +227,13 @@ export async function GET() {
             }
           : { rank: 0, total: 0, gap: 0 }; // กลุ่มตัวเองยังไม่มีคะแนน
 
+    // สะสมไม่รีเซ็ต จึงไม่มี resetAt
     return NextResponse.json(
-      { entries, me: myInfo, count: ranked.length, weekStart, resetAt },
+      { entries, me: myInfo, count: ranked.length, resetAt: null },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (e) {
     console.error("dept leaderboard failed", e);
     return NextResponse.json({ error: "เซิร์ฟเวอร์ผิดพลาด" }, { status: 500 });
   }
-}
+} 

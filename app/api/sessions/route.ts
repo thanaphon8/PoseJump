@@ -18,7 +18,7 @@ const num = (v: unknown, min: number, max: number) =>
 /* ระบบ point                                                           */
 /* ------------------------------------------------------------------ */
 
-// 50 คนแรกของวัน (เวลาไทย) ที่ทำเป้าหมายรายวันสำเร็จ ได้ 100 point
+// 100 คนแรกของวัน (เวลาไทย) ที่ทำเป้าหมายรายวันสำเร็จ ได้ 50 point
 const POINT_QUOTA = 100;
 const POINT_REWARD = 50;
 const DEFAULT_GOAL = 1500;
@@ -46,9 +46,11 @@ function ensureIndexes(db: Db) {
         .createIndex({ userId: 1, day: 1 }, { unique: true }),
       // เรียงลำดับในวันเดียวกัน
       db.collection("goal_hits").createIndex({ day: 1, seq: 1 }),
-      // คะแนนรายสัปดาห์ของแผนก (สำนักงานใหญ่) และสาขา (หน้าร้าน)
-      db.collection("dept_jumps").createIndex({ ts: 1, departmentId: 1 }),
-      db.collection("dept_jumps").createIndex({ ts: 1, branchId: 1 }),
+      // คะแนนสะสมของแผนก (สำนักงานใหญ่) และสาขา (หน้าร้าน) ไม่รีเซ็ต
+      // /api/leaderboard/departments รวมทุกแถว จึงทำ index ครอบฟิลด์ที่ใช้รวม
+      db
+        .collection("dept_jumps")
+        .createIndex({ departmentId: 1, branchId: 1, userId: 1, total: 1 }),
     ]).catch((e) => {
       indexReady = null;
       console.error("ensureIndexes failed", e);
@@ -202,6 +204,7 @@ export async function POST(req: Request) {
     });
 
     // คะแนนกลุ่ม: เก็บแยก collection เพื่อไม่หายเมื่อผู้ใช้ล้างประวัติ
+    // สะสมไปเรื่อยๆ ไม่รีเซ็ต (ห้ามมีโค้ดลบ dept_jumps รอบเก่า)
     // สำนักงานใหญ่ = นับเข้าแผนก / หน้าร้าน = นับเข้าสาขา (1 สาขา = 1 กลุ่ม)
     // ล้มเหลวไม่ทำให้การบันทึกรอบล้มเหลว
     const departmentId = user.departmentId ?? null;
