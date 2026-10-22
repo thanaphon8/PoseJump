@@ -66,17 +66,17 @@ export default function LoginForm({ onAuthed, onSwitch }: AuthFormProps) {
       <form
         onSubmit={submit}
         noValidate
-        className="mx-auto mt-auto w-full max-w-sm pb-2 pt-8 lg:my-auto lg:py-6"
+        className="mx-auto mt-auto w-full max-w-sm pb-[clamp(4px,1.5dvh,12px)] pt-[clamp(8px,3dvh,32px)] lg:my-auto lg:py-6"
       >
-        <h1 className="text-[30px] font-bold leading-tight tracking-tight">
+        <h1 className="text-[clamp(24px,4dvh,30px)] font-bold leading-tight tracking-tight">
           ยินดีต้อนรับกลับมา
         </h1>
-        <p className="mt-1 text-[14px] text-white/80 lg:text-[#6B7A6E]">
+        <p className="mt-1 text-[clamp(13px,1.8dvh,14px)] text-white/80 lg:text-[#6B7A6E]">
           เข้าสู่ระบบเพื่อไปต่อจากรอบล่าสุด
         </p>
 
-        {/* ช่องกรอกใหญ่ขึ้น (h-16, ตัวอักษร 18px) + ขอบมนสุด (rounded-full = 9999px) */}
-        <div className="mt-6 space-y-5 [&_input]:h-16 [&_input]:rounded-full [&_input]:text-[18px] [&_div:has(>input)]:h-16 [&_div:has(>input)]:rounded-full">
+        {/* ช่องกรอกปรับขนาดตามความสูงหน้าจอ (dvh) ให้พอดีจอ ไม่ต้องเลื่อน + ขอบมนสุด */}
+        <div className="mt-[clamp(12px,3dvh,24px)] space-y-[clamp(10px,2.2dvh,20px)] [&_input]:h-[clamp(48px,7.5dvh,64px)] [&_input]:rounded-full [&_input]:text-[clamp(16px,2.3dvh,18px)] [&_div:has(>input)]:h-[clamp(48px,7.5dvh,64px)] [&_div:has(>input)]:rounded-full">
           <Field
             label="Username"
             value={username}
@@ -111,12 +111,12 @@ export default function LoginForm({ onAuthed, onSwitch }: AuthFormProps) {
         <button
           type="submit"
           disabled={busy}
-          className="mt-6 flex h-14 w-full items-center justify-center rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348] disabled:opacity-60"
+          className="mt-[clamp(14px,3dvh,24px)] flex h-[clamp(48px,7dvh,56px)] w-full items-center justify-center rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348] disabled:opacity-60"
         >
           {busy ? "กำลังดำเนินการ" : "เข้าสู่ระบบ"}
         </button>
 
-        <p className="mt-5 text-center text-[14px] text-white/80 lg:text-[#6B7A6E]">
+        <p className="mt-[clamp(10px,2.2dvh,20px)] text-center text-[14px] text-white/80 lg:text-[#6B7A6E]">
           ยังไม่มีบัญชี?{" "}
           <button
             type="button"
@@ -126,7 +126,7 @@ export default function LoginForm({ onAuthed, onSwitch }: AuthFormProps) {
             สมัครสมาชิก
           </button>
         </p>
-        <p className="mt-3 text-center text-[12px] text-white/60 lg:hidden">
+        <p className="mt-[clamp(6px,1.5dvh,12px)] text-center text-[12px] text-white/60 max-[700px]:hidden lg:hidden">
           สถิติของคุณซิงก์ข้ามอุปกรณ์ได้
         </p>
       </form>
