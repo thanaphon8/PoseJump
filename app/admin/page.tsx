@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Prompt } from "next/font/google";
+import UserDayModal from "../components/UserDayModal";
 
 const APP_NAME = "Pose Jump";
 
@@ -671,6 +672,10 @@ export default function AdminPage() {
   const [showPw, setShowPw] = useState(false);
   const [pwErr, setPwErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // ผู้เล่นที่ถูกกดดูผลของวัน (หน้ารายวัน) null = ไม่เปิด
+  const [detail, setDetail] = useState<{ userId: string; date: string } | null>(
+    null
+  );
 
   useEffect(() => {
     const t = todayYmd();
@@ -1092,6 +1097,7 @@ export default function AdminPage() {
         onView={(v) => {
           setView(v);
           setQ("");
+          setDetail(null);
         }}
         onLogout={logout}
       >
@@ -1383,7 +1389,21 @@ export default function AdminPage() {
                         return (
                           <tr
                             key={e.userId}
-                            className={e.points > 0 ? "bg-[#F7FBEA]" : ""}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`ดูผลวันนี้ของ ${e.name}`}
+                            onClick={() =>
+                              setDetail({ userId: e.userId, date })
+                            }
+                            onKeyDown={(ev) => {
+                              if (ev.key === "Enter" || ev.key === " ") {
+                                ev.preventDefault();
+                                setDetail({ userId: e.userId, date });
+                              }
+                            }}
+                            className={`cursor-pointer transition-colors hover:bg-[#EEF2E4] focus-visible:bg-[#EEF2E4] focus-visible:outline-none ${
+                              e.points > 0 ? "bg-[#F7FBEA]" : ""
+                            }`}
                           >
                             <td className="px-4 py-3">
                               <Rank rank={e.rank} />
@@ -1451,7 +1471,7 @@ export default function AdminPage() {
             </section>
             <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
               เรียงตามยอดโดดรวมของวัน ลำดับถึงเป้า = ลำดับเวลาที่ยอดสะสมของวันนั้นถึงเป้ารายวันของคนนั้น
-              ตัดวันที่เที่ยงคืนเวลาไทย
+              ตัดวันที่เที่ยงคืนเวลาไทย · กดที่แถวเพื่อดูผลและภาพยืนยันของคนนั้น
             </p>
               </>
             )}
@@ -1726,6 +1746,18 @@ export default function AdminPage() {
               </>
             )}
           </>
+        )}
+
+        {detail && (
+          <UserDayModal
+            userId={detail.userId}
+            date={detail.date}
+            onClose={() => setDetail(null)}
+            onLocked={() => {
+              setDetail(null);
+              setState("locked");
+            }}
+          />
         )}
       </Shell>
     </div>
