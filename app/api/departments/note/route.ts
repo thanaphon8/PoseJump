@@ -5,8 +5,22 @@ import { getDb } from "../../../../lib/mongodb";
 
 const NOTE_MAX = 60;
 const DAY = 24 * 3600e3;
-// ต้องตรงกับ NoteStyle ใน DepartmentCard
-const NOTE_STYLES = ["none", "fire", "ice", "gold", "neon"] as const;
+// ต้องตรงกับ NoteStyle ใน DepartmentCard (กรอบ + อารมณ์)
+const NOTE_STYLES = [
+  // กรอบ
+  "none",
+  "fire",
+  "ice",
+  "gold",
+  "neon",
+  // อารมณ์
+  "happy",
+  "laugh",
+  "love",
+  "sad",
+  "angry",
+  "surprised",
+] as const;
 type NoteStyle = (typeof NOTE_STYLES)[number];
 
 // สร้าง index ครั้งเดียวต่อ process

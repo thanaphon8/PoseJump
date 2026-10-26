@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getCompany, getDepartment } from "./departments";
 import { branchCode, branchLabel, branchProvince, getBranch } from "./branches";
@@ -71,13 +71,14 @@ const FRAMES: Record<
 };
 const FRAME_IDS = Object.keys(FRAMES) as FrameId[];
 
+// สีพื้นวงหน้า: พาสเทลเรียบ 2 มิติ (ใช้ c1 เป็นหลัก)
 const MOODS: Record<MoodId, { label: string; c1: string; c2: string }> = {
-  happy: { label: "ยิ้ม", c1: "#FFE680", c2: "#FFB224" },
-  laugh: { label: "หัวเราะ", c1: "#FFE680", c2: "#FFAA1F" },
-  love: { label: "หลงรัก", c1: "#FFD3E2", c2: "#FF86B0" },
-  sad: { label: "เศร้า", c1: "#CBE9FF", c2: "#6DB5F0" },
-  angry: { label: "โกรธ", c1: "#FFA88A", c2: "#E8432B" },
-  surprised: { label: "ตกใจ", c1: "#FFE680", c2: "#FFB224" },
+  happy: { label: "ยิ้ม", c1: "#FFD25A", c2: "#FFD25A" },
+  laugh: { label: "หัวเราะ", c1: "#FFD25A", c2: "#FFD25A" },
+  love: { label: "หลงรัก", c1: "#FFD25A", c2: "#FFD25A" },
+  sad: { label: "เศร้า", c1: "#FFD25A", c2: "#FFD25A" },
+  angry: { label: "โกรธ", c1: "#FFD25A", c2: "#FFD25A" },
+  surprised: { label: "ตกใจ", c1: "#FFD25A", c2: "#FFD25A" },
 };
 const MOOD_IDS = Object.keys(MOODS) as MoodId[];
 
@@ -153,36 +154,38 @@ const XIcon = ({ size }: { size?: number }) => (
   </Svg>
 );
 
-/* ---------- หน้าอารมณ์ SVG: ลูกบอลเงา 3 มิติ กะพริบตา + ขยับหัว ---------- */
-function Face({ kind, size }: { kind: MoodId; size: number }) {
-  const gid = `dcg${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+/* ---------- หน้าอารมณ์ SVG: 2 มิติแบน ไล้ขอบเส้นบาง มินิมอลน่ารัก กะพริบตา + ขยับหัว ---------- */
+function Face({
+  kind,
+  size,
+  animate = true,
+}: {
+  kind: MoodId;
+  size: number;
+  animate?: boolean;
+}) {
   const m = MOODS[kind];
-  const ink = "#3B2A1A";
-  const stroke = {
+  const ink = "#2B1B10";
+  const pink = "#FF6B8E";
+  const dark = "#4A1F14";
+  const line = {
     stroke: ink,
-    strokeWidth: 2.2,
+    strokeWidth: 1.9,
     strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
     fill: "none",
   };
-  // ตากลมมีประกายขาว กะพริบทั้งคู่พร้อมกัน
-  const eyes = (rx: number, ry: number) => (
+  // ตาจุดกลมแบน กะพริบเฉพาะตอน animate
+  const eyes = (y = 22) => (
     <g className="dc-blink">
-      <ellipse cx="17" cy="21" rx={rx} ry={ry} fill={ink} />
-      <ellipse cx="31" cy="21" rx={rx} ry={ry} fill={ink} />
-      <circle cx="17.9" cy="19.6" r="1" fill="#fff" />
-      <circle cx="31.9" cy="19.6" r="1" fill="#fff" />
+      <circle cx="16.5" cy={y} r="2.2" fill={ink} />
+      <circle cx="31.5" cy={y} r="2.2" fill={ink} />
     </g>
   );
-  const cheeks = (
-    <>
-      <circle cx="10.5" cy="28" r="3" fill="#FF6F8E" opacity=".35" />
-      <circle cx="37.5" cy="28" r="3" fill="#FF6F8E" opacity=".35" />
-    </>
-  );
-  const heart = (cx: number) => (
+  const heart = (cx: number, cy: number) => (
     <path
-      d={`M${cx} 25.5 C${cx - 6} 21 ${cx - 5} 16 ${cx - 2} 16.5 C${cx - 0.8} 16.7 ${cx} 17.6 ${cx} 18.6 C${cx} 17.6 ${cx + 0.8} 16.7 ${cx + 2} 16.5 C${cx + 5} 16 ${cx + 6} 21 ${cx} 25.5Z`}
-      fill="#FF3D6E"
+      d={`M${cx} ${cy + 5} C${cx - 7} ${cy + 1} ${cx - 5} ${cy - 5} ${cx - 2.5} ${cy - 4.5} C${cx - 1} ${cy - 4.2} ${cx} ${cy - 3} ${cx} ${cy - 2} C${cx} ${cy - 3} ${cx + 1} ${cy - 4.2} ${cx + 2.5} ${cy - 4.5} C${cx + 5} ${cy - 5} ${cx + 7} ${cy + 1} ${cx} ${cy + 5}Z`}
+      fill="#FF5C7A"
     />
   );
 
@@ -191,85 +194,91 @@ function Face({ kind, size }: { kind: MoodId; size: number }) {
       viewBox="0 0 48 48"
       width={size}
       height={size}
-      className="dc-anim dc-face"
+      className={`dc-face ${animate ? "dc-live" : ""}`}
       aria-hidden
     >
-      <defs>
-        <radialGradient id={gid} cx="35%" cy="28%" r="82%">
-          <stop offset="0" stopColor={m.c1} />
-          <stop offset="1" stopColor={m.c2} />
-        </radialGradient>
-      </defs>
-      <ellipse cx="24" cy="45" rx="12" ry="2" fill="#000" opacity=".14" />
-      <circle cx="24" cy="23" r="20" fill={`url(#${gid})`} />
-      <ellipse
-        cx="16"
-        cy="12"
-        rx="8"
-        ry="4.5"
-        fill="#fff"
-        opacity=".5"
-        transform="rotate(-30 16 12)"
-      />
+      {/* วงหน้าเหลืองแบน ไม่มีขอบ ไม่มีเงา (หัวนิ่ง) */}
+      <circle cx="24" cy="24" r="22" fill={m.c1} />
 
       {kind === "happy" && (
         <>
-          {cheeks}
-          {eyes(2.4, 3.2)}
-          <path d="M17 30 Q24 37 31 30" {...stroke} />
+          {eyes(21)}
+          <g className="dc-mouth">
+            <path d="M16.5 28.5 Q23 34 30 28.5" {...line} />
+            <path
+              d="M25.5 31.6 Q26 37.5 30.2 35.6 Q31.6 33.2 29.6 30.6Z"
+              fill={pink}
+              stroke={ink}
+              strokeWidth="1.3"
+              strokeLinejoin="round"
+            />
+          </g>
         </>
       )}
 
       {kind === "laugh" && (
         <>
-          {cheeks}
-          <path d="M13.5 23 Q17 17.5 20.5 23" {...stroke} />
-          <path d="M27.5 23 Q31 17.5 34.5 23" {...stroke} />
-          <path d="M15 28 Q24 42 33 28 Z" fill="#7A2E2E" />
-          <ellipse cx="24" cy="33.4" rx="4.5" ry="2.2" fill="#FF8FA3" />
+          <path d="M12.5 15.5 Q15 14 18 15" {...line} strokeWidth={1.7} />
+          <path d="M30 15 Q33 14 35.5 15.5" {...line} strokeWidth={1.7} />
+          {eyes(21)}
+          <g className="dc-mouth">
+            <path
+              d="M17 29.5 Q24 31.5 31 29.5 Q29.5 37.5 24 37.5 Q18.5 37.5 17 29.5Z"
+              fill={dark}
+            />
+            <ellipse cx="24" cy="35.4" rx="3.6" ry="1.7" fill={pink} />
+          </g>
         </>
       )}
 
       {kind === "love" && (
         <>
-          {cheeks}
-          <g className="dc-heart">{heart(17)}</g>
-          <g className="dc-heart">{heart(31)}</g>
-          <path d="M19 31 Q24 36.5 29 31" {...stroke} />
+          <g className="dc-heart">
+            {heart(14.5, 22)}
+            {heart(33.5, 22)}
+          </g>
+          <g className="dc-mouth">
+            <path d="M20.5 29.5 Q24 34 27.5 29.5" {...line} />
+          </g>
         </>
       )}
 
       {kind === "sad" && (
         <>
-          <path d="M13 17.5 L20 14.5" {...stroke} strokeWidth={2} />
-          <path d="M35 17.5 L28 14.5" {...stroke} strokeWidth={2} />
-          {eyes(2.6, 3.4)}
-          <path d="M18 35 Q24 29.5 30 35" {...stroke} />
+          <path d="M12 17.5 L19 15" {...line} strokeWidth={1.7} />
+          <path d="M36 17.5 L29 15" {...line} strokeWidth={1.7} />
+          {eyes(22)}
+          <g className="dc-mouth">
+            <path d="M19 34 Q24 30 29 34" {...line} />
+          </g>
           <path
-            d="M36.5 26 Q39.5 30 36.5 33 Q33.5 30 36.5 26Z"
+            d="M36.5 27 Q39.2 30.5 36.5 33 Q33.8 30.5 36.5 27Z"
             fill="#7CC8FF"
-            stroke="#3E8FD0"
-            strokeWidth="0.6"
           />
         </>
       )}
 
       {kind === "angry" && (
         <>
-          <path d="M12.5 14 L20.5 18" {...stroke} strokeWidth={2.8} />
-          <path d="M35.5 14 L27.5 18" {...stroke} strokeWidth={2.8} />
-          {eyes(2.2, 2.8)}
-          <path d="M18 34.5 Q24 29 30 34.5" {...stroke} />
+          <circle cx="10.5" cy="29" r="3" fill="#FF7A59" opacity=".4" />
+          <circle cx="37.5" cy="29" r="3" fill="#FF7A59" opacity=".4" />
+          <path d="M12 14.5 L19.5 18" {...line} strokeWidth={2.3} />
+          <path d="M36 14.5 L28.5 18" {...line} strokeWidth={2.3} />
+          {eyes(22.5)}
+          <g className="dc-mouth">
+            <path d="M19.5 33.5 Q24 30 28.5 33.5" {...line} />
+          </g>
         </>
       )}
 
       {kind === "surprised" && (
         <>
-          <path d="M13.5 13.5 Q17 10 20.5 13.5" {...stroke} strokeWidth={2} />
-          <path d="M27.5 13.5 Q31 10 34.5 13.5" {...stroke} strokeWidth={2} />
-          {eyes(3, 4)}
-          <ellipse cx="24" cy="33" rx="3.2" ry="4.2" fill="#7A2E2E" />
-          <ellipse cx="24" cy="35" rx="1.8" ry="1.4" fill="#FF8FA3" />
+          <path d="M11.5 21.5 L19 19.5" {...line} />
+          <path d="M36.5 21.5 L29 19.5" {...line} />
+          <g className="dc-mouth">
+            <ellipse cx="24" cy="31" rx="3.7" ry="4.6" fill={dark} />
+            <ellipse cx="24" cy="33.4" rx="2.3" ry="1.6" fill={pink} />
+          </g>
         </>
       )}
     </svg>
@@ -331,23 +340,21 @@ function Trophy({ size }: { size: number }) {
         <linearGradient id="dc-trophy-g" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#FFF3B0" />
           <stop offset=".55" stopColor="#F5B800" />
-          <stop offset="1" stopColor="#B87900" />
+          <stop offset="1" stopColor="#D99A00" />
         </linearGradient>
       </defs>
-      <g
-        stroke="#7A5200"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
+      {/* ไม่มีเส้นกรอบดำ: ใช้สีทองล้วน */}
+      <path d="M7 3h10v5.5a5 5 0 01-10 0V3z" fill="url(#dc-trophy-g)" />
+      <path
+        d="M7 5H4v2a3 3 0 003 3M17 5h3v2a3 3 0 01-3 3"
+        fill="none"
+        stroke="#F0B000"
+        strokeWidth="1.6"
         strokeLinecap="round"
-      >
-        <path
-          d="M7 3h10v5.5a5 5 0 01-10 0V3z"
-          fill="url(#dc-trophy-g)"
-        />
-        <path d="M7 5H4v2a3 3 0 003 3M17 5h3v2a3 3 0 01-3 3" fill="none" />
-        <path d="M12 13.5V17" fill="none" />
-        <path d="M9 17h6v4H9z" fill="url(#dc-trophy-g)" />
-      </g>
+        strokeLinejoin="round"
+      />
+      <path d="M10.8 13h2.4v4h-2.4z" fill="#E8A800" />
+      <path d="M8.5 17h7a.5.5 0 01.5.5V21H8v-3.5a.5.5 0 01.5-.5z" fill="url(#dc-trophy-g)" />
       <path
         d="M9.2 4.8v3.6"
         stroke="#fff"
@@ -457,12 +464,13 @@ function Fx({ frame }: { frame: FrameId }) {
   if (frame === "gold") {
     return (
       <>
+        {/* ถ้วยอยู่มุมบนขวา เหมือนตำแหน่งอิโมจิ */}
         <span
           aria-hidden
-          className={`${base} dc-anim dc-bob left-1/2 -top-4 -translate-x-1/2`}
+          className={`${base} dc-anim dc-bobr -right-3 -top-4`}
         >
           <span className="block drop-shadow-[0_0_4px_rgba(255,200,40,.9)]">
-            <Trophy size={20} />
+            <Trophy size={22} />
           </span>
         </span>
         <Sparkle
@@ -473,7 +481,7 @@ function Fx({ frame }: { frame: FrameId }) {
         <Sparkle
           size={9}
           color="#FFF6C8"
-          className={`${base} dc-anim dc-twinkle -right-2 -top-1`}
+          className={`${base} dc-anim dc-twinkle left-1/3 -top-2.5`}
           style={{ animationDelay: ".6s" }}
         />
         <Sparkle
@@ -541,7 +549,7 @@ function NoteBox({
         className={`dc-anim dc-f-${frame} relative block rounded-2xl p-[2.5px]`}
       >
         <span
-          className={`dc-in dc-in-${frame} relative block overflow-hidden rounded-[14px] px-3 py-1.5 text-center text-[12px] font-medium leading-snug`}
+          className={`dc-in dc-in-${frame} relative block overflow-hidden rounded-[14px] px-3 py-1.5 text-center font-[inherit] text-[12px] font-semibold leading-snug`}
         >
           {frame === "fire" ? (
             <>
@@ -1075,11 +1083,10 @@ export default function DepartmentCard({
                 color: #FF9A1F;
                 box-shadow: inset 0 -6px 10px rgba(255,90,0,.3), inset 0 0 8px rgba(0,0,0,.5);
               }
+              /* ใช้ฟอนต์เดียวกับหน้าตั้งค่า (ฟอนต์แอป ตัวตรง semibold) */
               .dc-fire-text {
-                font-weight: 900;
-                font-style: italic;
-                letter-spacing: -0.02em;
-                padding-right: 2px;
+                font-family: inherit;
+                font-weight: 600;
                 background-image: linear-gradient(to top, #FF4D2E, #FF9A1F, #FFE066);
                 -webkit-background-clip: text;
                 background-clip: text;
@@ -1087,9 +1094,8 @@ export default function DepartmentCard({
                 color: transparent;
               }
               .dc-fire-glow {
-                font-weight: 900;
-                font-style: italic;
-                letter-spacing: -0.02em;
+                font-family: inherit;
+                font-weight: 600;
                 color: #FF7A1A;
                 filter: blur(5px);
                 animation: dc-glowpulse .5s ease-in-out infinite alternate;
@@ -1146,6 +1152,10 @@ export default function DepartmentCard({
                 0%, 100% { transform: translate(-50%, 0) rotate(-6deg); }
                 50% { transform: translate(-50%, -3px) rotate(6deg); }
               }
+              @keyframes dc-bobr {
+                0%, 100% { transform: translateY(0) rotate(-6deg); }
+                50% { transform: translateY(-3px) rotate(6deg); }
+              }
               .dc-flame {
                 transform-origin: 50% 100%;
                 animation-name: dc-flame;
@@ -1153,35 +1163,27 @@ export default function DepartmentCard({
                 animation-timing-function: ease-out;
               }
 
-              /* ---------- หน้าอารมณ์: ขยับหัว + กะพริบตา + หัวใจเต้น ---------- */
-              @keyframes dc-head {
-                0%, 100% { transform: rotate(-6deg) translateY(0); }
-                50% { transform: rotate(6deg) translateY(-2px); }
-              }
+              /* ---------- หน้าอารมณ์: หัวนิ่ง ไม่โยกซ้ายขวา / ขยับเบาๆ (กะพริบตา ปากขยุกขยิก หัวใจเต้น) เฉพาะตัวที่เลือก/โพสต์แล้ว ---------- */
               @keyframes dc-blink {
                 0%, 90%, 100% { transform: scaleY(1); }
-                94% { transform: scaleY(.08); }
+                94% { transform: scaleY(.1); }
+              }
+              @keyframes dc-mouthmove {
+                0%, 100% { transform: scale(1); }
+                50% { transform: scale(1.1); }
               }
               @keyframes dc-heart {
                 0%, 100% { transform: scale(1); }
-                50% { transform: scale(1.2); }
+                50% { transform: scale(1.12); }
               }
-              .dc-face {
-                display: block;
-                overflow: visible;
-                transform-origin: 50% 85%;
-                animation: dc-head 2.4s ease-in-out infinite;
-              }
-              .dc-blink {
+              .dc-face { display: block; overflow: visible; }
+              .dc-mouth, .dc-blink, .dc-heart {
                 transform-box: fill-box;
                 transform-origin: center;
-                animation: dc-blink 3.8s infinite;
               }
-              .dc-heart {
-                transform-box: fill-box;
-                transform-origin: center;
-                animation: dc-heart 1s ease-in-out infinite;
-              }
+              .dc-live .dc-blink { animation: dc-blink 3.6s infinite; }
+              .dc-live .dc-mouth { animation: dc-mouthmove 1.8s ease-in-out infinite; }
+              .dc-live .dc-heart { animation: dc-heart 1.1s ease-in-out infinite; }
 
               /* ปุ่ม/ช่องกรอกใน popup ใช้ font เดียวกับทั้งแอป */
               .dc-font, .dc-font button, .dc-font textarea { font-family: inherit; }
@@ -1191,8 +1193,8 @@ export default function DepartmentCard({
                 .dc-fire-glow,
                 .dc-in-ice, .dc-in-gold, .dc-in-neon,
                 .dc-in-gold::after,
-                .dc-flame, .dc-ember, .dc-twinkle, .dc-bob,
-                .dc-face, .dc-blink, .dc-heart { animation: none !important; }
+                .dc-flame, .dc-ember, .dc-twinkle, .dc-bob, .dc-bobr,
+                .dc-live .dc-mouth, .dc-live .dc-blink, .dc-live .dc-heart { animation: none !important; }
                 .dc-ember { opacity: 0 !important; }
               }
             `}</style>
@@ -1358,7 +1360,7 @@ export default function DepartmentCard({
                               onClick={() => setDraftStyle(id)}
                               className={pickBtn(draftStyle === id)}
                             >
-                              <Face kind={id} size={26} />
+                              <Face kind={id} size={26} animate={draftStyle === id} />
                             </button>
                           ))}
                         </div>
@@ -1529,6 +1531,7 @@ export default function DepartmentCard({
                     top: flight.top,
                     width: flight.width,
                     height: flight.height,
+                    fontFamily: "inherit",
                     willChange: "transform, opacity",
                   }}
                 >
