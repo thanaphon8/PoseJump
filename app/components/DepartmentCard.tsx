@@ -1187,6 +1187,8 @@ export default function DepartmentCard({
 
               /* ปุ่ม/ช่องกรอกใน popup ใช้ font เดียวกับทั้งแอป */
               .dc-font, .dc-font button, .dc-font textarea { font-family: inherit; }
+              /* กัน iOS Safari ซูมหน้าจอตอนโฟกัสช่องพิมพ์: ต้องใช้ font-size >= 16px */
+              .dc-font textarea { font-size: 16px; }
               @media (prefers-reduced-motion: reduce) {
                 .dc-anim { animation: none !important; opacity: 1 !important; }
                 .dc-f-fire, .dc-f-ice, .dc-f-gold, .dc-f-neon,
@@ -1290,7 +1292,7 @@ export default function DepartmentCard({
                           rows={2}
                           onChange={(e) => setDraft(e.target.value)}
                           placeholder="เขียนโน๊ตสั้นๆ ให้เพื่อนร่วมทีมเห็น..."
-                          className="w-full resize-none bg-transparent text-[14px] outline-none"
+                          className="w-full resize-none bg-transparent text-[16px] outline-none"
                         />
 
                         {/* ตัวอย่างกรอบ ตามที่เลือก */}
