@@ -57,8 +57,9 @@ const CONSENT_STEP = LAST_STEP;
 // แก้ทุกครั้งที่ข้อความยินยอมเปลี่ยน เซิร์ฟเวอร์ใช้บันทึกว่าผู้ใช้ยอมรับฉบับไหน
 const CONSENT_VERSION = "2026-10-v1";
 
-// สาขาที่แสดงก่อนพิมพ์ค้นหา (Com7 มี 1,000+ สาขา)
+// สาขาที่แสดงก่อนพิมพ์ค้นหา (Com7 มี 1,000+ สาขา) กด "ดูเพิ่ม" ได้ทีละ BRANCH_STEP
 const BRANCH_PREVIEW = 80;
+const BRANCH_STEP = 200;
 
 type Mate = { name: string; username: string; avatarUrl: string | null };
 type Mates = { count: number; members: Mate[] };
@@ -729,6 +730,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
   const [branchId, setBranchId] = useState("");
   const [deptQuery, setDeptQuery] = useState(""); // คำค้นหา (ใช้กรองรายการแผนก)
   const [branchQuery, setBranchQuery] = useState(""); // คำค้นหา (ใช้กรองรายการสาขา)
+  const [branchLimit, setBranchLimit] = useState(BRANCH_PREVIEW); // จำนวนสาขาที่แสดงตอนยังไม่พิมพ์ค้นหา (กด "ดูเพิ่ม" เพิ่มทีละ BRANCH_STEP)
   const [hi, setHi] = useState(-1); // แถวที่ไฮไลต์ในรายการ (-1 = ไม่มี)
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -816,6 +818,14 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     [branchQuery, branchItems]
   );
 
+  // ยังไม่พิมพ์ = จำกัดตาม branchLimit (กด "ดูเพิ่ม" เพิ่มได้) / พิมพ์แล้ว = แสดงทั้งหมดที่ตรง
+  const branchCap = branchQuery.trim() ? undefined : branchLimit;
+  // รายการสาขาที่แสดงอยู่จริง (ใช้กับลูกศรขึ้น/ลง ไม่ให้ไฮไลต์หลุดไปแถวที่มองไม่เห็น)
+  const shownBranches = useMemo(
+    () => visibleBranches.slice(0, branchCap),
+    [visibleBranches, branchCap]
+  );
+
   const selectedCompany = useMemo(
     () => getCompany(Number(companyId)),
     [companyId]
@@ -862,6 +872,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       setBranchId("");
       setDeptQuery("");
       setBranchQuery("");
+      setBranchLimit(BRANCH_PREVIEW);
     }
     clearErr("companyId");
   };
@@ -872,6 +883,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
     if (p === "hq") {
       setBranchId("");
       setBranchQuery("");
+      setBranchLimit(BRANCH_PREVIEW);
     } else {
       setDepartmentId("");
       setDeptQuery("");
@@ -897,6 +909,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
 
   const onBranchQuery = (v: string) => {
     setBranchQuery(v);
+    setBranchLimit(BRANCH_PREVIEW);
     setHi(v.trim() ? 0 : -1);
     clearErr("branchId");
   };
@@ -1592,12 +1605,12 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
             </div>
           )}
 
-          {/* ขั้น 4: หน้าร้าน = เลือกสาขา */}
+          {/* ขั้น 4: หน้าร้าน = เลือกสาขา (ยังไม่พิมพ์ = แสดงทีละช่วง กด "ดูเพิ่ม" / พิมพ์แล้ว = แสดงทั้งหมดที่ตรง) */}
           {step === 3 && place === "store" && (
             <div
               className="mt-4"
               onKeyDown={onListKey(
-                visibleBranches,
+                shownBranches,
                 branchQuery,
                 branchId,
                 pickBranch
@@ -1619,8 +1632,19 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                 onHover={setHi}
                 onPick={pickBranch}
                 listRef={listRef}
-                limit={branchQuery.trim() ? undefined : BRANCH_PREVIEW}
+                limit={branchCap}
               />
+              {branchCap !== undefined && visibleBranches.length > branchCap && (
+                <button
+                  type="button"
+                  onClick={() => setBranchLimit((n) => n + BRANCH_STEP)}
+                  className="mt-2 flex h-11 w-full items-center justify-center rounded-full border border-white/30 text-[14px] font-semibold text-white/90 transition-colors hover:bg-white/10 active:scale-95"
+                >
+                  ดูเพิ่มอีก{" "}
+                  {Math.min(BRANCH_STEP, visibleBranches.length - branchCap)} สาขา
+                  (เหลือ {visibleBranches.length - branchCap})
+                </button>
+              )}
             </div>
           )}
 
