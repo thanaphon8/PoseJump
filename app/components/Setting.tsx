@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Segmented } from "./auth-shared";
+import { Icon, ICONS, Segmented } from "./auth-shared";
 import type { User } from "./auth-shared";
 import {
   branchCode,
@@ -21,6 +21,9 @@ import {
 const card = "rounded-3xl bg-white pj-lift";
 const NAME_MAX = 20;
 const AVATAR_SIZE = 512; // px ย่อรูปก่อนอัปโหลดขึ้น Drive (ครอปกลางเป็นสี่เหลี่ยมจัตุรัส)
+
+// ไอคอนดินสอ (แก้ไขรูป)
+const PENCIL = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z";
 
 const initialOf = (name: string) =>
   (Array.from(name.trim())[0] ?? "?").toUpperCase();
@@ -511,6 +514,8 @@ function ProfileCard({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [camOpen, setCamOpen] = useState(false);
+  // เมนูเลือกรูป / ถ่ายรูป (เปิดเมื่อกดรูปโปรไฟล์หรือไอคอนดินสอ)
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // ซิงก์ชื่อเมื่อ user เปลี่ยนจากภายนอก (เช่น ล็อกอินบัญชีอื่น)
   useEffect(() => {
@@ -522,6 +527,16 @@ function ProfileCard({
   useEffect(() => {
     setSavedAvatar(null);
   }, [user.username]);
+
+  // Esc ปิดเมนูเลือกรูป
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPickerOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pickerOpen]);
 
   const trimmed = name.trim();
   const nameLen = Array.from(trimmed).length;
@@ -637,19 +652,70 @@ function ProfileCard({
 
       <div className="mt-4 flex flex-col items-center text-center">
         <div className="relative">
-          {/* มือถือ 112px / จอใหญ่ขึ้น 144px */}
-          <span
-            className={`block h-28 w-28 rounded-full sm:h-36 sm:w-36 ${
-              avatarChanged ? "ring-4 ring-[#C9F25B] ring-offset-2" : ""
-            }`}
+          {/* มือถือ 176px / จอใหญ่ขึ้น 224px กดที่รูปหรือไอคอนดินสอเพื่อเปลี่ยนรูป */}
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            disabled={busy}
+            aria-label="เปลี่ยนรูปโปรไฟล์"
+            aria-haspopup="menu"
+            aria-expanded={pickerOpen}
+            className="group relative block rounded-full transition-transform active:scale-[0.97] disabled:opacity-60"
           >
-            <Avatar
-              name={user.name}
-              src={draftAvatar ?? savedAvatar ?? user.avatarUrl}
-              fill
-              className="text-5xl sm:text-6xl"
-            />
-          </span>
+            <span
+              className={`block h-44 w-44 rounded-full sm:h-56 sm:w-56 ${
+                avatarChanged ? "ring-4 ring-[#C9F25B] ring-offset-2" : ""
+              }`}
+            >
+              <Avatar
+                name={user.name}
+                src={draftAvatar ?? savedAvatar ?? user.avatarUrl}
+                fill
+                className="text-7xl sm:text-8xl"
+              />
+            </span>
+            <span
+              aria-hidden
+              className="pointer-events-none absolute bottom-1 right-1 flex h-11 w-11 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21] shadow-lg ring-4 ring-white transition-transform group-hover:scale-105 sm:bottom-2 sm:right-2"
+            >
+              <Icon d={PENCIL} size={20} />
+            </span>
+          </button>
+
+          {pickerOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-10"
+                aria-hidden
+                onClick={() => setPickerOpen(false)}
+              />
+              <div
+                role="menu"
+                className="pj-in absolute left-1/2 top-full z-20 mt-2 w-52 -translate-x-1/2 overflow-hidden rounded-2xl bg-white text-left shadow-xl ring-1 ring-black/5"
+              >
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setPickerOpen(false);
+                    fileRef.current?.click();
+                  }}
+                  className="flex h-12 w-full items-center px-5 text-[15px] font-semibold transition-colors hover:bg-[#EEF2E4] active:bg-[#E3EAD6]"
+                >
+                  เลือกรูป
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setPickerOpen(false);
+                    setCamOpen(true);
+                  }}
+                  className="flex h-12 w-full items-center border-t border-[#EEF2E4] px-5 text-[15px] font-semibold transition-colors hover:bg-[#EEF2E4] active:bg-[#E3EAD6]"
+                >
+                  ถ่ายรูปใหม่
+                </button>
+              </div>
+            </>
+          )}
         </div>
         <div className="mt-3 max-w-full truncate text-[18px] font-semibold sm:text-[20px]">
           {user.name}
@@ -682,22 +748,6 @@ function ProfileCard({
         </dl>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={busy}
-          className="h-11 rounded-full bg-[#EEF2E4] text-[14px] font-semibold transition-all hover:bg-[#E3EAD6] active:scale-[0.97] disabled:opacity-40"
-        >
-          เลือกรูป
-        </button>
-        <button
-          onClick={() => setCamOpen(true)}
-          disabled={busy}
-          className="h-11 rounded-full bg-[#1B2A21] text-[14px] font-semibold text-[#C9F25B] transition-all hover:bg-[#25382C] active:scale-[0.97] disabled:opacity-40"
-        >
-          ถ่ายรูปใหม่
-        </button>
-      </div>
       <input
         ref={fileRef}
         type="file"
@@ -788,7 +838,7 @@ export default function Setting({
   onFacing,
   sound,
   onSound,
-  onClearHistory,
+  onLogout,
 }: {
   user: User | null;
   onUserChange: (patch: Partial<User>) => void;
@@ -796,7 +846,8 @@ export default function Setting({
   onFacing: (v: "user" | "environment") => void;
   sound: boolean;
   onSound: (v: boolean) => void;
-  onClearHistory: () => void;
+  // ออกจากระบบ (page.tsx ส่งฟังก์ชันที่ใช้อยู่แล้วเข้ามา)
+  onLogout: () => void;
 }) {
   return (
     <>
@@ -835,12 +886,11 @@ export default function Setting({
           </ul>
 
           <button
-            onClick={() => {
-              if (window.confirm("ลบประวัติการกระโดดทั้งหมด?")) onClearHistory();
-            }}
-            className="h-12 w-full rounded-full bg-white text-[15px] font-semibold text-[#D92D20] transition-all hover:bg-[#FDE8E6] active:scale-[0.98]"
+            onClick={onLogout}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-white text-[15px] font-semibold text-[#D92D20] transition-all hover:bg-[#FDE8E6] active:scale-[0.98]"
           >
-            ล้างประวัติ
+            <Icon d={ICONS.logout} size={18} />
+            ออกจากระบบ
           </button>
         </div>
       </div>

@@ -1150,7 +1150,7 @@ export default function Home() {
               onFacing={setFacing}
               sound={sound}
               onSound={setSound}
-              onClearHistory={clearHistory}
+              onLogout={logout}
             />
           )}
         </Shell>
