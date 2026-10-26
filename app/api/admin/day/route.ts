@@ -9,7 +9,6 @@ import {
   validYmd,
   ymdOf,
 } from "@/lib/admin-stats";
-import { computeDeptTotals } from "@/lib/admin-dept-totals";
 
 // GET /api/admin/day?date=YYYY-MM-DD (ไม่ส่ง = วันนี้เวลาไทย)
 export async function GET(req: Request) {
@@ -20,10 +19,7 @@ export async function GET(req: Request) {
   const date = validYmd(q) ? q : ymdOf(Date.now());
 
   const db = await getDb();
-  const [list, deptTotals] = await Promise.all([
-    computeDay(db, dayStartOf(date)),
-    computeDeptTotals(db),
-  ]);
+  const list = await computeDay(db, dayStartOf(date));
   const entries = list.map((e, i) => ({ rank: i + 1, ...e }));
 
   return NextResponse.json({
@@ -33,7 +29,5 @@ export async function GET(req: Request) {
     reachedCount: entries.filter((e) => e.goalRank !== null).length,
     awardedCount: entries.filter((e) => e.points > 0).length,
     entries,
-    // ยอดสะสมรายกลุ่ม (key "d:<id>" / "b:<id>") ตรงกับหน้าอันดับฝั่งผู้ใช้
-    deptTotals,
   });
 }

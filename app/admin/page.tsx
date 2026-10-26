@@ -64,8 +64,6 @@ type DayData = {
   reachedCount: number;
   awardedCount: number;
   entries: DayEntry[];
-  // ยอดสะสมรายกลุ่ม key "d:<id>" / "b:<id>" ตรงกับหน้าอันดับฝั่งผู้ใช้
-  deptTotals?: Record<string, number>;
 };
 type WeekEntry = {
   rank: number;
@@ -101,6 +99,9 @@ type MonthData = {
   dayCount: number;
   activeDays: number;
   entries: MonthEntry[];
+  // ยอดสะสมรายกลุ่ม key "d:<id>" / "b:<id>" ตรงกับหน้าอันดับฝั่งผู้ใช้
+  // API ส่งมาเฉพาะ scope=all (ตั้งแต่เริ่มกิจกรรม)
+  deptTotals?: Record<string, number>;
 };
 // สังกัดของผู้เล่น ต้องตรงกับ OrgInfo ใน lib/admin-stats.ts
 type OrgInfo = {
@@ -202,7 +203,7 @@ function downloadCsv(
     return `"${t.replace(/"/g, '""')}"`;
   };
   const text = [head, ...body].map((r) => r.map(esc).join(",")).join("\r\n");
-  const blob = new Blob(["\uFEFF" + text], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -604,7 +605,7 @@ export default function AdminPage() {
   const [onlyAwarded, setOnlyAwarded] = useState(false);
   const [sort, setSort] = useState<Sort>("points");
   const [scope, setScope] = useState<Scope>("month");
-  // มุมมอง (รายคน / แผนก-สาขา) ใช้ได้เฉพาะหน้ารายวัน ตัวกรองสังกัดใช้ร่วมกันทั้ง 3 หน้า
+  // มุมมอง (รายคน / แผนก-สาขา) ใช้ได้เฉพาะหน้ารายเดือน ตัวกรองสังกัดใช้ร่วมกันทั้ง 3 หน้า
   const [group, setGroup] = useState<Group>("player");
   const [fCompany, setFCompany] = useState("");
   const [fWork, setFWork] = useState<WorkFilter>("all");
@@ -625,6 +626,10 @@ export default function AdminPage() {
     date: string;
     avatarUrl?: string | null;
   } | null>(null);
+
+  // มุมมองแผนกในหน้ารายเดือนแสดงยอดสะสมตั้งแต่เริ่มกิจกรรมเสมอ
+  // เลยบังคับดึงข้อมูล scope=all ไม่ขึ้นกับเดือนที่เลือก
+  const effScope: Scope = view === "month" && group === "group" ? "all" : scope;
 
   useEffect(() => {
     const t = todayYmd();
@@ -657,7 +662,7 @@ export default function AdminPage() {
       } else {
         setMonth(
           await getJson<MonthData>(
-            `/api/admin/month?month=${date.slice(0, 7)}&scope=${scope}`
+            `/api/admin/month?month=${date.slice(0, 7)}&scope=${effScope}`
           )
         );
       }
@@ -665,7 +670,7 @@ export default function AdminPage() {
     } catch (e) {
       setState(e instanceof Error && e.message === "locked" ? "locked" : "error");
     }
-  }, [view, date, scope]);
+  }, [view, date, effScope]);
 
   useEffect(() => {
     load();
@@ -820,7 +825,7 @@ export default function AdminPage() {
 
   /* ---------------- ข้อมูลที่คำนวณจากผลลัพธ์ ---------------- */
 
-  const isAll = view === "month" && scope === "all";
+  const isAll = view === "month" && effScope === "all";
   const step = view === "day" ? 1 : 7;
   const atLatest =
     !today ||
@@ -910,24 +915,20 @@ export default function AdminPage() {
   const monthPoints = sum(monthScoped, (e) => e.points);
   const monthTotal = sum(monthScoped, (e) => e.total);
 
-  // มุมมองแผนก/สาขา (ใช้เฉพาะหน้ารายวัน)
-  // หน้ารายวัน: ยอดสะสม (ตรงหน้าผู้ใช้) เป็นตัวเลขหลัก + ยอดโดดวันนี้
-  const groupSource = view === "day" ? dayScoped : view === "week" ? weekScoped : monthScoped;
-  const dayCum = view === "day" ? day?.deptTotals : undefined;
-  const isDayGroup = !!dayCum;
+  // มุมมองแผนก/สาขา (ใช้เฉพาะหน้ารายเดือน)
+  // ใช้ข้อมูล scope=all + deptTotals (ยอดสะสมตั้งแต่เริ่ม ตรงหน้าอันดับของผู้ใช้)
+  // รอให้ข้อมูลที่โหลดมาเป็น scope=all ก่อน กันแสดงข้อมูลเดือนเก่าค้างตอนสลับมุมมอง
+  const groupReady =
+    view === "month" && group === "group" && month?.scope === "all";
+  const cum = groupReady ? month?.deptTotals : undefined;
   const groupList =
-    view === "day"
-      ? buildGroups(groupSource, sort, dayCum).filter((g) => matchesGroup(q, g))
+    groupReady && cum
+      ? buildGroups(monthScoped, "points", cum).filter((g) =>
+          matchesGroup(q, g)
+        )
       : [];
 
-  const groupUnit =
-    sort === "total"
-      ? isDayGroup
-        ? "ครั้งวันนี้"
-        : "ครั้ง"
-      : isDayGroup
-        ? "ครั้งสะสม"
-        : "point";
+  const groupUnit = "ครั้งสะสม";
   const deptEntries: DeptEntry[] = groupList.map((g) => ({
     rank: g.rank,
     id: 0,
@@ -936,16 +937,9 @@ export default function AdminPage() {
     name: g.name,
     en: "",
     company: g.company,
-    total: sort === "total" ? g.total : isDayGroup ? g.cum : g.points,
+    total: g.cum,
     // ค่าอีกตัว แสดงใต้ตัวเลขหลัก
-    sub:
-      sort === "total"
-        ? isDayGroup
-          ? `สะสม ${fmtNum(g.cum)} ครั้ง`
-          : `${fmtNum(g.points)} point`
-        : isDayGroup
-          ? `วันนี้ ${fmtNum(g.total)} ครั้ง`
-          : `${fmtNum(g.total)} ครั้ง`,
+    sub: `${fmtNum(g.points)} point`,
     active: g.players,
     me: false,
     memberCount: g.players,
@@ -965,8 +959,9 @@ export default function AdminPage() {
         emptyText="ไม่มีข้อมูล"
       />
       <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-        กลุ่ม = แผนก (สำนักงานใหญ่) หรือ 1 สาขา (หน้าร้าน) นับเฉพาะคนที่โดดในช่วงนี้และตรงตัวกรอง{isDayGroup && " · ยอดสะสมนับทุกคนในกลุ่มตั้งแต่เริ่ม เหมือนหน้าอันดับของผู้ใช้ แต่แสดงเฉพาะกลุ่มที่มีคนโดดวันนี้"} · ตัวเลขหลัก ={" "}
-        {groupUnit} (เรียงตามนี้) · กดที่กลุ่มเพื่อดูสมาชิก
+        กลุ่ม = แผนก (สำนักงานใหญ่) หรือ 1 สาขา (หน้าร้าน) · ตัวเลขหลัก = ยอดสะสมนับตั้งแต่เริ่มกิจกรรม
+        เหมือนหน้าอันดับของผู้ใช้ ไม่ขึ้นกับเดือนที่เลือก (เรียงตามนี้) · ใต้ตัวเลข = point สะสมของคนที่ตรงตัวกรอง ·
+        กดที่กลุ่มเพื่อดูสมาชิก
       </p>
     </div>
   );
@@ -993,15 +988,16 @@ export default function AdminPage() {
     const oh = ["บริษัท", "ที่ทำงาน", "แผนก", "รหัสสาขา", "สาขา", "จังหวัด", "ภาค"];
     if (group === "group") {
       downloadCsv(
-        `pose-jump-groups-${view}-${periodTag}`,
+        `pose-jump-groups-${periodTag}`,
         [
           "#",
           "กลุ่ม",
           "รายละเอียด",
           "จำนวนคน",
-          "โดดรวม",
+          "โดดรวม (คนที่ตรงตัวกรอง)",
           "เฉลี่ยต่อคน",
-          view === "day" ? "ยอดสะสม" : "point",
+          "ยอดสะสม",
+          "point",
         ],
         groupList.map((g) => [
           g.rank,
@@ -1010,7 +1006,8 @@ export default function AdminPage() {
           g.players,
           g.total,
           Math.round(g.total / Math.max(1, g.players)),
-          view === "day" ? g.cum : g.points,
+          g.cum,
+          g.points,
         ])
       );
     } else if (view === "day") {
@@ -1079,9 +1076,11 @@ export default function AdminPage() {
       ? "ผลรายวัน"
       : view === "week"
         ? "สรุปรายสัปดาห์"
-        : isAll
-          ? "สรุปตั้งแต่เริ่มกิจกรรม"
-          : "สรุปรายเดือน";
+        : group === "group"
+          ? "อันดับแผนก"
+          : isAll
+            ? "สรุปตั้งแต่เริ่มกิจกรรม"
+            : "สรุปรายเดือน";
   const subtitle =
     view === "day"
       ? date
@@ -1112,8 +1111,8 @@ export default function AdminPage() {
           setView(v);
           setQ("");
           setDetail(null);
-          // มุมมองแผนกมีเฉพาะหน้ารายวัน
-          if (v !== "day") setGroup("player");
+          // มุมมองแผนกมีเฉพาะหน้ารายเดือน
+          if (v !== "month") setGroup("player");
         }}
         onLogout={logout}
       >
@@ -1126,7 +1125,7 @@ export default function AdminPage() {
 
         {/* แถบเครื่องมือ */}
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
-          {view === "month" && (
+          {view === "month" && group === "player" && (
             <div className="w-full shrink-0 lg:w-64">
               <Segmented<Scope>
                 value={scope}
@@ -1192,7 +1191,7 @@ export default function AdminPage() {
           )}
 
           <div className="flex flex-1 flex-wrap items-center gap-3 lg:justify-end">
-            {view === "day" && (
+            {view === "month" && (
               <div className="w-56 shrink-0">
                 <Segmented<Group>
                   value={group}
@@ -1213,25 +1212,29 @@ export default function AdminPage() {
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="ค้นหาชื่อหรือ username"
+                placeholder={
+                  group === "group"
+                    ? "ค้นหาแผนกหรือสาขา"
+                    : "ค้นหาชื่อหรือ username"
+                }
                 className="h-10 w-full rounded-full bg-white pl-10 pr-4 text-[14px] shadow-sm outline-none ring-2 ring-transparent placeholder:text-[#A9B79A] focus:ring-[#C9F25B]"
               />
             </label>
-            {(view !== "day" || group === "group") && (
+            {(view === "week" || (view === "month" && group === "player")) && (
               <div className="w-64 shrink-0">
                 <Segmented<Sort>
                   value={sort}
                   onChange={setSort}
                   options={
                     [
-                      ["points", view === "day" ? "ยอดสะสม" : "point สูงสุด"],
-                      ["total", view === "day" ? "โดดวันนี้" : "โดดมากสุด"],
+                      ["points", "point สูงสุด"],
+                      ["total", "โดดมากสุด"],
                     ] as const
                   }
                 />
               </div>
             )}
-            {view === "day" && group === "player" && (
+            {view === "day" && (
               <div className="w-56 shrink-0">
                 <Segmented<"all" | "awarded">
                   value={onlyAwarded ? "awarded" : "all"}
@@ -1371,10 +1374,6 @@ export default function AdminPage() {
               />
             </div>
 
-            {group === "group" ? (
-              groupBoard
-            ) : (
-              <>
             <section className={`${card} mt-4 overflow-hidden`}>
               {dayRows.length === 0 ? (
                 <p className="px-4 py-10 text-center text-[14px] text-[#6B7A6E]">
@@ -1499,8 +1498,6 @@ export default function AdminPage() {
               เรียงตามยอดโดดรวมของวัน ลำดับถึงเป้า = ลำดับเวลาที่ยอดสะสมของวันนั้นถึงเป้ารายวันของคนนั้น
               ตัดวันที่เที่ยงคืนเวลาไทย · กดที่แถวเพื่อดูผลและภาพยืนยันของคนนั้น
             </p>
-              </>
-            )}
           </>
         )}
 
@@ -1531,10 +1528,6 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {group === "group" ? (
-              groupBoard
-            ) : (
-              <>
             <section className={`${card} mt-4 overflow-hidden`}>
               {weekRows.length === 0 ? (
                 <p className="px-4 py-10 text-center text-[14px] text-[#6B7A6E]">
@@ -1624,8 +1617,6 @@ export default function AdminPage() {
                 : "เรียงตาม point รวมของสัปดาห์ ถ้าเท่ากันเรียงตามยอดโดดรวม"}{" "}
               point คำนวณจากกติกา {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน ได้ {POINT_REWARD} point
             </p>
-              </>
-            )}
           </>
         )}
 
@@ -1661,7 +1652,9 @@ export default function AdminPage() {
             </div>
 
             {group === "group" ? (
-              groupBoard
+              groupReady ? (
+                groupBoard
+              ) : null
             ) : (
               <>
             <section className={`${card} mt-4 overflow-hidden`}>

@@ -11,10 +11,12 @@ import {
   ymdOf,
   type OrgInfo,
 } from "@/lib/admin-stats";
+import { computeDeptTotals } from "@/lib/admin-dept-totals";
 
 // GET /api/admin/month?month=YYYY-MM&scope=month|all
 // scope=month (ค่าเริ่มต้น) = สรุปทั้งเดือนนั้น เวลาไทย
 // scope=all = ตั้งแต่เริ่มกิจกรรม (รอบกระโดดแรก) ถึงวันนี้
+//   + deptTotals = ยอดสะสมรายกลุ่ม (key "d:<id>" / "b:<id>") ใช้กับมุมมองแผนก
 export async function GET(req: Request) {
   if (!(await isAdminSession()))
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -38,6 +40,7 @@ export async function GET(req: Request) {
         dayCount: 0,
         activeDays: 0,
         entries: [],
+        deptTotals: {},
       });
     }
     start = dayStartOf(ymdOf(first));
@@ -48,7 +51,10 @@ export async function GET(req: Request) {
     ({ start, end } = monthRange(month));
   }
 
-  const perDay = await computeRange(db, start, end);
+  const [perDay, deptTotals] = await Promise.all([
+    computeRange(db, start, end),
+    scope === "all" ? computeDeptTotals(db) : Promise.resolve(undefined),
+  ]);
 
   const acc = new Map<
     string,
@@ -105,5 +111,6 @@ export async function GET(req: Request) {
     dayCount: perDay.length,
     activeDays,
     entries,
+    deptTotals,
   });
 }
