@@ -12,6 +12,7 @@ import {
 import type { User } from "./auth-shared";
 import type { Session } from "./History";
 import DepartmentCard from "./DepartmentCard";
+import { GOAL_WEEKS, fmtGoalRange, goalRangeOfTime } from "./goal";
 
 /* ------------------------------------------------------------------ */
 /* หน้าหลัก (แท็บ "หน้าหลัก")                                            */
@@ -23,13 +24,8 @@ const LIME = "#C9F25B";
 
 const card = "rounded-3xl bg-white pj-lift";
 
-// กติกาการเล่น: ใส่ reward ในแถวไหนก็ได้ ถ้าสัปดาห์นั้นมีแต้ม
-const WEEK_RULES: { week: number; jumps: number; reward?: number }[] = [
-  { week: 1, jumps: 100, reward: POINT_REWARD },
-  { week: 2, jumps: 200, reward: POINT_REWARD },
-  { week: 3, jumps: 300, reward: POINT_REWARD },
-  { week: 4, jumps: 500, reward: POINT_REWARD },
-];
+// กติกาการเล่น: เป้าและช่วงวันที่ของแต่ละสัปดาห์ดึงจาก goal.ts (GOAL_WEEKS) ที่เดียว
+// แก้ตารางที่ goal.ts แล้วหน้านี้เปลี่ยนตามเอง
 
 /* ---------------------------- ฟังก์ชันช่วย ---------------------------- */
 
@@ -158,7 +154,8 @@ function CountUp({ value, ms = 700 }: { value: number; ms?: number }) {
 }
 
 // ป้ายประกาศกติกาการเล่น: สไตล์เดียวกับป๊อปอัพ รูปเต็มการ์ด ข้อความอยู่ในรูป พื้นไล่สีเขียวเข้ม→อ่อน
-function RulesBoard() {
+// currentFrom = วันเริ่มของสัปดาห์ปัจจุบัน (ใช้ไฮไลต์แถว) null ถ้าวันนี้อยู่นอกตาราง
+function RulesBoard({ currentFrom }: { currentFrom: string | null }) {
   const [imgOk, setImgOk] = useState(true);
   return (
     <section className="relative flex min-h-0 flex-col justify-end overflow-hidden rounded-[32px] lg:min-h-[560px] bg-gradient-to-t from-[#1B2A21] to-[#8FB54A] text-white shadow-lg">
@@ -197,19 +194,37 @@ function RulesBoard() {
         </div>
 
         <ul className="pj-stagger mt-4 space-y-2">
-          {WEEK_RULES.map((r) => (
-            <li
-              key={r.week}
-              className="flex items-center gap-3 rounded-2xl bg-white/15 px-3 py-2.5 ring-1 ring-white/20 backdrop-blur-md"
-            >
-              <span className="flex h-9 shrink-0 items-center rounded-full bg-[#C9F25B] px-3 text-[13px] font-semibold text-[#1B2A21]">
-                Week {r.week}
-              </span>
-              <span className="flex-1 text-[16px] font-semibold tabular-nums">
-                โดด {fmtNum(r.jumps)} ครั้ง
-              </span>
-            </li>
-          ))}
+          {GOAL_WEEKS.map((r) => {
+            const current = r.from === currentFrom;
+            return (
+              <li
+                key={r.week}
+                aria-current={current ? "date" : undefined}
+                className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 backdrop-blur-md ${
+                  current
+                    ? "bg-white/25 ring-2 ring-[#C9F25B]"
+                    : "bg-white/15 ring-1 ring-white/20"
+                }`}
+              >
+                <span className="flex h-9 shrink-0 items-center rounded-full bg-[#C9F25B] px-3 text-[13px] font-semibold text-[#1B2A21]">
+                  Week {r.week}
+                </span>
+                <div className="min-w-0 flex-1 leading-tight">
+                  <div className="text-[16px] font-semibold tabular-nums">
+                    โดด {fmtNum(r.goal)} ครั้ง/วัน
+                  </div>
+                  <div className="mt-0.5 text-[12px] text-white/70">
+                    {fmtGoalRange(r.from, r.to)}
+                  </div>
+                </div>
+                {current && (
+                  <span className="shrink-0 rounded-full bg-[#C9F25B] px-2.5 py-1 text-[11px] font-semibold text-[#1B2A21]">
+                    สัปดาห์นี้
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </div>
     </section>
@@ -275,6 +290,15 @@ export default function Home({
     .filter(Boolean)
     .join(" · ");
 
+  // สัปดาห์ปัจจุบันตามตารางเป้า (เวลาไทย) null ถ้าวันนี้อยู่นอกตาราง
+  const range = now0 ? goalRangeOfTime(now0) : null;
+  const weekNo = range
+    ? (GOAL_WEEKS.find((w) => w.from === range.from)?.week ?? null)
+    : null;
+  const weekLine = range
+    ? `${weekNo ? `สัปดาห์ที่ ${weekNo} · ` : ""}${fmtGoalRange(range.from, range.to)}`
+    : null;
+
   return (
     <>
       <header className="mb-5">
@@ -315,6 +339,9 @@ export default function Home({
                 </span>
               )}
             </div>
+            {weekLine && (
+              <p className="mt-1 text-[12px] text-white/55">{weekLine}</p>
+            )}
             <div className="mt-4 flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight lg:text-[72px]">
@@ -400,7 +427,7 @@ export default function Home({
         </div>
 
         <div className="pj-stagger space-y-4">
-          <RulesBoard />
+          <RulesBoard currentFrom={range?.from ?? null} />
 
           <section>
             <div className="mb-2 flex items-center justify-between px-1">

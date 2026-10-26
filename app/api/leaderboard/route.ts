@@ -8,13 +8,12 @@ import { purgeOrphansThrottled } from "../../../lib/purge-orphans";
 // ถ้า path ไม่ตรงโครงสร้างโปรเจกต์ ให้แก้บรรทัดนี้ให้ชี้ไปที่ branches.ts
 import { orgOf, getBranch, branchLabel } from "../../components/branches";
 import { getDepartment } from "../../components/departments";
+import { goalOfDate } from "../../components/goal";
 
 // "วันนี้" นับตามเวลาไทย (UTC+7) อันดับจึงรีเซ็ตตอนเที่ยงคืนของไทย
 const TZ_OFFSET = 7 * 3_600_000;
 const DAY = 864e5;
 const TOP = 100;
-// ต้องตรงกับ DEFAULT_GOAL ใน /api/sessions
-const DEFAULT_GOAL = 1500;
 
 const toId = (v: ObjectId | string) =>
   typeof v === "string" && ObjectId.isValid(v) ? new ObjectId(v) : v;
@@ -135,18 +134,11 @@ export async function GET() {
       .toArray();
     const seqOf = new Map(hits.map((h) => [String(h.userId), h.seq as number]));
 
-    // เป้าหมายรายวันของแต่ละคน ใช้วาดหลอดความคืบหน้า
-    const sets = await db
-      .collection("settings")
-      .find({ userId: { $in: hitIds } })
-      .project({ userId: 1, dailyGoal: 1 })
-      .toArray();
-    const goalOf = new Map(
-      sets.map((s) => [String(s.userId), s.dailyGoal as number])
-    );
+    // เป้าหมายรายวัน (เท่ากันทุกคน เปลี่ยนตามสัปดาห์ ดู app/components/goal.ts)
+    // ใช้วาดหลอดความคืบหน้า ต้องตรงกับเป้าที่ /api/sessions ใช้ตัดสิน point
+    const goal = goalOfDate(dayStr);
 
     const entries = top.map((r, i) => {
-      const goal = goalOf.get(String(r._id));
       const org = orgs.get(String(r._id));
       return {
         rank: i + 1,
@@ -158,7 +150,7 @@ export async function GET() {
         rounds: r.rounds,
         me: String(r._id) === myId,
         goalRank: seqOf.get(String(r._id)) ?? null,
-        goal: typeof goal === "number" && goal > 0 ? goal : DEFAULT_GOAL,
+        goal,
       };
     });
 

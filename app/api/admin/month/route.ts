@@ -3,7 +3,9 @@ import { getDb } from "@/lib/mongodb";
 import { isAdminSession } from "@/lib/admin-auth";
 import {
   DAY_MS,
+  avatarOf,
   computeRange,
+  orgFromUser,
   dayStartOf,
   firstJumpTs,
   monthRange,
@@ -33,18 +35,13 @@ export async function GET(req: Request) {
     const first = await firstJumpTs(db);
     const todayEnd = dayStartOf(ymdOf(Date.now())) + DAY_MS;
     if (first === null) {
-      return NextResponse.json({
-        scope,
-        month,
-        since: ymdOf(Date.now()),
-        dayCount: 0,
-        activeDays: 0,
-        entries: [],
-        deptTotals: {},
-      });
+      // ยังไม่มีรอบกระโดดเลย ช่วงว่าง แต่ยังต้องแสดงสมาชิกทุกคน
+      start = dayStartOf(ymdOf(Date.now()));
+      end = start;
+    } else {
+      start = dayStartOf(ymdOf(first));
+      end = todayEnd;
     }
-    start = dayStartOf(ymdOf(first));
-    end = todayEnd;
   } else {
     const q = params.get("month");
     month = validMonth(q) ? q : ymdOf(Date.now()).slice(0, 7);
@@ -99,9 +96,49 @@ export async function GET(req: Request) {
     }
   }
 
+  // เติมสมาชิกทุกคนที่มีบัญชี (login เข้ามาแล้ว) แม้ไม่มีรอบกระโดดในช่วงนี้
+  const users = await db
+    .collection("users")
+    .find(
+      {},
+      {
+        projection: {
+          nickname: 1,
+          display: 1,
+          username: 1,
+          avatarUrl: 1,
+          companyId: 1,
+          departmentId: 1,
+          branchId: 1,
+        },
+      }
+    )
+    .toArray();
+  for (const u of users) {
+    const id = String(u._id);
+    if (acc.has(id)) continue;
+    acc.set(id, {
+      name: String(u.nickname ?? u.display ?? "?"),
+      username: String(u.username ?? ""),
+      avatarUrl: avatarOf(u),
+      org: orgFromUser(u),
+      points: 0,
+      total: 0,
+      rounds: 0,
+      rewardDays: 0,
+      activeDays: 0,
+      bestDay: 0,
+    });
+  }
+
   const entries = [...acc.entries()]
     .map(([userId, a]) => ({ userId, ...a }))
-    .sort((a, b) => b.points - a.points || b.total - a.total)
+    .sort(
+      (a, b) =>
+        b.points - a.points ||
+        b.total - a.total ||
+        a.name.localeCompare(b.name, "th")
+    )
     .map((e, i) => ({ rank: i + 1, ...e }));
 
   return NextResponse.json({

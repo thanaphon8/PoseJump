@@ -9,6 +9,7 @@ import {
   getBranch,
 } from "../app/components/branches";
 import { getCompany, getDepartment } from "../app/components/departments";
+import { DEFAULT_DAILY_GOAL, goalOfDate } from "../app/components/goal";
 
 // ชื่อ collection ที่เก็บรอบกระโดด ดูจาก app/api/sessions/route.ts
 // ห้ามใช้ "sessions" เพราะ lib/auth.ts ใช้เก็บเซสชันล็อกอิน
@@ -21,8 +22,9 @@ const TZ_MS = 7 * 3600e3;
 // กติกา: 100 คนแรกที่ถึงเป้ารายวัน ได้ 50 point
 export const POINT_QUOTA = 100;
 export const POINT_REWARD = 50;
-// เป้ารายวันคงที่ ตรงกับฝั่งผู้ใช้ (DAILY_GOAL ใน app/page.tsx)
-export const DAILY_GOAL = 100;
+// เป้ารายวันเปลี่ยนตามสัปดาห์ ดู app/components/goal.ts (goalOfDate)
+// DAILY_GOAL คงไว้เป็นค่าเริ่มต้นเพื่อไม่ให้ไฟล์อื่นที่ import อยู่พัง
+export const DAILY_GOAL = DEFAULT_DAILY_GOAL;
 
 export const ymdOf = (t: number) =>
   new Date(t + TZ_MS).toISOString().slice(0, 10);
@@ -144,6 +146,9 @@ const aliveOnly = (rows: Row[], userMap: Map<string, Row>) =>
 function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
   if (rows.length === 0) return [];
 
+  // เป้าของวันนี้ (ทุกแถวใน rows อยู่วันไทยเดียวกัน)
+  const goal = goalOfDate(ymdOf(Number(rows[0].ts)));
+
   const acc = new Map<
     string,
     { total: number; rounds: number; goalAt: number | null }
@@ -153,7 +158,7 @@ function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
     const a = acc.get(k) ?? { total: 0, rounds: 0, goalAt: null };
     a.total += Number(r.total) || 0;
     a.rounds += 1;
-    if (a.goalAt === null && a.total >= DAILY_GOAL) {
+    if (a.goalAt === null && a.total >= goal) {
       a.goalAt = Number(r.ts);
     }
     acc.set(k, a);
@@ -175,7 +180,7 @@ function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
         username: String(u?.username ?? ""),
         total: a.total,
         rounds: a.rounds,
-        goal: DAILY_GOAL,
+        goal,
         goalRank,
         points: goalRank !== null && goalRank <= POINT_QUOTA ? POINT_REWARD : 0,
         avatarUrl: avatarOf(u),

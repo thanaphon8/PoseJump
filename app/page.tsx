@@ -13,6 +13,12 @@ import PromoPopup from "./components/PromoPopup";
 import Setting from "./components/Setting";
 import Navbar from "./components/Navbar";
 import { uploadShot } from "./components/snapshot";
+import {
+  DEFAULT_DAILY_GOAL,
+  goalOfTime,
+  goalRangeOfTime,
+  fmtGoalRange,
+} from "./components/goal";
 import type { Tab, NavItem } from "./components/Navbar";
 import type { Session } from "./components/History";
 import {
@@ -47,7 +53,6 @@ const PROMO_KEY = "pose-jump-promo-hide";
 const KCAL_PER_JUMP = 0.1;
 const DAY = 864e5;
 
-const DAILY_GOAL = 100;
 
 // สี
 const LIME = "#C9F25B";
@@ -649,9 +654,16 @@ export default function Home() {
   const [mode, setMode] = useState<Mode>("count");
   const [seconds, setSeconds] = useState(60);
   const [target, setTarget] = useState(100);
-  const [dailyGoal] = useState(DAILY_GOAL);
   const [history, setHistory] = useState<Session[]>([]);
   const [now0, setNow0] = useState<number | null>(null);
+  // เป้ารายวันเปลี่ยนตามสัปดาห์ (app/components/goal.ts) คำนวณจากวันนี้เวลาไทย
+  // ต้องตรงกับที่ /api/sessions ใช้ตัดสิน point
+  const dailyGoal = now0 ? goalOfTime(now0) : DEFAULT_DAILY_GOAL;
+  // ช่วงวันที่ของสัปดาห์นี้ เช่น "1 – 7 พ.ย." (null ถ้าอยู่นอกตาราง)
+  const goalRange = now0 ? goalRangeOfTime(now0) : null;
+  const goalRangeLabel = goalRange
+    ? fmtGoalRange(goalRange.from, goalRange.to)
+    : null;
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [reward, setReward] = useState<{ gain: number; total: number } | null>(
@@ -963,6 +975,8 @@ export default function Home() {
 
   const startSession = useCallback(() => {
     setGyroPromise(Pose.prime(facing, audioRef));
+    // อัปเดตวันที่ ให้เป้าตรงวันนี้ถ้าเปิดแอปค้างข้ามเที่ยงคืน
+    setNow0(Date.now());
     setError(null);
     setDayMode(false);
     setReward(null);
@@ -1333,6 +1347,11 @@ export default function Home() {
               style={{ width: `${goalPct * 100}%` }}
             />
           </div>
+          {goalRangeLabel && (
+            <p className="mt-2 text-[12px] text-[#4B5E3A]">
+              สัปดาห์นี้ {goalRangeLabel} · เป้า {fmtNum(dailyGoal)} ครั้ง/วัน
+            </p>
+          )}
           {user && (
             <div className="mt-3">
               <PointBadge points={user.points ?? 0} />

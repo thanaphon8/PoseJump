@@ -7,6 +7,7 @@ import UserDayModal from "../components/UserDayModal";
 import { DeptBoardView } from "../components/DepartmentRank";
 import type { DeptEntry } from "../components/DepartmentRank";
 import { buildGroups, matchesGroup } from "../components/adminGroups";
+import WeekCalendar from "../components/WeekCalendar";
 
 const APP_NAME = "Daily Jump Challenge – ท้าให้กระโดด ลุ้นให้ได้แต้ม";
 // ชื่อสั้นสำหรับแสดงใน UI (แถบข้าง / หัวหน้าจอมือถือ) กันล้นและทับปุ่มอื่น
@@ -607,6 +608,8 @@ export default function AdminPage() {
   const [scope, setScope] = useState<Scope>("month");
   // มุมมอง (รายคน / แผนก-สาขา) ใช้ได้เฉพาะหน้ารายเดือน ตัวกรองสังกัดใช้ร่วมกันทั้ง 3 หน้า
   const [group, setGroup] = useState<Group>("player");
+  // ปฏิทินรายเดือนในหน้ารายสัปดาห์
+  const [calOpen, setCalOpen] = useState(false);
   const [fCompany, setFCompany] = useState("");
   const [fWork, setFWork] = useState<WorkFilter>("all");
   const [fProvince, setFProvince] = useState("");
@@ -1111,6 +1114,7 @@ export default function AdminPage() {
           setView(v);
           setQ("");
           setDetail(null);
+          setCalOpen(false);
           // มุมมองแผนกมีเฉพาะหน้ารายเดือน
           if (v !== "month") setGroup("player");
         }}
@@ -1187,6 +1191,20 @@ export default function AdminPage() {
                     ? "สัปดาห์นี้"
                     : "เดือนนี้"}
               </button>
+              {view === "week" && (
+                <button
+                  onClick={() => setCalOpen((v) => !v)}
+                  aria-expanded={calOpen}
+                  className={`flex h-10 items-center gap-2 rounded-full px-4 text-[14px] font-semibold shadow-sm transition-all active:scale-95 ${
+                    calOpen
+                      ? "bg-[#1B2A21] text-[#C9F25B]"
+                      : "bg-white text-[#1B2A21]"
+                  }`}
+                >
+                  <Icon d={ICONS.day} size={16} />
+                  {date ? fmtMonth(date.slice(0, 7)) : "ปฏิทิน"}
+                </button>
+              )}
             </div>
           )}
 
@@ -1250,6 +1268,18 @@ export default function AdminPage() {
             )}
           </div>
         </div>
+
+        {view === "week" && calOpen && date && (
+          <WeekCalendar
+            date={date}
+            today={today}
+            onPick={(start) => {
+              setDate(start);
+              setCalOpen(false);
+            }}
+            onLocked={() => setState("locked")}
+          />
+        )}
 
         {/* ตัวกรองสังกัด + ส่งออก */}
         {state === "ok" && (
@@ -1628,8 +1658,8 @@ export default function AdminPage() {
                 dark
                 icon={ICONS.users}
                 label="คนที่โดด"
-                value={fmtNum(monthScoped.length)}
-                sub={isAll ? "คนทั้งหมดที่เคยโดด" : "คนในเดือนนี้"}
+                value={fmtNum(monthScoped.filter((e) => e.total > 0).length)}
+                sub={`จากสมาชิก ${fmtNum(monthScoped.length)} คน`}
               />
               <StatCard
                 icon={ICONS.star}

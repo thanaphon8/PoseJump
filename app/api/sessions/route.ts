@@ -3,6 +3,7 @@ import type { Db } from "mongodb";
 import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
 import { addUserPoints, getUserPoints } from "../../../lib/points";
+import { goalOfDate } from "../../components/goal";
 
 const unauthorized = () =>
   NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
@@ -21,10 +22,6 @@ const num = (v: unknown, min: number, max: number) =>
 // 100 คนแรกของวัน (เวลาไทย) ที่ทำเป้าหมายรายวันสำเร็จ ได้ 50 point
 const POINT_QUOTA = 100;
 const POINT_REWARD = 50;
-const DEFAULT_GOAL = 1500;
-// เป้าขั้นต่ำที่นับ point (0 = ไม่จำกัด ใช้เป้าที่ผู้ใช้ตั้งเองตรงๆ)
-// ถ้าอยากกันคนตั้งเป้าต่ำๆ ให้ตั้ง MIN_GOAL_FOR_POINTS ใน .env.local เช่น 1000
-const MIN_GOAL_FOR_POINTS = Number(process.env.MIN_GOAL_FOR_POINTS ?? 0) || 0;
 
 const TH_OFFSET = 7 * 3600_000; // ไทย UTC+7 ไม่มี DST
 
@@ -79,12 +76,9 @@ async function settleDailyGoal(db: Db, userId: unknown, now: number) {
     .toArray();
   const todayTotal = agg[0]?.total ?? 0;
 
-  // เป้าของผู้ใช้ (collection "settings" เก็บ dailyGoal ตามผู้ใช้)
-  const s = await db.collection("settings").findOne({ userId });
-  const goal = Math.max(
-    MIN_GOAL_FOR_POINTS,
-    typeof s?.dailyGoal === "number" ? s.dailyGoal : DEFAULT_GOAL
-  );
+  // เป้าของวันนี้ (เท่ากันทุกคน เปลี่ยนตามสัปดาห์ ดู app/components/goal.ts)
+  // ไม่อ่าน settings.dailyGoal ของผู้ใช้แล้ว กันตั้งเป้าเองหรือได้เป้าผิดเมื่อไม่มี settings
+  const goal = goalOfDate(key);
   if (todayTotal < goal) return;
 
   // จองลำดับแบบ atomic: ใครมาก่อนได้เลขน้อยกว่า
