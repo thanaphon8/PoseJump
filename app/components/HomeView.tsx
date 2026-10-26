@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { orgOf } from "./branches";
 import {
   ICONS,
   Icon,
@@ -285,10 +284,6 @@ export default function Home({
 }) {
   const goalPct = Math.min(1, todayTotal / Math.max(1, dailyGoal));
   const left = Math.max(0, dailyGoal - todayTotal);
-  const org = orgOf(user);
-  const orgLine = [org.company, org.department, org.branch]
-    .filter(Boolean)
-    .join(" · ");
 
   // สัปดาห์ปัจจุบันตามตารางเป้า (เวลาไทย) null ถ้าวันนี้อยู่นอกตาราง
   const range = now0 ? goalRangeOfTime(now0) : null;
@@ -315,11 +310,6 @@ export default function Home({
         <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[36px]">
           พร้อมโดดไหม{user ? ` ${user.name}` : ""} 👋
         </h1>
-        {orgLine && (
-          <p className="mt-1 text-[14px] font-semibold text-[#3F5E1F]">
-            {orgLine}
-          </p>
-        )}
         {user && (
           <div className="mt-1 hidden lg:block">
             <PointBadge points={user.points ?? 0} />
