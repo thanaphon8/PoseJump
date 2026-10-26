@@ -18,6 +18,7 @@ export const POINT_REWARD = 50;
 export type User = {
   name: string;
   username?: string;
+  employeeId?: string; // รหัสพนักงาน
   avatarUrl?: string; // เพิ่มฟิลด์รูปโปรไฟล์สำหรับแสดงผล
   points?: number;
   companyId?: number | null; // รหัสบริษัท (ดู departments.ts)
@@ -31,6 +32,7 @@ export type AuthErrors = Partial<
   Record<
     | "nickname"
     | "username"
+    | "employeeId"
     | "password"
     | "confirm"
     | "companyId"

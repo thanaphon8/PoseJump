@@ -2,7 +2,12 @@ import { NextResponse, connection } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { isAdminSession } from "@/lib/admin-auth";
-import { computeDay, dayStartOf, validYmd } from "@/lib/admin-stats";
+import {
+  computeDay,
+  dayStartOf,
+  employeeIdOf,
+  validYmd,
+} from "@/lib/admin-stats";
 
 // วางที่ app/api/admin/user-day/route.ts
 // GET ?userId=...&date=YYYY-MM-DD  (เฉพาะผู้ดูแลที่ล็อกอินแล้ว)
@@ -38,6 +43,14 @@ export async function GET(req: Request) {
     const me = entries.find((e) => e.userId === userId);
     if (!me) return fail("ไม่พบข้อมูลของผู้เล่นในวันนี้", 404);
 
+    // employeeId อ่านจาก user doc โดยตรง เหมือน user-month
+    const userDoc = await db.collection("users").findOne({
+      _id: (ObjectId.isValid(userId) ? new ObjectId(userId) : userId) as ObjectId,
+    });
+    const employeeId = userDoc
+      ? employeeIdOf(userDoc as Record<string, unknown>)
+      : (me.employeeId ?? null);
+
     // userId ใน snapshots เก็บเป็น ObjectId หรือ string รองรับทั้งสองแบบ
     const ids: (ObjectId | string)[] = [userId];
     if (ObjectId.isValid(userId)) ids.unshift(new ObjectId(userId));
@@ -57,6 +70,7 @@ export async function GET(req: Request) {
           userId: me.userId,
           name: me.name,
           username: me.username,
+          employeeId,
           avatarUrl: me.avatarUrl,
           org: me.org,
         },

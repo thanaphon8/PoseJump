@@ -51,6 +51,7 @@ type DayEntry = {
   userId: string;
   name: string;
   username: string;
+  employeeId?: string | null;
   avatarUrl?: string | null;
   total: number;
   rounds: number;
@@ -72,6 +73,7 @@ type WeekEntry = {
   userId: string;
   name: string;
   username: string;
+  employeeId?: string | null;
   avatarUrl?: string | null;
   points: number;
   total: number;
@@ -85,6 +87,7 @@ type MonthEntry = {
   userId: string;
   name: string;
   username: string;
+  employeeId?: string | null;
   avatarUrl?: string | null;
   points: number;
   total: number;
@@ -182,15 +185,31 @@ const orgText = (o?: OrgInfo) =>
         .filter(Boolean)
         .join(" · ");
 
-// ค้นหาได้ทั้งชื่อ username และสังกัด (พิมพ์เลข ID สาขา ชื่อสาขา จังหวัด แผนก ก็เจอ)
-const matches = (q: string, name: string, username: string, org?: OrgInfo) => {
+// ค้นหาได้ทั้งชื่อ username รหัสพนักงาน และสังกัด (พิมพ์เลข ID สาขา ชื่อสาขา จังหวัด แผนก ก็เจอ)
+const matches = (
+  q: string,
+  name: string,
+  username: string,
+  org?: OrgInfo,
+  employeeId?: string | null
+) => {
   const s = q.trim().toLowerCase();
   if (!s) return true;
   return (
     name.toLowerCase().includes(s) ||
     username.toLowerCase().includes(s) ||
+    (employeeId ?? "").toLowerCase().includes(s) ||
     orgText(org).toLowerCase().includes(s)
   );
+};
+
+// บรรทัด "@username · รหัส A12345" ใต้ชื่อผู้เล่น (ไม่มีทั้งคู่ = null)
+const idLine = (username: string, employeeId?: string | null) => {
+  const parts = [
+    username ? `@${username}` : null,
+    employeeId ? `รหัส ${employeeId}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
 };
 
 // ดาวน์โหลด CSV (ใส่ BOM ให้ Excel อ่านไทยได้ และกันสูตรแทรกจากชื่อผู้เล่น)
@@ -897,16 +916,19 @@ export default function AdminPage() {
 
   const dayRows = dayScoped.filter(
     (e) =>
-      (!onlyAwarded || e.points > 0) && matches(q, e.name, e.username, e.org)
+      (!onlyAwarded || e.points > 0) &&
+      matches(q, e.name, e.username, e.org, e.employeeId)
   );
   const weekRows = week
     ? byKey(week.entries).filter(
-        (e) => orgOk(e.org) && matches(q, e.name, e.username, e.org)
+        (e) =>
+          orgOk(e.org) && matches(q, e.name, e.username, e.org, e.employeeId)
       )
     : [];
   const monthRows = month
     ? byKey(month.entries).filter(
-        (e) => orgOk(e.org) && matches(q, e.name, e.username, e.org)
+        (e) =>
+          orgOk(e.org) && matches(q, e.name, e.username, e.org, e.employeeId)
       )
     : [];
 
@@ -1025,11 +1047,12 @@ export default function AdminPage() {
     } else if (view === "day") {
       downloadCsv(
         `pose-jump-day-${periodTag}`,
-        ["#", "ชื่อ", "username", ...oh, "โดด (ครั้ง)", "รอบ", "ลำดับถึงเป้า", "point"],
+        ["#", "ชื่อ", "username", "รหัสพนักงาน", ...oh, "โดด (ครั้ง)", "รอบ", "ลำดับถึงเป้า", "point"],
         dayRows.map((e) => [
           e.rank,
           e.name,
           e.username,
+          e.employeeId ?? "",
           ...oc(e.org),
           e.total,
           e.rounds,
@@ -1040,11 +1063,12 @@ export default function AdminPage() {
     } else if (view === "week") {
       downloadCsv(
         `pose-jump-week-${periodTag}`,
-        ["#", "ชื่อ", "username", ...oh, ...(week?.days ?? []), "โดดรวม", "point รวม", "วันที่ได้ point"],
+        ["#", "ชื่อ", "username", "รหัสพนักงาน", ...oh, ...(week?.days ?? []), "โดดรวม", "point รวม", "วันที่ได้ point"],
         weekRows.map((e) => [
           e.rank,
           e.name,
           e.username,
+          e.employeeId ?? "",
           ...oc(e.org),
           ...e.perDay,
           e.total,
@@ -1055,11 +1079,12 @@ export default function AdminPage() {
     } else {
       downloadCsv(
         `pose-jump-month-${periodTag}`,
-        ["#", "ชื่อ", "username", ...oh, "วันที่โดด", "วันที่ได้ point", "รอบ", "วันที่ดีที่สุด", "โดดรวม", "point รวม"],
+        ["#", "ชื่อ", "username", "รหัสพนักงาน", ...oh, "วันที่โดด", "วันที่ได้ point", "รอบ", "วันที่ดีที่สุด", "โดดรวม", "point รวม"],
         monthRows.map((e) => [
           e.rank,
           e.name,
           e.username,
+          e.employeeId ?? "",
           ...oc(e.org),
           e.activeDays,
           e.rewardDays,
@@ -1243,7 +1268,7 @@ export default function AdminPage() {
                 placeholder={
                   group === "group"
                     ? "ค้นหาแผนกหรือสาขา"
-                    : "ค้นหาชื่อหรือ username"
+                    : "ค้นหาชื่อ, username หรือรหัสพนักงาน"
                 }
                 className="h-10 w-full rounded-full bg-white pl-10 pr-4 text-[14px] shadow-sm outline-none ring-2 ring-transparent placeholder:text-[#A9B79A] focus:ring-[#C9F25B]"
               />
@@ -1480,9 +1505,9 @@ export default function AdminPage() {
                                   <div className="truncate text-[15px] font-semibold">
                                     {e.name}
                                   </div>
-                                  {e.username && (
+                                  {idLine(e.username, e.employeeId) && (
                                     <div className="truncate text-[12px] text-[#6B7A6E]">
-                                      @{e.username}
+                                      {idLine(e.username, e.employeeId)}
                                     </div>
                                   )}
                                   <OrgLine org={e.org} />
@@ -1610,6 +1635,7 @@ export default function AdminPage() {
                                 </div>
                                 <div className="truncate text-[12px] text-[#6B7A6E]">
                                   {e.username && `@${e.username} · `}
+                                  {e.employeeId && `รหัส ${e.employeeId} · `}
                                   ได้ point {e.rewardDays} วัน
                                 </div>
                                 <OrgLine org={e.org} />
@@ -1763,9 +1789,9 @@ export default function AdminPage() {
                                 <div className="truncate text-[15px] font-semibold">
                                   {e.name}
                                 </div>
-                                {e.username && (
+                                {idLine(e.username, e.employeeId) && (
                                   <div className="truncate text-[12px] text-[#6B7A6E]">
-                                    @{e.username}
+                                    {idLine(e.username, e.employeeId)}
                                   </div>
                                 )}
                                 <OrgLine org={e.org} />

@@ -12,6 +12,25 @@ import {
   ymdOf,
 } from "@/lib/admin-stats";
 
+// ชื่อ field รหัสพนักงานใน collection users (เติม/แก้ให้ตรงกับ RegisterForm)
+// ใช้ตัวแรกที่มีค่า
+const EMP_KEYS = [
+  "employeeId",
+  "employeeCode",
+  "empId",
+  "empCode",
+  "staffId",
+  "staffCode",
+];
+const employeeCodeOf = (u: Record<string, unknown>) => {
+  for (const k of EMP_KEYS) {
+    const v = u[k];
+    if ((typeof v === "string" && v.trim()) || typeof v === "number")
+      return String(v).trim();
+  }
+  return null;
+};
+
 // GET /api/admin/user-month?userId=...&month=YYYY-MM
 // ผลรายวันของผู้เล่นหนึ่งคนทั้งเดือน (เวลาไทย) + สังกัดตามที่เลือกตอนสมัคร
 // days = เฉพาะวันที่มีรอบกระโดด, reached = goalRank !== null (ถึงเป้ารายวัน)
@@ -66,6 +85,7 @@ export async function GET(req: Request) {
       name: String(user.nickname ?? user.display ?? "?"),
       username: String(user.username ?? ""),
       avatarUrl: avatarOf(user as Record<string, unknown>),
+      employeeCode: employeeCodeOf(user as Record<string, unknown>),
       org: orgFromUser(user as Record<string, unknown>),
     },
     days,

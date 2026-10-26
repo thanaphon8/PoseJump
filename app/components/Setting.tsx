@@ -549,6 +549,7 @@ function ProfileCard({
   const province = branch ? branchProvince(branch) : null;
   const region = branch ? branchRegion(branch) : null;
   const orgRows: [string, string][] = [];
+  if (user.employeeId) orgRows.push(["รหัสพนักงาน", user.employeeId]);
   if (org.company) orgRows.push(["บริษัท", org.company]);
   if (workplace) orgRows.push(["ที่ทำงาน", workplace]);
   if (org.department) orgRows.push(["แผนก", org.department]);

@@ -25,6 +25,7 @@ type UserDay = {
     userId: string;
     name: string;
     username: string;
+    employeeId?: string | null;
     avatarUrl?: string | null;
     org?: OrgInfo;
   };
@@ -341,6 +342,8 @@ export default function UserDayModal({
     : 0;
   const o = data?.user.org;
   const orgRows: [string, string][] = [];
+  if (data?.user.employeeId)
+    orgRows.push(["รหัสพนักงาน", data.user.employeeId]);
   if (o?.company) orgRows.push(["บริษัท", o.company]);
   if (o?.workplace) orgRows.push(["ที่ทำงาน", o.workplace]);
   if (o?.department) orgRows.push(["แผนก", o.department]);

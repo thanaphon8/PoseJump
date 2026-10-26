@@ -81,6 +81,7 @@ export type DayEntry = {
   userId: string;
   name: string;
   username: string;
+  employeeId: string | null; // รหัสพนักงาน (ผู้ใช้เก่าที่สมัครก่อนมีฟิลด์นี้เป็น null)
   total: number;
   rounds: number;
   goal: number;
@@ -118,6 +119,13 @@ export function orgFromUser(u?: Row): OrgInfo {
 // รูปโปรไฟล์ของผู้เล่น ถ้า field ใน users ไม่ใช่ avatarUrl แก้ที่นี่ที่เดียว
 export function avatarOf(u?: Row): string | null {
   const v = u?.avatarUrl;
+  return typeof v === "string" && v ? v : null;
+}
+
+// รหัสพนักงานของผู้เล่น (field employeeId ใน users)
+// ผู้ใช้เก่าที่สมัครก่อนมีฟิลด์นี้จะได้ null
+export function employeeIdOf(u?: Row): string | null {
+  const v = u?.employeeId;
   return typeof v === "string" && v ? v : null;
 }
 
@@ -178,6 +186,7 @@ function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
         userId: k,
         name: String(u?.nickname ?? u?.display ?? "?"),
         username: String(u?.username ?? ""),
+        employeeId: employeeIdOf(u),
         total: a.total,
         rounds: a.rounds,
         goal,
@@ -190,17 +199,24 @@ function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
     .sort((a, b) => b.total - a.total);
 }
 
-// เติมสังกัด (org) และรูปโปรไฟล์ ให้แถวที่มี userId
+// เติมสังกัด (org) รูปโปรไฟล์ และรหัสพนักงาน ให้แถวที่มี userId
 // ใช้กับ route สัปดาห์/เดือนที่สร้างแถวเอง
 export async function withOrg<T extends { userId: string }>(
   db: Db,
   rows: T[]
-): Promise<(T & { org: OrgInfo; avatarUrl: string | null })[]> {
+): Promise<
+  (T & { org: OrgInfo; avatarUrl: string | null; employeeId: string | null })[]
+> {
   if (rows.length === 0) return [];
   const userMap = await loadUserMap(db, rows as unknown as Row[]);
   return rows.map((r) => {
     const u = userMap.get(r.userId);
-    return { ...r, org: orgFromUser(u), avatarUrl: avatarOf(u) };
+    return {
+      ...r,
+      org: orgFromUser(u),
+      avatarUrl: avatarOf(u),
+      employeeId: employeeIdOf(u),
+    };
   });
 }
 

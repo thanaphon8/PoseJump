@@ -55,11 +55,14 @@ const WELCOME = STEPS.length; // 7 = หน้า welcome
 const CONSENT_STEP = LAST_STEP;
 
 // แก้ทุกครั้งที่ข้อความยินยอมเปลี่ยน เซิร์ฟเวอร์ใช้บันทึกว่าผู้ใช้ยอมรับฉบับไหน
-const CONSENT_VERSION = "2026-10-v1";
+const CONSENT_VERSION = "2026-10-v2";
 
 // สาขาที่แสดงก่อนพิมพ์ค้นหา (Com7 มี 1,000+ สาขา) กด "ดูเพิ่ม" ได้ทีละ BRANCH_STEP
 const BRANCH_PREVIEW = 80;
 const BRANCH_STEP = 200;
+
+// รหัสพนักงาน: a-z A-Z 0-9 ยาว 3-20 ตัว (เซิร์ฟเวอร์ตรวจซ้ำด้วยกติกาเดียวกัน)
+const EMPLOYEE_ID_RE = /^[A-Za-z0-9]{3,20}$/;
 
 type Mate = { name: string; username: string; avatarUrl: string | null };
 type Mates = { count: number; members: Mate[] };
@@ -110,7 +113,7 @@ const stepOfErrors = (e: AuthErrors): number | null =>
       ? 1
       : e.departmentId || e.branchId
         ? 3
-        : e.username || e.password || e.confirm
+        : e.employeeId || e.username || e.password || e.confirm
           ? 4
           : null;
 
@@ -733,6 +736,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
   const [branchLimit, setBranchLimit] = useState(BRANCH_PREVIEW); // จำนวนสาขาที่แสดงตอนยังไม่พิมพ์ค้นหา (กด "ดูเพิ่ม" เพิ่มทีละ BRANCH_STEP)
   const [hi, setHi] = useState(-1); // แถวที่ไฮไลต์ในรายการ (-1 = ไม่มี)
   const [username, setUsername] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
@@ -980,6 +984,10 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       if (place === "store" && !branchId)
         err.branchId = "เลือกสาขาของคุณจากรายการ";
     } else if (s === 4) {
+      const eid = employeeId.trim();
+      if (!eid) err.employeeId = "กรอกรหัสพนักงาน";
+      else if (!EMPLOYEE_ID_RE.test(eid))
+        err.employeeId = "3-20 ตัว ใช้ a-z 0-9 เท่านั้น";
       const uname = username.trim();
       if (!uname) err.username = "กรอก username";
       else if (!/^[A-Za-z0-9_]{3,20}$/.test(uname))
@@ -1031,6 +1039,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
       const formData = new FormData();
       formData.append("nickname", nickname.trim());
       formData.append("username", username.trim());
+      formData.append("employeeId", employeeId.trim());
       formData.append("companyId", companyId);
       // สำนักงานใหญ่ส่งแค่แผนก / หน้าร้านส่งแค่สาขา
       if (place === "hq" && departmentId)
@@ -1655,7 +1664,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
             </p>
           )}
 
-          {/* ขั้น 5: username / password */}
+          {/* ขั้น 5: username / รหัสพนักงาน / password */}
           {step === 4 && (
             <div className="mt-6 space-y-4">
               <Field
@@ -1668,6 +1677,16 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                 error={errors.username}
                 hint="3-20 ตัว ใช้ a-z 0-9 และ _"
                 autoFocus
+              />
+              <Field
+                label="รหัสพนักงาน"
+                value={employeeId}
+                onChange={edit("employeeId", setEmployeeId)}
+                maxLength={20}
+                autoComplete="off"
+                placeholder="เช่น A12345"
+                error={errors.employeeId}
+                hint="3-20 ตัว ใช้ a-z 0-9"
               />
               <Field
                 label="รหัสผ่าน"
@@ -1823,7 +1842,7 @@ export default function RegisterForm({ onAuthed, onSwitch }: AuthFormProps) {
                     ผู้ควบคุมข้อมูล: [ชื่อบริษัท] ติดต่อ [อีเมล/โทร/DPO]
                   </p>
                   <p>
-                    <b>ข้อมูลที่เก็บ:</b> ชื่อเล่น username บริษัท แผนก/สาขา
+                    <b>ข้อมูลที่เก็บ:</b> ชื่อเล่น username รหัสพนักงาน บริษัท แผนก/สาขา
                     รูปโปรไฟล์ (ถ้าใส่) ผลการกระโดด (จำนวนครั้ง เวลา ครั้งต่อนาที
                     ความสม่ำเสมอ ประวัติ คะแนน อันดับ) และ{" "}
                     <b>ภาพนิ่งจากกล้องสูงสุด 2 ภาพต่อวัน</b>{" "}

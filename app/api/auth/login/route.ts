@@ -41,6 +41,8 @@ export async function POST(req: Request) {
       user: {
         name: u.nickname as string,
         username: u.display as string,
+        employeeId:
+          typeof u.employeeId === "string" ? u.employeeId : undefined,
         avatarUrl: u.avatarUrl as string,
         points,
         companyId: num(u.companyId),

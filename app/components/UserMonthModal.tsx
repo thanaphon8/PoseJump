@@ -34,6 +34,7 @@ type UserMonth = {
     userId: string;
     name: string;
     username: string;
+    employeeCode?: string | null;
     avatarUrl?: string | null;
     org?: OrgInfo;
   };
@@ -188,6 +189,8 @@ export default function UserMonthModal({
 
   const o = data?.user.org;
   const orgRows: [string, string][] = [];
+  if (data?.user.employeeCode)
+    orgRows.push(["รหัสพนักงาน", data.user.employeeCode]);
   if (o?.company) orgRows.push(["บริษัท", o.company]);
   if (o?.workplace) orgRows.push(["ที่ทำงาน", o.workplace]);
   if (o?.department) orgRows.push(["แผนก", o.department]);
@@ -231,9 +234,11 @@ export default function UserMonthModal({
             <h2 className="truncate text-[20px] font-bold leading-tight lg:text-[24px]">
               {data?.user.name ?? "กำลังโหลด"}
             </h2>
-            {data?.user.username && (
+            {(data?.user.username || data?.user.employeeCode) && (
               <div className="truncate text-[12px] text-[#6B7A6E] lg:text-[13px]">
-                @{data.user.username}
+                {data?.user.username && `@${data.user.username}`}
+                {data?.user.username && data?.user.employeeCode && " · "}
+                {data?.user.employeeCode && `รหัส ${data.user.employeeCode}`}
               </div>
             )}
             <div className="mt-1.5 flex items-center gap-1.5">
