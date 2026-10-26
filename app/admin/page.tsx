@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Prompt } from "next/font/google";
 import UserDayModal from "../components/UserDayModal";
+import UserMonthModal from "../components/UserMonthModal";
 import { DeptBoardView } from "../components/DepartmentRank";
 import type { DeptEntry } from "../components/DepartmentRank";
 import { buildGroups, matchesGroup } from "../components/adminGroups";
@@ -204,7 +205,7 @@ function downloadCsv(
     return `"${t.replace(/"/g, '""')}"`;
   };
   const text = [head, ...body].map((r) => r.map(esc).join(",")).join("\r\n");
-  const blob = new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob(["\uFEFF" + text], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -482,37 +483,39 @@ function Shell({
   ];
   return (
     <div className="min-h-dvh bg-[#F3F6EC] text-[#1B2A21] lg:flex">
-      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-1 p-5 lg:flex">
-        <div className="mb-1 flex min-w-0 flex-col items-start gap-1 px-3">
-          <Logo size={72} />
-          <span className="min-w-0 text-[18px] font-bold leading-tight tracking-tight text-[#3F5E1F]">
-            {APP_SHORT}
+      <aside className="sticky top-0 hidden h-dvh w-72 shrink-0 p-4 lg:flex">
+        <div className="flex h-full w-full flex-col gap-1 rounded-[32px] bg-white p-5 shadow-sm">
+          <div className="mb-1 flex min-w-0 flex-col items-start gap-1 px-3">
+            <Logo size={72} />
+            <span className="min-w-0 text-[18px] font-bold leading-tight tracking-tight text-[#3F5E1F]">
+              {APP_SHORT}
+            </span>
+          </div>
+          <span className="mb-5 ml-3 mt-3 w-fit rounded-full bg-[#1B2A21] px-3 py-0.5 text-[12px] font-semibold text-[#C9F25B]">
+            ผู้ดูแล
           </span>
-        </div>
-        <span className="mb-5 ml-3 mt-3 w-fit rounded-full bg-[#1B2A21] px-3 py-0.5 text-[12px] font-semibold text-[#C9F25B]">
-          ผู้ดูแล
-        </span>
-        {items.map(([v, label, d]) => (
+          {items.map(([v, label, d]) => (
+            <button
+              key={v}
+              onClick={() => onView(v)}
+              className={`flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold transition-colors ${
+                view === v
+                  ? "bg-[#C9F25B] text-[#1B2A21]"
+                  : "text-[#6B7A6E] hover:bg-[#F3F6EC]"
+              }`}
+            >
+              <Icon d={d} size={20} />
+              {label}
+            </button>
+          ))}
           <button
-            key={v}
-            onClick={() => onView(v)}
-            className={`flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold transition-colors ${
-              view === v
-                ? "bg-[#C9F25B] text-[#1B2A21]"
-                : "text-[#6B7A6E] hover:bg-[#E8EEDD]"
-            }`}
+            onClick={onLogout}
+            className="mt-auto flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold text-[#D92D20] transition-colors hover:bg-[#FDE8E6]"
           >
-            <Icon d={d} size={20} />
-            {label}
+            <Icon d={ICONS.logout} size={20} />
+            ออกจากระบบ
           </button>
-        ))}
-        <button
-          onClick={onLogout}
-          className="mt-auto flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold text-[#D92D20] transition-colors hover:bg-[#FDE8E6]"
-        >
-          <Icon d={ICONS.logout} size={20} />
-          ออกจากระบบ
-        </button>
+        </div>
       </aside>
 
       <main className="pj-fade mx-auto w-full max-w-6xl flex-1 px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] lg:px-10 lg:pb-12 lg:pt-12">
@@ -627,6 +630,12 @@ export default function AdminPage() {
   const [detail, setDetail] = useState<{
     userId: string;
     date: string;
+    avatarUrl?: string | null;
+  } | null>(null);
+  // ผู้เล่นที่ถูกกดดูผลรายเดือน (หน้ารายเดือน) null = ไม่เปิด
+  const [monthDetail, setMonthDetail] = useState<{
+    userId: string;
+    month: string;
     avatarUrl?: string | null;
   } | null>(null);
 
@@ -1114,6 +1123,7 @@ export default function AdminPage() {
           setView(v);
           setQ("");
           setDetail(null);
+          setMonthDetail(null);
           setCalOpen(false);
           // มุมมองแผนกมีเฉพาะหน้ารายเดือน
           if (v !== "month") setGroup("player");
@@ -1717,7 +1727,32 @@ export default function AdminPage() {
                     </thead>
                     <tbody className="divide-y divide-[#EEF2E4]">
                       {monthRows.map((e) => (
-                        <tr key={e.userId}>
+                        <tr
+                          key={e.userId}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`ดูรายเดือนของ ${e.name}`}
+                          onClick={() =>
+                            setMonthDetail({
+                              userId: e.userId,
+                              month: isAll ? today.slice(0, 7) : date.slice(0, 7),
+                              avatarUrl: e.avatarUrl,
+                            })
+                          }
+                          onKeyDown={(ev) => {
+                            if (ev.key === "Enter" || ev.key === " ") {
+                              ev.preventDefault();
+                              setMonthDetail({
+                                userId: e.userId,
+                                month: isAll
+                                  ? today.slice(0, 7)
+                                  : date.slice(0, 7),
+                                avatarUrl: e.avatarUrl,
+                              });
+                            }
+                          }}
+                          className="cursor-pointer transition-colors hover:bg-[#EEF2E4] focus-visible:bg-[#EEF2E4] focus-visible:outline-none"
+                        >
                           <td className="px-4 py-3">
                             <Rank rank={e.rank} />
                           </td>
@@ -1790,11 +1825,33 @@ export default function AdminPage() {
                 : "เรียงตาม point รวม ถ้าเท่ากันเรียงตามยอดโดดรวม"}{" "}
               วันที่ดีที่สุด = ยอดโดดสูงสุดในหนึ่งวัน ·{" "}
               {isAll ? "นับตั้งแต่รอบกระโดดแรกของระบบ " : "นับทั้งเดือน "}
-              ตัดวันที่เที่ยงคืนเวลาไทย · point จากกติกา {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน ได้ {POINT_REWARD} point
+              ตัดวันที่เที่ยงคืนเวลาไทย · point จากกติกา {POINT_QUOTA} คนแรกที่ถึงเป้ารายวัน ได้ {POINT_REWARD} point ·
+              กดที่แถวเพื่อดูสังกัดและวันที่ถึงเป้าของคนนั้น
+              {isAll ? " (แสดงเดือนปัจจุบัน)" : ""}
             </p>
               </>
             )}
           </>
+        )}
+
+        {monthDetail && (
+          <UserMonthModal
+            userId={monthDetail.userId}
+            month={monthDetail.month}
+            avatarUrl={monthDetail.avatarUrl}
+            onClose={() => setMonthDetail(null)}
+            onLocked={() => {
+              setMonthDetail(null);
+              setState("locked");
+            }}
+            onPickDay={(d) =>
+              setDetail({
+                userId: monthDetail.userId,
+                date: d,
+                avatarUrl: monthDetail.avatarUrl,
+              })
+            }
+          />
         )}
 
         {detail && (

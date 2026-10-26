@@ -17,8 +17,8 @@ function weekRange(now = Date.now()) {
 }
 
 // GET /api/departments/members
-// → สมาชิกกลุ่มเดียวกับผู้ใช้ที่ล็อกอิน + คะแนนรวมกลุ่มสัปดาห์นี้ (ครั้งกระโดด)
-// + โน๊ตสั้นของแต่ละคน (เฉพาะที่ยังไม่หมดอายุ 24 ชม.)
+// → สมาชิกกลุ่มเดียวกับผู้ใช้ที่ล็อกอิน + คะแนนรวมกลุ่มตั้งแต่วันแรก (allTotal)
+// + ยอดสัปดาห์นี้ (weekTotal เก็บไว้เผื่อใช้) + โน๊ตสั้นของแต่ละคน (เฉพาะที่ยังไม่หมดอายุ 24 ชม.)
 // สำนักงานใหญ่ = กลุ่มคือแผนก / หน้าร้าน = กลุ่มคือสาขา (1 สาขา = 1 กลุ่ม)
 export async function GET() {
   await connection();
@@ -34,7 +34,7 @@ export async function GET() {
     const byBranch = !byDept && me.branchId != null;
     if (!byDept && !byBranch) {
       return NextResponse.json(
-        { members: [], weekTotal: 0 },
+        { members: [], weekTotal: 0, allTotal: 0 },
         { headers: { "Cache-Control": "no-store" } }
       );
     }
@@ -61,16 +61,31 @@ export async function GET() {
         .limit(500)
         .toArray(),
       // dept_jumps เก็บทั้ง departmentId และ branchId (ดู /api/sessions)
+      // รวมครั้งกระโดดทุกแถวของกลุ่ม (allTotal) และเฉพาะสัปดาห์นี้ (weekTotal) ในรอบเดียว
       db
         .collection("dept_jumps")
-        .aggregate<{ _id: null; total: number }>([
+        .aggregate<{ _id: null; allTotal: number; weekTotal: number }>([
+          { $match: groupFilter },
           {
-            $match: {
-              ...groupFilter,
-              ts: { $gte: weekStart, $lt: resetAt },
+            $group: {
+              _id: null,
+              allTotal: { $sum: "$total" },
+              weekTotal: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $gte: ["$ts", weekStart] },
+                        { $lt: ["$ts", resetAt] },
+                      ],
+                    },
+                    "$total",
+                    0,
+                  ],
+                },
+              },
             },
           },
-          { $group: { _id: null, total: { $sum: "$total" } } },
         ])
         .toArray(),
     ]);
@@ -108,7 +123,13 @@ export async function GET() {
       .sort((a, b) => Number(b.isMe) - Number(a.isMe));
 
     return NextResponse.json(
-      { members, weekTotal: agg[0]?.total ?? 0, weekStart, resetAt },
+      {
+        members,
+        allTotal: agg[0]?.allTotal ?? 0,
+        weekTotal: agg[0]?.weekTotal ?? 0,
+        weekStart,
+        resetAt,
+      },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (e) {

@@ -29,7 +29,9 @@ type Member = {
 
 type Data = {
   members: Member[];
-  // คะแนนกลุ่มสัปดาห์นี้ = ครั้งกระโดดรวมของทุกคนในกลุ่ม (แผนก หรือ สาขา)
+  // คะแนนกลุ่มตั้งแต่วันแรก = ครั้งกระโดดรวมของทุกคนในกลุ่ม (แผนก หรือ สาขา)
+  allTotal: number;
+  // ยอดสัปดาห์นี้ (API ยังส่งมา แต่ตอนนี้ไม่ได้แสดง)
   weekTotal: number;
 };
 
@@ -673,6 +675,7 @@ export default function DepartmentCard({
           if (!alive) return;
           setData({
             members: d.members ?? [],
+            allTotal: d.allTotal ?? 0,
             weekTotal: d.weekTotal ?? 0,
           });
           setFailed(false);
@@ -918,11 +921,11 @@ export default function DepartmentCard({
             </span>
             <div className="min-w-0">
               <div className="text-[12px] text-white/60">
-                คะแนนรวม{kind}สัปดาห์นี้
+                คะแนนรวม{kind}ตั้งแต่วันแรก
               </div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-[28px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
-                  {data ? fmtNum(data.weekTotal) : "-"}
+                  {data ? fmtNum(data.allTotal) : "-"}
                 </span>
                 <span className="text-[13px] text-white/60">ครั้ง</span>
               </div>
@@ -1252,9 +1255,9 @@ export default function DepartmentCard({
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1B2A21] px-3.5 py-1.5 text-[13px] font-medium text-[#C9F25B]">
                     <Icon d={ICONS.bolt} size={14} />
                     <span className="font-semibold tabular-nums">
-                      {fmtNum(data?.weekTotal ?? 0)}
+                      {fmtNum(data?.allTotal ?? 0)}
                     </span>{" "}
-                    ครั้งสัปดาห์นี้
+                    ครั้งตั้งแต่วันแรก
                   </span>
                 )}
               </div>

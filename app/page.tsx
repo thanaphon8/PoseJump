@@ -547,7 +547,7 @@ function SidebarUser({
 }) {
   if (!user) return null;
   return (
-    <div className="flex items-center gap-3 rounded-3xl bg-white p-3 shadow-sm">
+    <div className="flex items-center gap-3 rounded-3xl bg-[#F3F6EC] p-3">
       <Avatar name={user.name} src={user.avatarUrl} size={44} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[15px] font-semibold">{user.name}</div>
@@ -600,28 +600,30 @@ function Shell({
   ];
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#F3F6EC] text-[#1B2A21] lg:flex">
-      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-1 p-5 lg:flex">
-        <div className="mb-6 flex min-w-0 flex-col items-start gap-1 px-3">
-          <Logo size={72} />
-          <span className="min-w-0 text-[18px] font-bold leading-tight tracking-tight text-[#3F5E1F]">
-            {APP_SHORT}
-          </span>
+      <aside className="hidden h-dvh w-72 shrink-0 p-4 lg:flex">
+        <div className="flex h-full w-full flex-col gap-1 rounded-[32px] bg-white p-5 shadow-sm">
+          <div className="mb-6 flex min-w-0 flex-col items-start gap-1 px-3">
+            <Logo size={72} />
+            <span className="min-w-0 text-[18px] font-bold leading-tight tracking-tight text-[#3F5E1F]">
+              {APP_SHORT}
+            </span>
+          </div>
+          {items.map(([t, label, d]) => (
+            <button
+              key={t}
+              onClick={() => onTab(t)}
+              className={`flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold transition-colors ${
+                tab === t
+                  ? "bg-[#C9F25B] text-[#1B2A21]"
+                  : "text-[#6B7A6E] hover:bg-[#F3F6EC]"
+              }`}
+            >
+              <Icon d={d} size={20} />
+              {label}
+            </button>
+          ))}
+          <div className="mt-auto">{footer}</div>
         </div>
-        {items.map(([t, label, d]) => (
-          <button
-            key={t}
-            onClick={() => onTab(t)}
-            className={`flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-semibold transition-colors ${
-              tab === t
-                ? "bg-[#C9F25B] text-[#1B2A21]"
-                : "text-[#6B7A6E] hover:bg-[#E8EEDD]"
-            }`}
-          >
-            <Icon d={d} size={20} />
-            {label}
-          </button>
-        ))}
-        <div className="mt-auto">{footer}</div>
       </aside>
 
       <div
