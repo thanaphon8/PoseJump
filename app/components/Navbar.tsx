@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./auth-shared";
+import type { User } from "./auth-shared";
 
 /* ------------------------------------------------------------------ */
 /* แถบเมนูล่าง (appbar ด้านล่าง) เฉพาะมือถือ                              */
 /* แยกมาจาก Shell ใน app/page.tsx (เดสก์ท็อปใช้ sidebar ซ้ายแทน)          */
 /* สไตล์ iOS 26: แถบลอยกระจกเบลอ แถบเลือกเลื่อนตามนิ้ว/สปริงตอนปล่อย         */
 /* เลื่อนหน้าลง = ย่อแถบ (ซ่อนป้ายชื่อ) เลื่อนขึ้น = ขยายกลับ              */
+/* แท็บ "settings" แสดงเป็นรูปโปรไฟล์ ป้ายชื่อ "ฉัน" (ถ้าล็อกอินแล้ว)        */
 /* ------------------------------------------------------------------ */
 
 // แท็บของแอป (app/page.tsx นำเข้าชนิดนี้ไปใช้ต่อ)
@@ -16,14 +18,54 @@ export type Tab = "home" | "today" | "history" | "settings";
 // [แท็บ, ป้ายชื่อ, path ของไอคอน]
 export type NavItem = [Tab, string, string];
 
+const initialOf = (name: string) =>
+  (Array.from(name.trim())[0] ?? "?").toUpperCase();
+
+// รูปโปรไฟล์วงกลมในแถบล่าง ถ้าไม่มีรูปหรือโหลดไม่ได้ใช้ตัวอักษรแรกของชื่อ
+function NavAvatar({ user, active }: { user: User; active: boolean }) {
+  const [bad, setBad] = useState(false);
+
+  useEffect(() => {
+    setBad(false);
+  }, [user.avatarUrl]);
+
+  const ring = active
+    ? "ring-2 ring-[#1B2A21]"
+    : "ring-1 ring-[#6B7A6E]/40";
+
+  if (user.avatarUrl && !bad) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={user.avatarUrl}
+        alt=""
+        referrerPolicy="no-referrer"
+        draggable={false}
+        onError={() => setBad(true)}
+        className={`h-[26px] w-[26px] rounded-full bg-[#1B2A21] object-cover transition-shadow ${ring}`}
+      />
+    );
+  }
+  return (
+    <span
+      aria-hidden
+      className={`flex h-[26px] w-[26px] items-center justify-center rounded-full bg-[#1B2A21] text-[13px] font-semibold text-[#C9F25B] transition-shadow ${ring}`}
+    >
+      {initialOf(user.name)}
+    </span>
+  );
+}
+
 export default function Navbar({
   tab,
   onTab,
   items,
+  user = null,
 }: {
   tab: Tab;
   onTab: (t: Tab) => void;
   items: NavItem[];
+  user?: User | null;
 }) {
   const n = items.length;
   const index = Math.max(
@@ -123,8 +165,11 @@ export default function Navbar({
             />
           </div>
 
-          {items.map(([t, label, d], i) => {
+          {items.map(([t, itemLabel, d], i) => {
             const active = i === activeIdx;
+            // แท็บตั้งค่า: ล็อกอินแล้วแสดงรูปโปรไฟล์ + ป้าย "ฉัน"
+            const isMe = t === "settings" && !!user;
+            const label = isMe ? "ฉัน" : itemLabel;
             return (
               <button
                 key={t}
@@ -142,7 +187,11 @@ export default function Navbar({
                     active && dragging ? "scale-110" : "scale-100"
                   }`}
                 >
-                  <Icon d={d} size={22} />
+                  {isMe && user ? (
+                    <NavAvatar user={user} active={active} />
+                  ) : (
+                    <Icon d={d} size={22} />
+                  )}
                 </span>
                 <span
                   className={`overflow-hidden whitespace-nowrap leading-none transition-all duration-300 motion-reduce:transition-none ${

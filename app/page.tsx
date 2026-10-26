@@ -257,24 +257,8 @@ function CountUp({ value, ms = 700 }: { value: number; ms?: number }) {
   return <>{fmtNum(v)}</>;
 }
 
-function ProfileMenu({
-  user,
-  onLogout,
-}: {
-  user: User | null;
-  onLogout: () => void;
-}) {
-  const [menu, setMenu] = useState(false);
-
-  useEffect(() => {
-    if (!menu) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenu(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [menu]);
-
+// แถบบนมือถือ: แสดงแต้มอย่างเดียว (รูปโปรไฟล์ย้ายไปอยู่แท็บ "ฉัน" ที่แถบล่าง)
+function ProfileMenu({ user }: { user: User | null }) {
   return (
     <div className="relative flex shrink-0 items-center gap-2">
       {user && (
@@ -289,55 +273,6 @@ function ProfileMenu({
             {fmtNum(user.points ?? 0)}
           </span>
         </div>
-      )}
-      {user && (
-        <button
-          onClick={() => setMenu((v) => !v)}
-          aria-label="เมนูโปรไฟล์"
-          aria-expanded={menu}
-          className="flex items-center gap-2 rounded-full bg-white p-1 pr-3 shadow-sm transition-transform active:scale-95"
-        >
-          <Avatar name={user.name} src={user.avatarUrl} size={36} />
-          <span className="max-w-[96px] truncate text-[14px] font-semibold">
-            {user.name}
-          </span>
-        </button>
-      )}
-
-      {menu && user && (
-        <>
-          <button
-            aria-label="ปิดเมนู"
-            className="fixed inset-0 z-20 cursor-default"
-            onClick={() => setMenu(false)}
-          />
-          <div className="pj-in absolute right-0 top-12 z-30 w-64 rounded-3xl bg-white p-2 shadow-xl ring-1 ring-[#E3EAD6]">
-            <div className="flex items-center gap-3 px-3 py-3">
-              <Avatar name={user.name} src={user.avatarUrl} size={44} />
-              <div className="min-w-0">
-                <div className="truncate text-[15px] font-semibold">
-                  {user.name}
-                </div>
-                {user.username && (
-                  <div className="truncate text-[12px] text-[#6B7A6E]">
-                    @{user.username}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="my-1 h-px bg-[#EEF2E4]" />
-            <button
-              onClick={() => {
-                setMenu(false);
-                onLogout();
-              }}
-              className="flex h-11 w-full items-center gap-3 rounded-2xl px-3 text-[15px] font-semibold text-[#D92D20] transition-colors hover:bg-[#FDE8E6]"
-            >
-              <Icon d={ICONS.logout} size={18} />
-              ออกจากระบบ
-            </button>
-          </div>
-        </>
       )}
     </div>
   );
@@ -538,13 +473,7 @@ function RewardModal({
   );
 }
 
-function SidebarUser({
-  user,
-  onLogout,
-}: {
-  user: User | null;
-  onLogout: () => void;
-}) {
+function SidebarUser({ user }: { user: User | null }) {
   if (!user) return null;
   return (
     <div className="flex items-center gap-3 rounded-3xl bg-[#F3F6EC] p-3">
@@ -558,14 +487,6 @@ function SidebarUser({
         )}
         <PointBadge points={user.points ?? 0} />
       </div>
-      <button
-        onClick={onLogout}
-        aria-label="ออกจากระบบ"
-        title="ออกจากระบบ"
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#D92D20] transition-colors hover:bg-[#FDE8E6] active:scale-90"
-      >
-        <Icon d={ICONS.logout} size={18} />
-      </button>
     </div>
   );
 }
@@ -584,12 +505,14 @@ function Shell({
   onTab,
   profile,
   footer,
+  user,
   children,
 }: {
   tab: Tab;
   onTab: (t: Tab) => void;
   profile: ReactNode;
   footer: ReactNode;
+  user: User | null;
   children: ReactNode;
 }) {
   const items: NavItem[] = [
@@ -645,7 +568,7 @@ function Shell({
       </main>
       </div>
 
-      <Navbar tab={tab} onTab={onTab} items={items} />
+      <Navbar tab={tab} onTab={onTab} items={items} user={user} />
     </div>
   );
 }
@@ -1093,25 +1016,15 @@ export default function Home() {
   }
 
   if (phase === "setup") {
-    const clearHistory = () => {
-      setHistory([]);
-      if (user) {
-        fetch("/api/sessions", { method: "DELETE" }).catch(() => {});
-      } else {
-        try {
-          localStorage.removeItem(HISTORY_KEY);
-        } catch {}
-      }
-    };
-
     return (
       <div style={fontStyle} className="select-none antialiased">
         <style>{STYLES}</style>
         <Shell
           tab={tab}
           onTab={setTab}
-          profile={<ProfileMenu user={user} onLogout={logout} />}
-          footer={<SidebarUser user={user} onLogout={logout} />}
+          profile={<ProfileMenu user={user} />}
+          footer={<SidebarUser user={user} />}
+          user={user}
         >
           {tab === "home" && (
             <HomeView
