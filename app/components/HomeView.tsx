@@ -11,6 +11,7 @@ import {
 import type { User } from "./auth-shared";
 import type { Session } from "./History";
 import DepartmentCard from "./DepartmentCard";
+import Jumper from "./Jumper";
 import { GOAL_WEEKS, fmtGoalRange, goalRangeOfTime } from "./goal";
 
 /* ------------------------------------------------------------------ */
@@ -319,7 +320,7 @@ export default function Home({
 
       <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
         <div className="pj-stagger space-y-4">
-          <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
+          <section className="rounded-3xl bg-[#1B2A21] p-4 text-white">
             <div className="flex items-start justify-between gap-3">
               <span className="text-[15px] font-semibold">เป้าหมายวันนี้</span>
               {streak > 0 && (
@@ -332,52 +333,59 @@ export default function Home({
             {weekLine && (
               <p className="mt-1 text-[12px] text-white/55">{weekLine}</p>
             )}
-            <div className="mt-4 flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight lg:text-[72px]">
+            <div className="mt-3 flex flex-row-reverse items-center gap-4">
+              {/* ขวา: วงกลม + Jumper + % ใต้วง */}
+              <div className="flex shrink-0 flex-col items-center">
+                <Ring
+                  value={goalPct}
+                  size={124}
+                  stroke={9}
+                  track="rgba(255,255,255,0.12)"
+                  color={LIME}
+                >
+                  <Jumper size={78} />
+                </Ring>
+                <div className="mt-1.5 flex items-baseline gap-1.5 leading-none">
+                  <span className="text-[20px] font-semibold tabular-nums text-[#C9F25B]">
+                    {Math.round(goalPct * 100)}%
+                  </span>
+                  <span className="text-[11px] text-white/60">ทำได้แล้ว</span>
+                </div>
+              </div>
+
+              {/* ซ้าย: ตัวเลขหลัก + ข้อความ + สถิติวันนี้ */}
+              <div className="min-w-0 flex-1">
+                <div className="text-[40px] font-semibold leading-none tabular-nums tracking-tight lg:text-[56px]">
                   <CountUp value={todayTotal} />
                 </div>
-                <div className="mt-2 text-[14px] text-white/60">
+                <div className="mt-1.5 text-[13px] text-white/60">
                   จาก {fmtNum(dailyGoal)} ครั้ง
                 </div>
-                <div className="mt-2 text-[13px] font-medium text-[#C9F25B]">
+                <div className="mt-1 text-[13px] font-medium text-[#C9F25B]">
                   {left > 0
                     ? `อีก ${fmtNum(left)} ครั้งก็ถึงเป้า!`
                     : "ถึงเป้าวันนี้แล้ว เก่งมาก!"}
                 </div>
-              </div>
-              <Ring
-                value={goalPct}
-                size={112}
-                stroke={10}
-                track="rgba(255,255,255,0.12)"
-                color={LIME}
-              >
-                <span className="text-[24px] font-semibold tabular-nums text-[#C9F25B]">
-                  {Math.round(goalPct * 100)}%
-                </span>
-                <span className="text-[11px] text-white/60">ทำได้แล้ว</span>
-              </Ring>
-            </div>
 
-            {/* สถิติวันนี้: เล็กกะทัดรัด อยู่ใต้ตัวเลขหลัก */}
-            <div className="mt-4 flex items-center gap-5 border-t border-white/10 pt-3.5">
-              <MiniStat
-                icon={ICONS.clock}
-                value={formatTime(todayMs)}
-                label="นาทีที่กระโดด"
-              />
-              <MiniStat
-                icon={ICONS.flame}
-                value={todayKcal}
-                label="กิโลแคลอรี่"
-              />
-              <MiniStat
-                icon={ICONS.bolt}
-                value={todayRounds}
-                label="รอบวันนี้"
-                className="hidden lg:flex"
-              />
+                <div className="mt-2 space-y-1.5 border-t border-white/10 pt-2">
+                  <MiniStat
+                    icon={ICONS.clock}
+                    value={formatTime(todayMs)}
+                    label="นาทีที่กระโดด"
+                  />
+                  <MiniStat
+                    icon={ICONS.flame}
+                    value={todayKcal}
+                    label="กิโลแคลอรี่"
+                  />
+                  <MiniStat
+                    icon={ICONS.bolt}
+                    value={todayRounds}
+                    label="รอบวันนี้"
+                    className="hidden lg:flex"
+                  />
+                </div>
+              </div>
             </div>
           </section>
 
