@@ -4,6 +4,12 @@ import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
 import { addUserPoints, getUserPoints } from "../../../lib/points";
 import { goalOfDate } from "../../components/goal";
+import {
+  activeBanOf,
+  hasBanForDay,
+  publicBan,
+  recomputeDayPoints,
+} from "../../../lib/bans";
 
 const unauthorized = () =>
   NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
@@ -113,6 +119,12 @@ async function settleDailyGoal(db: Db, userId: unknown, now: number) {
   if (award > 0) {
     await addUserPoints(userId, award);
   }
+
+  // ถ้าวันนี้มีคนถูกแบน ลำดับที่ได้ point ต้องนับเฉพาะคนที่ไม่ถูกตัดคะแนน
+  // (เช่น คนที่ 101 ได้ point แทน) คำนวณใหม่ให้ตรงเสมอ
+  if (await hasBanForDay(db, key)) {
+    await recomputeDayPoints(db, key);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -154,6 +166,17 @@ export async function POST(req: Request) {
     const user = await currentUser();
     if (!user) return unauthorized();
 
+    const db = await getDb();
+
+    // ผู้ที่ถูกแบนบันทึกรอบไม่ได้
+    const ban = await activeBanOf(db, user.id);
+    if (ban) {
+      return NextResponse.json(
+        { error: "บัญชีถูกแบน", banned: true, ban: publicBan(ban) },
+        { status: 403 }
+      );
+    }
+
     let b: Record<string, unknown>;
     try {
       b = (await req.json()) as Record<string, unknown>;
@@ -183,7 +206,6 @@ export async function POST(req: Request) {
     let ts = typeof b.ts === "number" && Number.isFinite(b.ts) ? b.ts : now;
     if (Math.abs(now - ts) > 864e5) ts = now;
 
-    const db = await getDb();
     await ensureIndexes(db);
 
     await db.collection("jumps").insertOne({

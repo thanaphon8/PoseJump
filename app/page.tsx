@@ -11,6 +11,7 @@ import Rank from "./components/Rank";
 import History from "./components/History";
 import HomeView from "./components/HomeView";
 import PromoPopup from "./components/PromoPopup";
+import BanNotice from "./components/BanNotice";
 import Setting from "./components/Setting";
 import Navbar from "./components/Navbar";
 import { uploadShot } from "./components/snapshot";
@@ -609,6 +610,9 @@ export default function Home() {
   const [authReady, setAuthReady] = useState(false);
   const [promoOpen, setPromoOpen] = useState(false);
   const promoShownRef = useRef(false);
+  const [banOpen, setBanOpen] = useState(false);
+  const [, setBanTick] = useState(0);
+  const banSeenRef = useRef("");
 
   const audioRef = useRef<AudioContext | null>(null);
   const shotsRef = useRef<DayShots>(EMPTY_SHOTS);
@@ -676,6 +680,43 @@ export default function Home() {
   }, [authReady, user]);
 
   const username = user?.username ?? null;
+
+  // แบนที่ยังมีผล (เช็กเวลาหมดแบนทุกครั้งที่ render)
+  const activeBan =
+    user?.ban && user.ban.expiresAt > Date.now() ? user.ban : null;
+  const banId = activeBan?.id ?? null;
+  const loggedIn = !!user;
+
+  // เด้งหน้าต่างแจ้งแบนครั้งเดียวต่อรายการแบน (ปิดแล้วไม่เด้งซ้ำ จนกว่าจะถูกแบนรายการใหม่)
+  useEffect(() => {
+    if (!banId) {
+      banSeenRef.current = "";
+      setBanOpen(false);
+      return;
+    }
+    if (banSeenRef.current === banId) return;
+    banSeenRef.current = banId;
+    setBanOpen(true);
+  }, [banId]);
+
+  // ทุก 1 นาที: อัปเดตสถานะแบนจากเซิร์ฟเวอร์ (โดนแบน/ปลดแบน/หมดเวลา) และ render ใหม่
+  useEffect(() => {
+    if (!loggedIn) return;
+    const t = setInterval(() => {
+      setBanTick((n) => n + 1);
+      fetch("/api/auth/me", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { user?: User | null } | null) => {
+          const nu = d?.user;
+          if (!nu) return;
+          setUser((u) =>
+            u ? { ...u, ban: nu.ban ?? null, points: nu.points ?? u.points } : u
+          );
+        })
+        .catch(() => {});
+    }, 60000);
+    return () => clearInterval(t);
+  }, [loggedIn]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -869,7 +910,22 @@ export default function Home() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(entry),
         })
-          .then((r) => (r.ok ? r.json() : null))
+          .then(async (r) => {
+            if (r.status === 403) {
+              // ถูกแบน: เซิร์ฟเวอร์ไม่บันทึกรอบ เอารอบนี้ออกจากประวัติในเครื่อง
+              const e = (await r.json().catch(() => null)) as {
+                banned?: boolean;
+                ban?: User["ban"];
+              } | null;
+              if (e?.banned) {
+                setHistory((p) => p.filter((s) => s.id !== entry.id));
+                setUser((u) => (u ? { ...u, ban: e.ban ?? null } : u));
+                setBanOpen(true);
+              }
+              return null;
+            }
+            return r.ok ? r.json() : null;
+          })
           .then((d: { points?: number } | null) => {
             const pts = d?.points;
             if (typeof pts === "number") {
@@ -901,6 +957,11 @@ export default function Home() {
   }, []);
 
   const startSession = useCallback(() => {
+    // ผู้ที่ถูกแบนเริ่มเล่นไม่ได้ เปิดหน้าต่างแจ้งแทน
+    if (activeBan) {
+      setBanOpen(true);
+      return;
+    }
     setGyroPromise(Pose.prime(facing, audioRef));
     // อัปเดตวันที่ ให้เป้าตรงวันนี้ถ้าเปิดแอปค้างข้ามเที่ยงคืน
     setNow0(Date.now());
@@ -909,7 +970,7 @@ export default function Home() {
     setReward(null);
     setSessionKey((k) => k + 1);
     setPhase("session");
-  }, [facing]);
+  }, [facing, activeBan]);
 
   const closePromo = useCallback((hide: boolean) => {
     setPromoOpen(false);
@@ -1041,6 +1102,8 @@ export default function Home() {
               history={history}
               error={error}
               onStart={startSession}
+              banned={activeBan}
+              onShowBan={() => setBanOpen(true)}
               onViewHistory={() => setTab("history")}
             />
           )}
@@ -1049,6 +1112,7 @@ export default function Home() {
               username={user?.username ?? null}
               hasDepartment={!!(user?.departmentId || user?.branchId)}
               onStart={startSession}
+              banned={!!activeBan}
               onOpenResult={openToday}
               hasToday={todayList.length > 0}
               onPoints={handlePoints}
@@ -1077,6 +1141,9 @@ export default function Home() {
               setTab("home");
             }}
           />
+        )}
+        {user && activeBan && banOpen && (
+          <BanNotice ban={activeBan} onClose={() => setBanOpen(false)} />
         )}
         {!user && <AuthScreen onAuthed={login} />}
       </div>

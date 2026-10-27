@@ -35,9 +35,32 @@ type UserDay = {
   goalRank: number | null;
   points: number;
   snapshots: { start: string | null; end: string | null };
+  // แบนของวันนั้น หรือแบนที่ยังมีผลอยู่ (null = ไม่ถูกแบน)
+  ban: {
+    id: string;
+    reason: string;
+    bannedAt: number;
+    expiresAt: number;
+    day: string;
+    active: boolean;
+  } | null;
 };
 
 const fmtNum = (n: number) => n.toLocaleString("en-US");
+
+const fmtDateTime = (t: number) =>
+  new Date(t).toLocaleString("th-TH", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Bangkok",
+  });
+
+// วันนี้เวลาไทย (แบนได้เฉพาะวันนี้)
+const todayYmdTh = () =>
+  new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 
 const fmtLong = (ymd: string) =>
   new Date(`${ymd}T00:00:00Z`).toLocaleDateString("th-TH", {
@@ -244,6 +267,7 @@ export default function UserDayModal({
   avatarUrl,
   onClose,
   onLocked,
+  onChanged,
 }: {
   userId: string;
   date: string;
@@ -252,6 +276,8 @@ export default function UserDayModal({
   onClose: () => void;
   // เซสชันผู้ดูแลหมดอายุ ให้หน้าหลักกลับไปหน้ากรอกรหัสผ่าน
   onLocked: () => void;
+  // เรียกหลังแบน/ปลดแบนสำเร็จ ให้หน้าหลักโหลดตารางใหม่
+  onChanged?: () => void;
 }) {
   const [data, setData] = useState<UserDay | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "error" | "empty">(
@@ -260,6 +286,53 @@ export default function UserDayModal({
   const [reloadKey, setReloadKey] = useState(0);
   // ภาพที่กำลังขยาย (ดัชนีใน shots) null = ไม่เปิด
   const [preview, setPreview] = useState<number | null>(null);
+
+  // ฟอร์มแบน
+  const [banOpen, setBanOpen] = useState(false);
+  const [banReason, setBanReason] = useState("");
+  const [banBusy, setBanBusy] = useState(false);
+  const [banErr, setBanErr] = useState("");
+  const isToday = date === todayYmdTh();
+
+  const callBan = async (init: RequestInit, url = "/api/admin/ban") => {
+    if (banBusy) return;
+    setBanBusy(true);
+    setBanErr("");
+    try {
+      const r = await fetch(url, { cache: "no-store", ...init });
+      if (r.status === 401 || r.status === 403) {
+        onLocked();
+        return;
+      }
+      if (!r.ok) {
+        const d = (await r.json().catch(() => ({}))) as { error?: string };
+        setBanErr(d.error ?? "ทำรายการไม่สำเร็จ");
+        return;
+      }
+      setBanOpen(false);
+      setBanReason("");
+      setReloadKey((k) => k + 1);
+      onChanged?.();
+    } catch {
+      setBanErr("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ");
+    } finally {
+      setBanBusy(false);
+    }
+  };
+  const doBan = () =>
+    callBan({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, reason: banReason.trim() }),
+    });
+  const doUnban = (banId: string) => {
+    if (!window.confirm("ยืนยันปลดแบน? คะแนนและ point ของวันที่ถูกแบนจะกลับมา"))
+      return;
+    callBan(
+      { method: "DELETE" },
+      `/api/admin/ban?banId=${encodeURIComponent(banId)}`
+    );
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -482,6 +555,98 @@ export default function UserDayModal({
                     </span>
                   </StatBox>
                 </div>
+
+                <section className="mt-3 rounded-2xl bg-white p-4">
+                  {data.ban ? (
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="rounded-full bg-[#FDE8E6] px-3 py-0.5 text-[12px] font-semibold text-[#D92D20]">
+                          {data.ban.active ? "ถูกแบนอยู่" : "หมดแบนแล้ว"}
+                        </span>
+                        <span className="text-[12px] text-[#6B7A6E]">
+                          หมด {fmtDateTime(data.ban.expiresAt)}
+                        </span>
+                      </div>
+                      <p className="mt-2 break-words text-[14px]">
+                        เหตุผล: {data.ban.reason}
+                      </p>
+                      <p className="mt-1 text-[12px] text-[#6B7A6E]">
+                        แบนเมื่อ {fmtDateTime(data.ban.bannedAt)} · คะแนนของ{" "}
+                        {fmtLong(data.ban.day)} ไม่ถูกนับ
+                      </p>
+                      <button
+                        onClick={() => doUnban(data.ban!.id)}
+                        disabled={banBusy}
+                        className="mt-3 h-10 w-full rounded-full bg-[#1B2A21] text-[14px] font-semibold text-[#C9F25B] transition-transform active:scale-95 disabled:opacity-50"
+                      >
+                        ปลดแบน (กรณีตรวจผิด)
+                      </button>
+                    </>
+                  ) : isToday ? (
+                    banOpen ? (
+                      <>
+                        <label className="block">
+                          <span className="mb-1.5 block text-[13px] font-medium text-[#6B7A6E]">
+                            เหตุผลที่แบน (แบน 24 ชั่วโมง)
+                          </span>
+                          <textarea
+                            value={banReason}
+                            onChange={(e) => {
+                              setBanReason(e.target.value);
+                              setBanErr("");
+                            }}
+                            maxLength={500}
+                            rows={3}
+                            className="w-full rounded-2xl bg-[#F3F6EC] p-3 text-[14px] outline-none ring-2 ring-transparent focus:ring-[#C9F25B]"
+                          />
+                        </label>
+                        {banErr && (
+                          <p role="alert" className="mt-2 text-[13px] text-[#D92D20]">
+                            {banErr}
+                          </p>
+                        )}
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={() => {
+                              setBanOpen(false);
+                              setBanErr("");
+                            }}
+                            className="h-10 flex-1 rounded-full bg-[#EEF2E4] text-[14px] font-semibold"
+                          >
+                            ยกเลิก
+                          </button>
+                          <button
+                            onClick={doBan}
+                            disabled={banBusy || banReason.trim().length < 3}
+                            className="h-10 flex-1 rounded-full bg-[#D92D20] text-[14px] font-semibold text-white transition-transform active:scale-95 disabled:opacity-40"
+                          >
+                            {banBusy ? "กำลังแบน" : "ยืนยันแบน"}
+                          </button>
+                        </div>
+                        <p className="mt-2 text-[12px] text-[#6B7A6E]">
+                          บัญชีนี้จะเล่นไม่ได้ 24 ชม. คะแนนของวันนี้ถูกตัด
+                          point ที่ได้วันนี้ถูกดึงคืนและให้คนถัดไปแทน
+                        </p>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => setBanOpen(true)}
+                        className="h-10 w-full rounded-full bg-[#FDE8E6] text-[14px] font-semibold text-[#D92D20] transition-transform active:scale-95"
+                      >
+                        แบนผู้เล่นคนนี้
+                      </button>
+                    )
+                  ) : (
+                    <p className="text-[12px] text-[#6B7A6E]">
+                      แบนได้เฉพาะตอนดูวันนี้
+                    </p>
+                  )}
+                  {banErr && !banOpen && (
+                    <p role="alert" className="mt-2 text-[13px] text-[#D92D20]">
+                      {banErr}
+                    </p>
+                  )}
+                </section>
 
                 {orgRows.length > 0 && (
                   <dl className="mt-3 divide-y divide-[#E3EAD6] overflow-hidden rounded-2xl bg-white text-[14px]">

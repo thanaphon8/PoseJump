@@ -60,6 +60,25 @@ type DayEntry = {
   points: number;
   org?: OrgInfo;
 };
+// ผู้เล่นที่ถูกแบนในวันนั้น (ไม่อยู่ในอันดับ ไม่นับคะแนน)
+type BannedEntry = {
+  userId: string;
+  name: string;
+  username: string;
+  employeeId?: string | null;
+  avatarUrl?: string | null;
+  org?: OrgInfo;
+  total: number;
+  rounds: number;
+  ban: {
+    id: string;
+    reason: string;
+    bannedAt: number;
+    expiresAt: number;
+    day: string;
+    active: boolean;
+  };
+};
 type DayData = {
   date: string;
   quota: number;
@@ -67,6 +86,7 @@ type DayData = {
   reachedCount: number;
   awardedCount: number;
   entries: DayEntry[];
+  banned?: BannedEntry[];
 };
 type WeekEntry = {
   rank: number;
@@ -914,6 +934,20 @@ export default function AdminPage() {
   const weekScoped = week ? week.entries.filter((e) => orgOk(e.org)) : [];
   const monthScoped = month ? month.entries.filter((e) => orgOk(e.org)) : [];
 
+  const bannedRows = day
+    ? (day.banned ?? []).filter(
+        (e) =>
+          orgOk(e.org) && matches(q, e.name, e.username, e.org, e.employeeId)
+      )
+    : [];
+  const fmtBanTime = (t: number) =>
+    new Date(t).toLocaleString("th-TH", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
   const dayRows = dayScoped.filter(
     (e) =>
       (!onlyAwarded || e.points > 0) &&
@@ -1439,6 +1473,55 @@ export default function AdminPage() {
               />
             </div>
 
+            {bannedRows.length > 0 && (
+              <section className={`${card} mt-4 overflow-hidden`}>
+                <div className="border-b border-[#EEF2E4] px-4 py-3 text-[14px] font-semibold text-[#D92D20]">
+                  ถูกแบน {fmtNum(bannedRows.length)} คน · คะแนนของวันนี้ไม่ถูกนับ ไม่อยู่ในอันดับ
+                </div>
+                <ul className="divide-y divide-[#EEF2E4]">
+                  {bannedRows.map((e) => (
+                    <li key={e.userId}>
+                      <button
+                        onClick={() =>
+                          setDetail({
+                            userId: e.userId,
+                            date,
+                            avatarUrl: e.avatarUrl,
+                          })
+                        }
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#FDF3F2]"
+                      >
+                        <Avatar name={e.name} src={e.avatarUrl} size={44} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[15px] font-semibold">
+                            {e.name}
+                          </div>
+                          {idLine(e.username, e.employeeId) && (
+                            <div className="truncate text-[12px] text-[#6B7A6E]">
+                              {idLine(e.username, e.employeeId)}
+                            </div>
+                          )}
+                          <div className="truncate text-[12px] text-[#D92D20]">
+                            เหตุผล: {e.ban.reason}
+                          </div>
+                          <OrgLine org={e.org} />
+                        </div>
+                        <div className="shrink-0 text-right text-[12px] text-[#6B7A6E]">
+                          <div className="font-semibold text-[#D92D20]">
+                            {e.ban.active ? "ถูกแบนอยู่" : "หมดแบนแล้ว"}
+                          </div>
+                          <div>หมด {fmtBanTime(e.ban.expiresAt)}</div>
+                          <div className="tabular-nums">
+                            เคยโดด {fmtNum(e.total)} (ไม่นับ)
+                          </div>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             <section className={`${card} mt-4 overflow-hidden`}>
               {dayRows.length === 0 ? (
                 <p className="px-4 py-10 text-center text-[14px] text-[#6B7A6E]">
@@ -1882,6 +1965,7 @@ export default function AdminPage() {
 
         {detail && (
           <UserDayModal
+            onChanged={load}
             userId={detail.userId}
             date={detail.date}
             avatarUrl={detail.avatarUrl}

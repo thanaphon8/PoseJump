@@ -9,6 +9,7 @@ import { purgeOrphansThrottled } from "../../../lib/purge-orphans";
 import { orgOf, getBranch, branchLabel } from "../../components/branches";
 import { getDepartment } from "../../components/departments";
 import { goalOfDate } from "../../components/goal";
+import { voidedUsersOfDay } from "../../../lib/bans";
 
 // "วันนี้" นับตามเวลาไทย (UTC+7) อันดับจึงรีเซ็ตตอนเที่ยงคืนของไทย
 const TZ_OFFSET = 7 * 3_600_000;
@@ -120,19 +121,29 @@ export async function GET() {
     const orgs = new Map(
       existing.map((u) => [String(u._id), orgInfo(u as UserDoc)])
     );
-    const rows = rawRows.filter((r) => names.has(String(r._id)));
+    // คนที่ถูกแบนในวันนี้ถูกตัดคะแนนทั้งวัน ซ่อนจากอันดับเหมือนไม่ได้เล่น
+    const voided = await voidedUsersOfDay(db, dayStr);
+    const rows = rawRows.filter(
+      (r) => names.has(String(r._id)) && !voided.has(String(r._id))
+    );
 
     const top = rows.slice(0, TOP);
 
     // ลำดับที่ทำเป้าหมายรายวันสำเร็จของแต่ละคนในวันนี้ (1 = คนแรก)
     // userId ใน goal_hits ชนิดเดียวกับใน jumps (ใช้ user.id ตรงๆ เหมือนกัน)
-    const hitIds: unknown[] = top.map((r) => r._id);
-    const hits = await db
+    const allHits = await db
       .collection("goal_hits")
-      .find({ day: dayStr, userId: { $in: hitIds } })
+      .find({ day: dayStr })
       .project({ userId: 1, seq: 1 })
+      .sort({ seq: 1 })
       .toArray();
-    const seqOf = new Map(hits.map((h) => [String(h.userId), h.seq as number]));
+    const seqOf = new Map<string, number>();
+    let hitN = 0;
+    for (const h of allHits) {
+      if (voided.has(String(h.userId))) continue;
+      hitN += 1;
+      seqOf.set(String(h.userId), hitN);
+    }
 
     // เป้าหมายรายวัน (เท่ากันทุกคน เปลี่ยนตามสัปดาห์ ดู app/components/goal.ts)
     // ใช้วาดหลอดความคืบหน้า ต้องตรงกับเป้าที่ /api/sessions ใช้ตัดสิน point

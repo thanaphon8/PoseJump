@@ -15,6 +15,16 @@ export const APP_SHORT = "ท้าให้กระโดด ลุ้นใ�
 export const POINT_QUOTA = 100;
 export const POINT_REWARD = 50;
 
+// แบนที่ยังมีผลอยู่ (มาจาก /api/auth/me) null/ไม่มี = ไม่ถูกแบน
+export type UserBan = {
+  id: string;
+  reason: string;
+  bannedAt: number;
+  expiresAt: number;
+  day: string;
+  active: boolean;
+};
+
 export type User = {
   name: string;
   username?: string;
@@ -24,6 +34,7 @@ export type User = {
   companyId?: number | null; // รหัสบริษัท (ดู departments.ts)
   departmentId?: number | null; // รหัสแผนก (ดู departments.ts)
   branchId?: number | null; // รหัสสาขา (ดู branches.ts)
+  ban?: UserBan | null; // ถูกแบนอยู่หรือไม่
 };
 
 export type AuthMode = "login" | "register" | "forgot";

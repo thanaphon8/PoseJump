@@ -269,6 +269,8 @@ export default function Home({
   error,
   onStart,
   onViewHistory,
+  banned = null,
+  onShowBan,
 }: {
   user: User | null;
   now0: number | null;
@@ -282,6 +284,9 @@ export default function Home({
   error: string | null;
   onStart: () => void;
   onViewHistory: () => void;
+  // แบนที่ยังมีผลอยู่ (null = เล่นได้ปกติ)
+  banned?: { reason: string; expiresAt: number } | null;
+  onShowBan?: () => void;
 }) {
   const goalPct = Math.min(1, todayTotal / Math.max(1, dailyGoal));
   const left = Math.max(0, dailyGoal - todayTotal);
@@ -398,21 +403,44 @@ export default function Home({
             </p>
           )}
 
-          <div className="relative">
-            <span
-              aria-hidden
-              className="absolute inset-x-2 -inset-y-1 animate-pulse rounded-full bg-[#E4FF4D] opacity-80 blur-xl motion-reduce:animate-none"
-            />
-            <button
-              onClick={onStart}
-              className="relative z-10 flex h-16 w-full items-center justify-center gap-3 rounded-full bg-gradient-to-b from-[#F6FF8A] via-[#E2FC5C] to-[#C4F230] text-[18px] font-extrabold text-[#1B2A21] shadow-[0_0_28px_rgba(214,255,64,0.75),0_8px_20px_rgba(118,255,3,0.25)] ring-2 ring-inset ring-white/70 transition-all duration-150 hover:brightness-105 active:scale-[0.98] active:brightness-95"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1B2A21] text-[#E2FC5C] shadow-md">
-                <Icon d={ICONS.play} size={18} fill />
-              </span>
-              เริ่มกระโดด
-            </button>
-          </div>
+          {banned ? (
+            <div className="rounded-3xl bg-[#FDE8E6] p-4 text-[#D92D20]">
+              <div className="text-[16px] font-bold">
+                บัญชีถูกแบน เล่นไม่ได้ชั่วคราว
+              </div>
+              <p className="mt-1 text-[13px]">
+                หมดแบน{" "}
+                {new Date(banned.expiresAt).toLocaleString("th-TH", {
+                  day: "numeric",
+                  month: "short",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
+              <button
+                onClick={onShowBan}
+                className="mt-2 text-[13px] font-semibold underline"
+              >
+                ดูเหตุผล
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
+              <span
+                aria-hidden
+                className="absolute inset-x-2 -inset-y-1 animate-pulse rounded-full bg-[#E4FF4D] opacity-80 blur-xl motion-reduce:animate-none"
+              />
+              <button
+                onClick={onStart}
+                className="relative z-10 flex h-16 w-full items-center justify-center gap-3 rounded-full bg-gradient-to-b from-[#F6FF8A] via-[#E2FC5C] to-[#C4F230] text-[18px] font-extrabold text-[#1B2A21] shadow-[0_0_28px_rgba(214,255,64,0.75),0_8px_20px_rgba(118,255,3,0.25)] ring-2 ring-inset ring-white/70 transition-all duration-150 hover:brightness-105 active:scale-[0.98] active:brightness-95"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1B2A21] text-[#E2FC5C] shadow-md">
+                  <Icon d={ICONS.play} size={18} fill />
+                </span>
+                เริ่มกระโดด
+              </button>
+            </div>
+          )}
 
           {user && (
             <DepartmentCard

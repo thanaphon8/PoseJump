@@ -57,6 +57,8 @@ type RankProps = {
   hasToday: boolean;
   // ซิงก์ point ล่าสุดของตัวเองกลับไปที่ user ใน app/page.tsx
   onPoints: (points: number) => void;
+  // บัญชีถูกแบน: ปิดปุ่มเริ่มกระโดด และไม่แสดงแบนเนอร์ชวนโดด
+  banned?: boolean;
 };
 
 /* ------------------------------------------------------------------ */
@@ -759,17 +761,21 @@ function RankView(props: RankProps) {
               ) : (
                 <>
                   <p className="mt-2 text-[14px] text-[#4B5E3A]">
-                    วันนี้คุณยังไม่ได้กระโดด โดดเลยเพื่อติดอันดับ
+                    {props.banned
+                      ? "บัญชีถูกแบน วันนี้ไม่ได้ลงอันดับ"
+                      : "วันนี้คุณยังไม่ได้กระโดด โดดเลยเพื่อติดอันดับ"}
                   </p>
-                  <button onClick={props.onStart} className={`${limeBtn} mt-4`}>
-                    <Icon d={ICONS.play} size={20} fill />
-                    เริ่มกระโดด
-                  </button>
+                  {!props.banned && (
+                    <button onClick={props.onStart} className={`${limeBtn} mt-4`}>
+                      <Icon d={ICONS.play} size={20} fill />
+                      เริ่มกระโดด
+                    </button>
+                  )}
                 </>
               )}
             </section>
 
-            {(() => {
+            {props.banned ? null : (() => {
               const mine = board.entries.find((e) => e.me);
               const reached =
                 !!mine && (mine.goalRank != null || mine.total >= mine.goal);
