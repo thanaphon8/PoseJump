@@ -8,6 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { ICONS, Icon } from "./auth-shared";
+import RankLoader from "./RankLoader";
 
 const fmtNum = (n: number) => n.toLocaleString("en-US");
 const STACK_MAX = 5;
@@ -744,27 +745,7 @@ export default function DepartmentRank({
     return () => clearInterval(t);
   }, [load]);
 
-  if (!board && !err) {
-    // โครงเปล่าขนาดใกล้เคียงของจริง (แท่นยืน + 3 แถว) กันหน้ากระโดดตอนข้อมูลมา
-    return (
-      <div
-        className="w-full lg:max-w-[40rem]"
-        role="status"
-        aria-label="กำลังโหลดอันดับ"
-      >
-        <div className="h-[260px] animate-pulse rounded-3xl bg-white" />
-        <div className="mt-3 space-y-2">
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="h-[76px] animate-pulse rounded-full bg-white"
-            />
-          ))}
-        </div>
-      </div>
-    );
-  }
-  if (!board) {
+  if (!board && err) {
     return (
       <div className="rounded-3xl bg-white px-4 py-6 text-center">
         <p className="text-[14px] text-[#D92D20]">โหลดอันดับไม่สำเร็จ</p>
@@ -780,18 +761,24 @@ export default function DepartmentRank({
 
   return (
     // หัวข้อ "ตารางอันดับ" + ตัวสลับ บุคคล/แผนก อยู่ใน Rank.tsx แล้ว (บรรทัดเดียวกับหน้าบุคคล)
-    // ความกว้างเท่าคอลัมน์ตารางของหน้าบุคคล ชิดซ้าย / pj-in = เฟดเข้าเบาๆ ตอนสลับมาหน้านี้
-    <div className="pj-in w-full lg:max-w-[40rem]">
-      <DeptBoardView entries={board.entries} />
-      <div className="mt-3 space-y-1 px-1 text-[12px] text-[#6B7A6E]">
-        <p>
-          คะแนนสะสมไม่รีเซ็ต · {board.count} กลุ่มลงสนาม
-          {!hasDepartment && " · บัญชีนี้ยังไม่ได้เลือกแผนกหรือสาขา"}
-        </p>
-        <p>
-          คะแนน = ผลรวมครั้งกระโดดของทุกคนในกลุ่ม (สำนักงานใหญ่นับเป็นแผนก หน้าร้านนับ 1 สาขาเป็น 1 กลุ่ม) นับสะสมตั้งแต่เริ่มและไม่รีเซ็ต แสดง 20 อันดับแรก กดที่กลุ่มเพื่อดูสมาชิก
-        </p>
-      </div>
+    // ความกว้างเท่าคอลัมน์ตารางของหน้าบุคคล ชิดซ้าย
+    // RankLoader = ตัวการ์ตูน Jumper ระหว่างรอข้อมูล พอข้อมูลมาจะเฟดจางทับเนื้อหาที่เฟดเข้า (pj-in)
+    <div className="relative w-full lg:max-w-[40rem]">
+      {board && (
+        <div className="pj-in">
+          <DeptBoardView entries={board.entries} />
+          <div className="mt-3 space-y-1 px-1 text-[12px] text-[#6B7A6E]">
+            <p>
+              คะแนนสะสมไม่รีเซ็ต · {board.count} กลุ่มลงสนาม
+              {!hasDepartment && " · บัญชีนี้ยังไม่ได้เลือกแผนกหรือสาขา"}
+            </p>
+            <p>
+              คะแนน = ผลรวมครั้งกระโดดของทุกคนในกลุ่ม (สำนักงานใหญ่นับเป็นแผนก หน้าร้านนับ 1 สาขาเป็น 1 กลุ่ม) นับสะสมตั้งแต่เริ่มและไม่รีเซ็ต แสดง 20 อันดับแรก กดที่กลุ่มเพื่อดูสมาชิก
+            </p>
+          </div>
+        </div>
+      )}
+      <RankLoader loading={!board} />
     </div>
   );
 }

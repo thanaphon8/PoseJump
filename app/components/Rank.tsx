@@ -9,6 +9,7 @@ import {
   Segmented,
 } from "./auth-shared";
 import DepartmentRank, { prefetchDeptBoard } from "./DepartmentRank";
+import RankLoader from "./RankLoader";
 
 /* ------------------------------------------------------------------ */
 /* ค่าคงที่และชนิดข้อมูล (ซ้ำกับ app/page.tsx เพราะไฟล์ page.tsx export ได้แค่ default) */
@@ -651,12 +652,6 @@ function RankView(props: RankProps) {
       {/* ยังไม่มีข้อมูล: แสดงหัวข้อ+ตัวสลับตรงนี้ (พอโหลดเสร็จจะอยู่ในคอลัมน์ตาราง) */}
       {!board && tableHead}
 
-      {!board && !boardErr && (
-        <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
-          กำลังโหลดอันดับ
-        </p>
-      )}
-
       {!board && boardErr && (
         <div className={`${card} px-4 py-6 text-center`}>
           <p className="text-[14px] text-[#D92D20]">
@@ -671,135 +666,139 @@ function RankView(props: RankProps) {
         </div>
       )}
 
-      {board && (
-        <div className="space-y-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,23rem)] lg:items-start lg:gap-6 lg:space-y-0">
-          <section>
-            {tableHead}
-            {board.entries.length === 0 ? (
-              <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
-                ยังไม่มีอันดับ
-              </p>
-            ) : (
-              <>
-                <Podium entries={board.entries.slice(0, 3)} />
-                {board.entries.length > 3 && (
-                  <>
-                    {/* คำอธิบายไอคอนติ๊กเขียวในแถวด้านล่าง */}
-                    <p className="mt-3 flex items-center gap-1.5 px-1 text-[12px] text-[#6B7A6E]">
-                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#3F5E1F] text-[#C9F25B]">
-                        <Icon d={ICONS.check} size={10} />
-                      </span>
-                      ติ๊กถูกสีเขียว = ทัน {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ
-                    </p>
-                    <ul className="mt-2 space-y-2">
-                      {board.entries.slice(3).map(boardRow)}
-                    </ul>
-                  </>
-                )}
-              </>
-            )}
-            <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-              {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุก 06:00 น. เวลาไทย
-            </p>
-          </section>
-          <div className="pj-stagger space-y-4">
-            <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
-              <div className="flex items-start justify-between gap-3">
-                <span className="text-[15px] font-semibold">
-                  เจ้าของอันดับ 1 วันนี้
-                </span>
-                <span className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-medium text-[#C9F25B]">
-                  {board.count} คนลงสนาม
-                </span>
-              </div>
-              {leader ? (
-                <div className="mt-4 flex items-center gap-4">
-                  <span className="pj-float flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
-                    <Icon d={ICONS.trophy} size={32} />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="truncate text-[24px] font-semibold">
-                      {leader.name}
-                    </div>
-                    {(leader.company || leader.department) && (
-                      <div className="truncate text-[12px] text-white/60">
-                        {[leader.company, leader.department]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </div>
-                    )}
-                    <div className="mt-1 flex items-baseline gap-2">
-                      <span className="text-[40px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
-                        {fmtNum(leader.total)}
-                      </span>
-                      <span className="text-[14px] text-white/60">ครั้ง</span>
-                    </div>
-                    <p className="mt-1.5 text-[13px] text-white/70">
-                      {leader.me
-                        ? "คุณนำอยู่ รักษาตำแหน่งนี้ไว้ให้ได้"
-                        : `ใครจะแซง ${leader.name} ได้ ลงสนามเลย`}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <p className="mt-4 text-[16px] text-white/80">
-                  ยังไม่มีใครขึ้นแท่น ลงสนามแล้วชิงอันดับ 1 เป็นคนแรก
+      {/* RankLoader = ตัวการ์ตูน Jumper ระหว่างรอข้อมูล พอข้อมูลมาจะเฟดจางทับเนื้อหาที่เฟดเข้า (pj-in) */}
+      <div className="relative">
+        {board && (
+          <div className="pj-in space-y-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,23rem)] lg:items-start lg:gap-6 lg:space-y-0">
+            <section>
+              {tableHead}
+              {board.entries.length === 0 ? (
+                <p className={`${card} px-4 py-6 text-center text-[14px] text-[#6B7A6E]`}>
+                  ยังไม่มีอันดับ
                 </p>
-              )}
-            </section>
-
-            <section className="rounded-3xl bg-[#E8F5C1] p-5">
-              <h2 className="text-[16px] font-semibold">อันดับของคุณ</h2>
-              {board.me ? (
-                <div className="mt-3 flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight">
-                      #{board.me.rank}
-                    </div>
-                    <div className="mt-2 text-[14px] text-[#4B5E3A]">
-                      {fmtNum(board.me.total)} ครั้งวันนี้
-                    </div>
-                    <div className="mt-1">
-                      <PointBadge points={board.me.points} />
-                    </div>
-                  </div>
-                  <div className="max-w-[160px] text-right text-[13px] font-medium text-[#3F5E1F]">
-                    {board.me.rank === 1
-                      ? "คุณนำอยู่!"
-                      : `อีก ${fmtNum(board.me.gap)} ครั้งจะแซงอันดับ ${board.me.rank - 1}`}
-                  </div>
-                </div>
               ) : (
                 <>
-                  <p className="mt-2 text-[14px] text-[#4B5E3A]">
-                    {props.banned
-                      ? "บัญชีถูกแบน วันนี้ไม่ได้ลงอันดับ"
-                      : "วันนี้คุณยังไม่ได้กระโดด โดดเลยเพื่อติดอันดับ"}
-                  </p>
-                  {!props.banned && (
-                    <button onClick={props.onStart} className={`${limeBtn} mt-4`}>
-                      <Icon d={ICONS.play} size={20} fill />
-                      เริ่มกระโดด
-                    </button>
+                  <Podium entries={board.entries.slice(0, 3)} />
+                  {board.entries.length > 3 && (
+                    <>
+                      {/* คำอธิบายไอคอนติ๊กเขียวในแถวด้านล่าง */}
+                      <p className="mt-3 flex items-center gap-1.5 px-1 text-[12px] text-[#6B7A6E]">
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#3F5E1F] text-[#C9F25B]">
+                          <Icon d={ICONS.check} size={10} />
+                        </span>
+                        ติ๊กถูกสีเขียว = ทัน {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ
+                      </p>
+                      <ul className="mt-2 space-y-2">
+                        {board.entries.slice(3).map(boardRow)}
+                      </ul>
+                    </>
                   )}
                 </>
               )}
+              <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
+                {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุก 06:00 น. เวลาไทย
+              </p>
             </section>
+            <div className="pj-stagger space-y-4">
+              <section className="rounded-3xl bg-[#1B2A21] p-5 text-white">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-[15px] font-semibold">
+                    เจ้าของอันดับ 1 วันนี้
+                  </span>
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-medium text-[#C9F25B]">
+                    {board.count} คนลงสนาม
+                  </span>
+                </div>
+                {leader ? (
+                  <div className="mt-4 flex items-center gap-4">
+                    <span className="pj-float flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#C9F25B] text-[#1B2A21]">
+                      <Icon d={ICONS.trophy} size={32} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-[24px] font-semibold">
+                        {leader.name}
+                      </div>
+                      {(leader.company || leader.department) && (
+                        <div className="truncate text-[12px] text-white/60">
+                          {[leader.company, leader.department]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                      )}
+                      <div className="mt-1 flex items-baseline gap-2">
+                        <span className="text-[40px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
+                          {fmtNum(leader.total)}
+                        </span>
+                        <span className="text-[14px] text-white/60">ครั้ง</span>
+                      </div>
+                      <p className="mt-1.5 text-[13px] text-white/70">
+                        {leader.me
+                          ? "คุณนำอยู่ รักษาตำแหน่งนี้ไว้ให้ได้"
+                          : `ใครจะแซง ${leader.name} ได้ ลงสนามเลย`}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-[16px] text-white/80">
+                    ยังไม่มีใครขึ้นแท่น ลงสนามแล้วชิงอันดับ 1 เป็นคนแรก
+                  </p>
+                )}
+              </section>
 
-            {props.banned ? null : (() => {
-              const mine = board.entries.find((e) => e.me);
-              const reached =
-                !!mine && (mine.goalRank != null || mine.total >= mine.goal);
-              return (
-                <PromoBanner
-                  status={reached ? "done" : "open"}
-                  total={mine?.total ?? 0}
-                />
-              );
-            })()}
+              <section className="rounded-3xl bg-[#E8F5C1] p-5">
+                <h2 className="text-[16px] font-semibold">อันดับของคุณ</h2>
+                {board.me ? (
+                  <div className="mt-3 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight">
+                        #{board.me.rank}
+                      </div>
+                      <div className="mt-2 text-[14px] text-[#4B5E3A]">
+                        {fmtNum(board.me.total)} ครั้งวันนี้
+                      </div>
+                      <div className="mt-1">
+                        <PointBadge points={board.me.points} />
+                      </div>
+                    </div>
+                    <div className="max-w-[160px] text-right text-[13px] font-medium text-[#3F5E1F]">
+                      {board.me.rank === 1
+                        ? "คุณนำอยู่!"
+                        : `อีก ${fmtNum(board.me.gap)} ครั้งจะแซงอันดับ ${board.me.rank - 1}`}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="mt-2 text-[14px] text-[#4B5E3A]">
+                      {props.banned
+                        ? "บัญชีถูกแบน วันนี้ไม่ได้ลงอันดับ"
+                        : "วันนี้คุณยังไม่ได้กระโดด โดดเลยเพื่อติดอันดับ"}
+                    </p>
+                    {!props.banned && (
+                      <button onClick={props.onStart} className={`${limeBtn} mt-4`}>
+                        <Icon d={ICONS.play} size={20} fill />
+                        เริ่มกระโดด
+                      </button>
+                    )}
+                  </>
+                )}
+              </section>
+
+              {props.banned ? null : (() => {
+                const mine = board.entries.find((e) => e.me);
+                const reached =
+                  !!mine && (mine.goalRank != null || mine.total >= mine.goal);
+                return (
+                  <PromoBanner
+                    status={reached ? "done" : "open"}
+                    total={mine?.total ?? 0}
+                  />
+                );
+              })()}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+        <RankLoader loading={!board && !boardErr} />
+      </div>
     </div>
   );
 }
