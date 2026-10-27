@@ -47,8 +47,16 @@ export async function POST(req: Request) {
         ? body.employeeId.trim().toUpperCase()
         : "";
     const password = typeof body.password === "string" ? body.password : "";
+    const companyId =
+      typeof body.companyId === "number" &&
+      Number.isInteger(body.companyId) &&
+      body.companyId >= 0 &&
+      body.companyId <= 999
+        ? body.companyId
+        : null;
 
     if (
+      companyId === null ||
       !/^[a-z0-9_]{3,20}$/.test(username) ||
       !/^[A-Z0-9]{3,20}$/.test(employeeId)
     ) {
@@ -77,7 +85,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const u = await db.collection("users").findOne({ username, employeeId });
+    const u = await db
+      .collection("users")
+      .findOne({ username, companyId, employeeId });
     if (!u) return NextResponse.json(BAD, { status: 401 });
 
     const passwordHash = await bcrypt.hash(password, 10);

@@ -37,6 +37,14 @@ export async function getDb(): Promise<Db> {
     indexes.catch(() => {
       indexes = null;
     });
+    // รหัสพนักงานไม่ซ้ำภายในบริษัทเดียวกัน (ซ้ำข้ามบริษัทได้)
+    // แยกออกมา: ถ้าข้อมูลเดิมมีคู่ซ้ำ จะแค่ log ไม่ทำให้ทุก request พัง
+    db.collection("users")
+      .createIndex(
+        { companyId: 1, employeeId: 1 },
+        { unique: true, name: "company_employee_unique" }
+      )
+      .catch((e) => console.error("create company_employee_unique failed", e));
   }
   await indexes;
   return db;

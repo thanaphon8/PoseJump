@@ -2,11 +2,18 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { AuthShell, EyeButton, Field } from "./auth-shared";
+import { AuthShell, EyeButton, Field, SelectField } from "./auth-shared";
 import type { AuthErrors, AuthFormProps } from "./auth-shared";
+import { COMPANIES } from "./departments";
+
+const COMPANY_OPTIONS = COMPANIES.map((c) => ({
+  value: String(c.id),
+  label: c.name,
+}));
 
 export default function ForgotForm({ onSwitch }: AuthFormProps) {
   const [username, setUsername] = useState("");
+  const [companyId, setCompanyId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -26,6 +33,7 @@ export default function ForgotForm({ onSwitch }: AuthFormProps) {
     if (busy) return;
     const err: AuthErrors = {};
     if (!username.trim()) err.username = "กรอก username";
+    if (!companyId) err.companyId = "เลือกบริษัท";
     if (!employeeId.trim()) err.employeeId = "กรอกรหัสพนักงาน";
     if (password.length < 6) err.password = "รหัสผ่านอย่างน้อย 6 ตัวอักษร";
     else if (confirm !== password) err.confirm = "รหัสผ่านไม่ตรงกัน";
@@ -41,6 +49,7 @@ export default function ForgotForm({ onSwitch }: AuthFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username: username.trim(),
+          companyId: Number(companyId),
           employeeId: employeeId.trim(),
           password,
         }),
@@ -55,7 +64,7 @@ export default function ForgotForm({ onSwitch }: AuthFormProps) {
           data.errors ?? {
             form:
               res.status === 401
-                ? "username กับรหัสพนักงานไม่ตรงกัน"
+                ? "ข้อมูลไม่ถูกต้อง"
                 : data.error ?? "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ ลองใหม่อีกครั้ง",
           }
         );
@@ -72,7 +81,7 @@ export default function ForgotForm({ onSwitch }: AuthFormProps) {
   const btn =
     "flex h-14 w-full items-center justify-center rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348] disabled:opacity-60";
   const pill =
-    "[&_input]:h-14 [&_input]:rounded-full [&_div:has(>input)]:rounded-full";
+    "[&_input]:h-14 [&_input]:rounded-full [&_div:has(>input)]:rounded-full [&_select]:h-14 [&_select]:rounded-full [&_select]:px-6";
 
   if (done) {
     return (
@@ -107,7 +116,7 @@ export default function ForgotForm({ onSwitch }: AuthFormProps) {
           ลืมรหัสผ่าน
         </h1>
         <p className="mt-1 text-[14px] text-white/80 lg:text-[#6B7A6E]">
-          กรอก username และรหัสพนักงาน แล้วตั้งรหัสผ่านใหม่
+          กรอก username บริษัท และรหัสพนักงาน แล้วตั้งรหัสผ่านใหม่
         </p>
 
         <div className={`mt-5 space-y-4 ${pill}`}>
@@ -119,6 +128,14 @@ export default function ForgotForm({ onSwitch }: AuthFormProps) {
             autoComplete="username"
             error={errors.username}
             autoFocus
+          />
+          <SelectField
+            label="บริษัท"
+            value={companyId}
+            onChange={edit("companyId", setCompanyId)}
+            options={COMPANY_OPTIONS}
+            placeholder="เลือกบริษัทของคุณ"
+            error={errors.companyId}
           />
           <Field
             label="รหัสพนักงาน"

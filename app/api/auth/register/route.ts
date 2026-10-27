@@ -101,10 +101,10 @@ export async function POST(req: Request) {
 
     const db = await getDb();
 
-    // ตรวจรหัสพนักงานซ้ำก่อน (กันซ้ำจริงอีกชั้นด้วย unique index ดู catch ด้านล่าง)
-    if (await db.collection("users").findOne({ employeeId })) {
+    // ตรวจรหัสพนักงานซ้ำในบริษัทเดียวกันก่อน (กันซ้ำจริงอีกชั้นด้วย unique index ดู catch ด้านล่าง)
+    if (await db.collection("users").findOne({ companyId, employeeId })) {
       return NextResponse.json(
-        { errors: { employeeId: "รหัสพนักงานนี้ถูกใช้แล้ว" } },
+        { errors: { employeeId: "รหัสพนักงานนี้ถูกใช้แล้วในบริษัทนี้" } },
         { status: 409 }
       );
     }
@@ -151,7 +151,7 @@ export async function POST(req: Request) {
         return NextResponse.json(
           {
             errors: key?.employeeId
-              ? { employeeId: "รหัสพนักงานนี้ถูกใช้แล้ว" }
+              ? { employeeId: "รหัสพนักงานนี้ถูกใช้แล้วในบริษัทนี้" }
               : { username: "username นี้ถูกใช้แล้ว" },
           },
           { status: 409 }
