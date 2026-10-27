@@ -22,7 +22,8 @@ import type { CSSProperties, ReactNode } from "react";
  *   sitdown ย่อตัว ทิ้งตัวลงนั่ง มีฝุ่นฟุ้งและเด้งเบาๆ ตอนก้นถึงพื้น
  *   rest    นั่งหอบ ถอนหายใจ (กางเกง + รองเท้าหันหน้า ไม่เห็นขา)
  *   sleep   พยักหน้างีบ หลับตา มีฟองน้ำมูกพองยุบและตัว Z ลอยขึ้น
- *   wake    สะดุ้งตื่น มีเครื่องหมาย ! ลุกขึ้น หยิบเชือกกลับมาโดดต่อ
+ *   wake    สะดุ้งตื่น มีเครื่องหมาย ! ลุกขึ้น หยิบเชือกกลับมาโดดต่อ (2 วิ)
+ *           เชือกถูกหยิบจากพื้น แกว่งขึ้นหลังตัว แล้วหมุนต่อเนื่องเข้าท่ากระโดดโดยไม่กระตุก
  */
 
 type Phase = "jump" | "wind" | "tired" | "sitdown" | "rest" | "sleep" | "wake";
@@ -62,7 +63,7 @@ function phaseMs(p: Phase, speed: number) {
     case "sleep":
       return 5200;
     case "wake":
-      return 1500;
+      return 2000;
   }
 }
 
@@ -157,6 +158,28 @@ const JUMP_HAND_R = { x: HR.x, y: HR.y - 7 }; // 325,196
 const JUMP_HANDLE_L = [138, 194, 170, 205];
 const JUMP_HANDLE_R = [312, 204, 344, 191];
 
+// มือและด้ามเชือกขณะกระโดด ณ จังหวะที่ i (ใช้ต่อท่าตื่นเข้ากับท่ากระโดดให้เนียน)
+const jumpHandL = (i: number): P => ({
+  x: HL.x + OFF_L[i][0] + 2,
+  y: HL.y + OFF_L[i][1] + 2,
+});
+const jumpHandR = (i: number): P => ({
+  x: HR.x + OFF_R[i][0] - 2,
+  y: HR.y + OFF_R[i][1] + 2,
+});
+const jumpHandleL = (i: number): number[] => [
+  140 + OFF_L[i][0],
+  203 + OFF_L[i][1],
+  172 + OFF_L[i][0],
+  214 + OFF_L[i][1],
+];
+const jumpHandleR = (i: number): number[] => [
+  310 + OFF_R[i][0],
+  213 + OFF_R[i][1],
+  342 + OFF_R[i][0],
+  200 + OFF_R[i][1],
+];
+
 // ยืนเหนื่อย: แขนห้อยข้างตัว ไหล่ตกลงเล็กน้อย
 const SH_L_T = { x: 184, y: 146 };
 const SH_R_T = { x: 296, y: 144 };
@@ -185,6 +208,21 @@ const FLOOR_R = { x: 328, y: 296 };
 const FLOOR_ROPE = ropePath(FLOOR_L, FLOOR_R, 304, -4, -16);
 const FLOOR_HANDLE_L = [134, 290, 152, 296];
 const FLOOR_HANDLE_R = [328, 296, 346, 290];
+
+// เชือกที่ถูกหิ้วขึ้นมาห้อยในมือ (ตอนลุกขึ้นยืนแล้ว ก่อนแกว่งขึ้นหลังตัว)
+const HANG_HANDLE_L = [
+  TIRED_HAND_L.x - 17,
+  TIRED_HAND_L.y - 7,
+  TIRED_HAND_L.x + 15,
+  TIRED_HAND_L.y + 4,
+];
+const HANG_HANDLE_R = [
+  TIRED_HAND_R.x - 13,
+  TIRED_HAND_R.y + 8,
+  TIRED_HAND_R.x + 19,
+  TIRED_HAND_R.y - 5,
+];
+const HANG_ROPE = ropePath(TIRED_HAND_L, TIRED_HAND_R, 294, -4, -16);
 
 const CSS = `
 @keyframes jmp-jump {
@@ -385,14 +423,15 @@ const CSS = `
   74% { transform: scale(1.3); opacity: 0; }
   75% { transform: scale(.2); opacity: 0; }
 }
+/* ตัว Z แต่ละตัวมีตำแหน่งของตัวเอง (กำหนดที่ x,y) ลอยแค่เล็กน้อยแล้วจาง จึงไม่ซ้อนกัน */
 @keyframes jmp-zzz {
   0% { opacity: 0; transform: translate(0, 0) scale(.5) rotate(-12deg); }
   20% { opacity: 1; }
-  80% { opacity: .9; }
-  100% { opacity: 0; transform: translate(26px, -46px) scale(1.25) rotate(10deg); }
+  75% { opacity: .9; }
+  100% { opacity: 0; transform: translate(8px, -10px) scale(1.1) rotate(8deg); }
 }
 
-/* ---------- ตื่น + ลุกขึ้น ---------- */
+/* ---------- ตื่น + ลุกขึ้น (ท่าสุดท้ายตรงกับจังหวะแรกของท่ากระโดด) ---------- */
 @keyframes jmp-standup {
   0%   { transform: translateY(${SIT_Y}px) scale(1, 1); }
   15%  { transform: translateY(${SIT_Y}px) scale(1, 1); }
@@ -406,7 +445,31 @@ const CSS = `
   0%   { transform: translateY(17px) rotate(15deg); }
   12%  { transform: translateY(-3px) rotate(-11deg); }
   26%  { transform: translateY(7px) rotate(5deg); }
-  100% { transform: translateY(5px) rotate(2deg); }
+  100% { transform: translateY(4px) rotate(0deg); }
+}
+@keyframes jmp-wake-afro {
+  0%   { transform: translateY(0); }
+  12%  { transform: translateY(-5px); }
+  26%  { transform: translateY(4px); }
+  100% { transform: translateY(5.5px); }
+}
+@keyframes jmp-wake-stache {
+  0%   { transform: translateY(0); }
+  12%  { transform: translateY(-2px); }
+  100% { transform: translateY(1px); }
+}
+@keyframes jmp-wake-tail {
+  0%   { transform: rotate(0deg); }
+  20%  { transform: rotate(-14deg); }
+  50%  { transform: rotate(10deg); }
+  100% { transform: rotate(-4deg); }
+}
+@keyframes jmp-wake-shadow {
+  0%   { transform: scale(1.42); opacity: .2; }
+  40%  { transform: scale(1.3); opacity: .18; }
+  46%  { transform: scale(.85); opacity: .1; }
+  58%  { transform: scale(1.15); opacity: .2; }
+  100% { transform: scale(1.08); opacity: .2; }
 }
 @keyframes jmp-legs-unfold {
   0%, 32% { opacity: 0; transform: scaleY(.4); }
@@ -422,7 +485,7 @@ const CSS = `
   0% { opacity: 0; transform: scaleY(.1); }
   10% { opacity: 1; transform: scaleY(1.45); }
   40% { opacity: 1; transform: scaleY(1.2); }
-  100% { opacity: 1; transform: scaleY(.75); }
+  100% { opacity: 1; transform: scaleY(.89); }
 }
 @keyframes jmp-arc-out {
   0%, 6% { opacity: 1; }
@@ -431,7 +494,7 @@ const CSS = `
 @keyframes jmp-mouth-pop {
   0% { transform: scale(1.1, 1.5); }
   40% { transform: scale(1.1, 1.25); }
-  100% { transform: scale(1, .25); }
+  100% { transform: scale(1, .33); }
 }
 @keyframes jmp-bang {
   0% { opacity: 0; transform: translateY(8px) scale(.3); }
@@ -513,18 +576,22 @@ const CSS = `
   transform-box: fill-box;
   transform-origin: center;
 }
-.jmp-z1 { animation-delay: .9s; }
-.jmp-z2 { animation-delay: 1.9s; }
-.jmp-z3 { animation-delay: 2.9s; }
+.jmp-z1 { animation-delay: .6s; }
+.jmp-z2 { animation-delay: 1.6s; }
+.jmp-z3 { animation-delay: 2.6s; }
 
-.jmp-standup { animation-name: jmp-standup; animation-duration: 1.5s; transform-origin: 0 0; }
-.jmp-wake-head { animation-name: jmp-wake-head; animation-duration: 1.5s; transform-origin: 0 0; }
-.jmp-legs-unfold { animation-name: jmp-legs-unfold; animation-duration: 1.5s; transform-origin: 0 0; }
-.jmp-shoe-out { animation-name: jmp-shoe-out; animation-duration: 1.5s; }
-.jmp-eye-pop { animation-name: jmp-eye-pop; animation-duration: 1.5s; }
-.jmp-arc-out { animation-name: jmp-arc-out; animation-duration: 1.5s; }
-.jmp-mouth-pop { animation-name: jmp-mouth-pop; animation-duration: 1.5s; }
-.jmp-bang { animation-name: jmp-bang; animation-duration: 1.5s; transform-box: fill-box; transform-origin: center bottom; }
+.jmp-standup { animation-name: jmp-standup; animation-duration: 2s; transform-origin: 0 0; }
+.jmp-wake-head { animation-name: jmp-wake-head; animation-duration: 2s; transform-origin: 0 0; }
+.jmp-wake-afro { animation-name: jmp-wake-afro; animation-duration: 2s; }
+.jmp-wake-stache { animation-name: jmp-wake-stache; animation-duration: 2s; }
+.jmp-wake-tail { animation-name: jmp-wake-tail; animation-duration: 2s; transform-origin: 0 0; }
+.jmp-wake-shadow { animation-name: jmp-wake-shadow; animation-duration: 2s; }
+.jmp-legs-unfold { animation-name: jmp-legs-unfold; animation-duration: 2s; transform-origin: 0 0; }
+.jmp-shoe-out { animation-name: jmp-shoe-out; animation-duration: 2s; }
+.jmp-eye-pop { animation-name: jmp-eye-pop; animation-duration: 2s; }
+.jmp-arc-out { animation-name: jmp-arc-out; animation-duration: 2s; }
+.jmp-mouth-pop { animation-name: jmp-mouth-pop; animation-duration: 2s; }
+.jmp-bang { animation-name: jmp-bang; animation-duration: 2s; transform-box: fill-box; transform-origin: center bottom; }
 
 @media (prefers-reduced-motion: reduce) {
   .jmp-anim, .jmp-slow, .jmp-once, .jmp-zzz { animation: none; }
@@ -535,7 +602,10 @@ const CSS = `
 /* ตัวช่วยทำแอนิเมชัน SMIL แบบครั้งเดียวค้างท่าสุดท้าย                       */
 /* ------------------------------------------------------------------ */
 
+type Ease = string | string[];
+
 // attr ที่ animate, v = ค่าแต่ละช่วง, dur = วินาที, kt = สัดส่วนเวลา (เริ่ม 0 จบ 1), begin = หน่วงเริ่ม
+// ease = เส้นโค้งความเร็ว (สตริงเดียวใช้ทุกช่วง หรือใส่เป็นอาร์เรย์แยกแต่ละช่วง)
 function A({
   attr,
   v,
@@ -549,7 +619,7 @@ function A({
   dur: number;
   kt?: number[];
   begin?: number;
-  ease?: string;
+  ease?: Ease;
 }) {
   const n = v.length;
   const times = kt ?? v.map((_, i) => i / (n - 1));
@@ -562,7 +632,9 @@ function A({
       begin={begin ? `${begin}s` : "0s"}
       fill="freeze"
       calcMode="spline"
-      keySplines={Array.from({ length: n - 1 }, () => ease).join(";")}
+      keySplines={Array.from({ length: n - 1 }, (_, i) =>
+        Array.isArray(ease) ? ease[i] : ease
+      ).join(";")}
     />
   );
 }
@@ -573,11 +645,13 @@ function Handle({
   dur,
   kt,
   begin,
+  ease,
 }: {
   frames: number[][];
   dur: number;
   kt?: number[];
   begin?: number;
+  ease?: Ease;
 }) {
   const f0 = frames[0];
   return (
@@ -591,7 +665,15 @@ function Handle({
       strokeLinecap="round"
     >
       {(["x1", "y1", "x2", "y2"] as const).map((a, i) => (
-        <A key={a} attr={a} v={frames.map((f) => f[i])} dur={dur} kt={kt} begin={begin} />
+        <A
+          key={a}
+          attr={a}
+          v={frames.map((f) => f[i])}
+          dur={dur}
+          kt={kt}
+          begin={begin}
+          ease={ease}
+        />
       ))}
     </line>
   );
@@ -603,16 +685,18 @@ function Hand({
   dur,
   kt,
   begin,
+  ease,
 }: {
   pts: P[];
   dur: number;
   kt?: number[];
   begin?: number;
+  ease?: Ease;
 }) {
   return (
     <circle cx={pts[0].x} cy={pts[0].y} r="13" fill={SKIN}>
-      <A attr="cx" v={pts.map((p) => p.x)} dur={dur} kt={kt} begin={begin} />
-      <A attr="cy" v={pts.map((p) => p.y)} dur={dur} kt={kt} begin={begin} />
+      <A attr="cx" v={pts.map((p) => p.x)} dur={dur} kt={kt} begin={begin} ease={ease} />
+      <A attr="cy" v={pts.map((p) => p.y)} dur={dur} kt={kt} begin={begin} ease={ease} />
     </circle>
   );
 }
@@ -623,15 +707,17 @@ function Arm({
   dur,
   kt,
   begin,
+  ease,
 }: {
   paths: string[];
   dur: number;
   kt?: number[];
   begin?: number;
+  ease?: Ease;
 }) {
   return (
     <path d={paths[0]} fill="none" stroke={SKIN} strokeWidth="26" strokeLinecap="round">
-      <A attr="d" v={paths} dur={dur} kt={kt} begin={begin} />
+      <A attr="d" v={paths} dur={dur} kt={kt} begin={begin} ease={ease} />
     </path>
   );
 }
@@ -642,11 +728,13 @@ function Rope({
   dur,
   kt,
   begin,
+  ease,
 }: {
   paths: string[];
   dur: number;
   kt?: number[];
   begin?: number;
+  ease?: Ease;
 }) {
   return (
     <path
@@ -657,7 +745,7 @@ function Rope({
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <A attr="d" v={paths} dur={dur} kt={kt} begin={begin} />
+      <A attr="d" v={paths} dur={dur} kt={kt} begin={begin} ease={ease} />
     </path>
   );
 }
@@ -730,15 +818,15 @@ const HEAD_SLEEP: HeadCls = {
   tail: "jmp-slow jmp-t-tail",
 };
 
-// ตื่น: ตาเบิกโพลง ปากอ้าตกใจ
+// ตื่น: ตาเบิกโพลง ปากอ้าตกใจ แล้วค่อยๆ ปรับท่าทุกชิ้นให้ตรงกับจังหวะแรกของท่ากระโดด
 const HEAD_WAKE: HeadCls = {
   head: "",
-  afro: "",
+  afro: "jmp-once jmp-wake-afro",
   eyes: "jmp-once jmp-fb jmp-eye-pop",
   blink: "",
   mouth: "jmp-once jmp-fb jmp-mouth-pop",
-  stache: "",
-  tail: "",
+  stache: "jmp-once jmp-wake-stache",
+  tail: "jmp-once jmp-wake-tail",
 };
 
 // หัว: เอียงและเด้งรอบคอ (จุดหมุนอยู่ที่คอ 240,135)
@@ -1274,68 +1362,119 @@ function SleepScene({ effects }: { effects: boolean }) {
       />
       {effects && <Shadow rx={74} />}
 
-      {/* ตัว Z ลอยขึ้นไปทางขวาบน */}
+      {/* ตัว Z ใหญ่ขึ้น แต่ละตัวมีช่องของตัวเอง เรียงเฉียงขึ้นไปทางขวาบน (พ้นผมที่เอียง) ไม่ซ้อนกัน */}
       <g
         fill={TANK}
         fontWeight="800"
         fontFamily="ui-rounded, 'Arial Rounded MT Bold', system-ui, sans-serif"
         stroke="#1B2A21"
-        strokeWidth="1"
+        strokeWidth="1.5"
         paintOrder="stroke"
       >
-        <text className="jmp-zzz jmp-z1" x="300" y="112" fontSize="18">Z</text>
-        <text className="jmp-zzz jmp-z2" x="304" y="100" fontSize="24">Z</text>
-        <text className="jmp-zzz jmp-z3" x="308" y="86" fontSize="30">Z</text>
+        <text className="jmp-zzz jmp-z1" x="342" y="100" fontSize="30">Z</text>
+        <text className="jmp-zzz jmp-z2" x="352" y="58" fontSize="40">Z</text>
+        <text className="jmp-zzz jmp-z3" x="352" y="10" fontSize="52">Z</text>
       </g>
     </g>
   );
 }
 
-// ท่าตื่น + ลุกขึ้น (1.5 วิ): สะดุ้ง มี ! -> ย่อตัวแล้วดีดขึ้น -> หยิบเชือกกลับมาโดดต่อ
-function WakeScene({ effects }: { effects: boolean }) {
-  const T = 1.5;
-  const kt = [0, 0.2, 0.46, 0.62, 0.9, 1];
+// ท่าตื่น + ลุกขึ้น (2 วิ): สะดุ้ง มี ! -> ย่อตัวแล้วดีดขึ้น -> หิ้วเชือกขึ้นจากพื้น
+// -> แกว่งเชือกขึ้นหลังตัว -> ท่าสุดท้ายตรงกับจังหวะแรกของท่ากระโดดพอดี (ตัว หัว ผม มือ เชือก เงา)
+function WakeScene({ effects, speed }: { effects: boolean; speed: number }) {
+  const T = 2;
+  // ความยาวช่วงละจังหวะของเชือกตอนโดดจริง (สัดส่วนของ T) ให้ความเร็วตรงกัน
+  const s = Math.min(speed / 8 / T, 0.08);
+  // 0 นั่ง | .14 นั่งค้าง(สะดุ้ง) | .34 แขนห้อย | .46 หิ้วเชือกขึ้นมา | 3 จังหวะสุดท้าย = เชือกขึ้นหลังตัวเข้าท่าโดด
+  const kt = [0, 0.14, 0.34, 0.46, 1 - 3 * s, 1 - 2 * s, 1 - s, 1];
+  // ช่วงท้ายใช้ linear เพื่อไม่ให้สะดุดตามจังหวะ เหมือนท่ากระโดดจริง
+  const ease = [
+    ".4 0 .2 1",
+    ".4 0 .2 1",
+    ".4 0 .2 1",
+    ".5 0 1 1",
+    "0 0 1 1",
+    "0 0 1 1",
+    "0 0 1 1",
+  ];
+  const UP = [5, 6, 7, 8]; // จังหวะที่เชือกขึ้นหลังตัว
+
+  const armsL = [REST_ARM_L, REST_ARM_L, TIRED_ARM_L, TIRED_ARM_L, ...UP.map((i) => ARM_L_VALUES[i])];
+  const armsR = [REST_ARM_R, REST_ARM_R, TIRED_ARM_R, TIRED_ARM_R, ...UP.map((i) => ARM_R_VALUES[i])];
+  const handsL: P[] = [REST_HAND_L, REST_HAND_L, TIRED_HAND_L, TIRED_HAND_L, ...UP.map(jumpHandL)];
+  const handsR: P[] = [REST_HAND_R, REST_HAND_R, TIRED_HAND_R, TIRED_HAND_R, ...UP.map(jumpHandR)];
+  const handlesL = [FLOOR_HANDLE_L, FLOOR_HANDLE_L, FLOOR_HANDLE_L, HANG_HANDLE_L, ...UP.map(jumpHandleL)];
+  const handlesR = [FLOOR_HANDLE_R, FLOOR_HANDLE_R, FLOOR_HANDLE_R, HANG_HANDLE_R, ...UP.map(jumpHandleR)];
+  const ropes = [FLOOR_ROPE, FLOOR_ROPE, FLOOR_ROPE, HANG_ROPE, ...UP.map((i) => ROPE_VALUES[i])];
+
+  // เชือกอยู่หน้าตัวตอนกองพื้น แล้วสลับไปอยู่หลังตัวตอนเริ่มแกว่งขึ้น (เหมือนท่ากระโดดช่วงขึ้น)
+  const swapAt = kt[3];
+
   return (
     <g>
-      {effects && <Shadow rx={70} />}
+      {/* เงาค่อยๆ หดตามตัวที่ลุกและตรงกับเงาท่ากระโดดตอนจบ */}
+      {effects && (
+        <ellipse
+          className="jmp-once jmp-fb jmp-wake-shadow"
+          cx="240"
+          cy="296"
+          rx="52"
+          ry="7"
+          fill="#000"
+        />
+      )}
 
-      {/* แขนยกจากพื้น -> ห้อย -> กลับไปจับเชือก */}
-      <Arm
-        paths={[REST_ARM_L, REST_ARM_L, TIRED_ARM_L, TIRED_ARM_L, ARM_L_VALUES[0], ARM_L_VALUES[0]]}
-        dur={T}
-        kt={kt}
-      />
-      <Arm
-        paths={[REST_ARM_R, REST_ARM_R, TIRED_ARM_R, TIRED_ARM_R, ARM_R_VALUES[0], ARM_R_VALUES[0]]}
-        dur={T}
-        kt={kt}
-      />
-      <Hand
-        pts={[REST_HAND_L, REST_HAND_L, TIRED_HAND_L, TIRED_HAND_L, JUMP_HAND_L, JUMP_HAND_L]}
-        dur={T}
-        kt={kt}
-      />
-      <Hand
-        pts={[REST_HAND_R, REST_HAND_R, TIRED_HAND_R, TIRED_HAND_R, JUMP_HAND_R, JUMP_HAND_R]}
-        dur={T}
-        kt={kt}
-      />
+      {/* เชือกช่วงหลังตัว (โผล่หลังหิ้วขึ้นมา) */}
+      <g opacity="0">
+        <animate
+          attributeName="opacity"
+          values="0;1"
+          keyTimes={`0;${swapAt}`}
+          calcMode="discrete"
+          dur={`${T}s`}
+          fill="freeze"
+        />
+        <Rope paths={ropes} dur={T} kt={kt} ease={ease} />
+      </g>
+
+      {/* แขนยกจากพื้น -> ห้อย -> แกว่งกลับไปจับเชือก (อยู่หลังลำตัว) */}
+      <Arm paths={armsL} dur={T} kt={kt} ease={ease} />
+      <Arm paths={armsR} dur={T} kt={kt} ease={ease} />
 
       {/* ขากางออกมาตอนลุก */}
       <Pivot cx={240} cy={FEET_Y} cls="jmp-once jmp-legs-unfold">
         <Legs l="" r="" />
       </Pivot>
 
-      {/* ลำตัวย่อแล้วดีดขึ้น */}
+      {/* ลำตัวย่อแล้วดีดขึ้น จบด้วยท่าย่อเตรียมโดด (ตรงกับจังหวะแรกของท่ากระโดด) */}
       <Pivot cx={240} cy={FEET_Y} cls="jmp-once jmp-standup">
         <Shorts />
-        <g transform="translate(0 6)">
+        <g transform="translate(0 5)">
           <Belly cls="" />
         </g>
         <Pivot cx={240} cy={135} cls="jmp-once jmp-wake-head">
           <Head c={HEAD_WAKE} arcs="out" />
         </Pivot>
       </Pivot>
+
+      {/* เชือกช่วงหน้าตัว (ตอนกองพื้น/เพิ่งหิ้วขึ้น) หายไปเมื่อสลับไปอยู่หลังตัว */}
+      <g>
+        <animate
+          attributeName="opacity"
+          values="1;0"
+          keyTimes={`0;${swapAt}`}
+          calcMode="discrete"
+          dur={`${T}s`}
+          fill="freeze"
+        />
+        <Rope paths={ropes} dur={T} kt={kt} ease={ease} />
+        <Handle frames={handlesL} dur={T} kt={kt} ease={ease} />
+        <Handle frames={handlesR} dur={T} kt={kt} ease={ease} />
+      </g>
+
+      {/* รองเท้าวงกลมหายไปตอนขากางออก */}
+      <FrontShoe cx={195} cy={300} cls="jmp-once jmp-shoe-out" />
+      <FrontShoe cx={285} cy={300} cls="jmp-once jmp-shoe-out" />
 
       {/* เครื่องหมาย ! ตอนสะดุ้งตื่น */}
       <text
@@ -1353,18 +1492,21 @@ function WakeScene({ effects }: { effects: boolean }) {
         !
       </text>
 
-      {/* เชือกกับด้ามถูกหยิบขึ้นมา */}
-      <Rope
-        paths={[FLOOR_ROPE, FLOOR_ROPE, ROPE_VALUES[0]]}
-        dur={T}
-        kt={[0, 0.6, 0.96]}
-      />
-      <Handle frames={[FLOOR_HANDLE_L, FLOOR_HANDLE_L, JUMP_HANDLE_L]} dur={T} kt={[0, 0.6, 0.92]} />
-      <Handle frames={[FLOOR_HANDLE_R, FLOOR_HANDLE_R, JUMP_HANDLE_R]} dur={T} kt={[0, 0.6, 0.92]} />
-
-      {/* รองเท้าวงกลมหายไปตอนขากางออก */}
-      <FrontShoe cx={195} cy={300} cls="jmp-once jmp-shoe-out" />
-      <FrontShoe cx={285} cy={300} cls="jmp-once jmp-shoe-out" />
+      {/* ด้ามเชือกช่วงหลังตัว + มือ (วาดทับหน้าเหมือนท่ากระโดด) */}
+      <g opacity="0">
+        <animate
+          attributeName="opacity"
+          values="0;1"
+          keyTimes={`0;${swapAt}`}
+          calcMode="discrete"
+          dur={`${T}s`}
+          fill="freeze"
+        />
+        <Handle frames={handlesL} dur={T} kt={kt} ease={ease} />
+        <Handle frames={handlesR} dur={T} kt={kt} ease={ease} />
+      </g>
+      <Hand pts={handsL} dur={T} kt={kt} ease={ease} />
+      <Hand pts={handsR} dur={T} kt={kt} ease={ease} />
     </g>
   );
 }
@@ -1452,7 +1594,7 @@ export default function Jumper({
       {cur === "sitdown" && <SitDownScene effects={effects} />}
       {cur === "rest" && <RestScene effects={effects} />}
       {cur === "sleep" && <SleepScene effects={effects} />}
-      {cur === "wake" && <WakeScene effects={effects} />}
+      {cur === "wake" && <WakeScene effects={effects} speed={speed} />}
     </svg>
   );
 }
