@@ -5,10 +5,13 @@ import { currentUser } from "../../../lib/auth";
 import { addUserPoints, getUserPoints } from "../../../lib/points";
 import { goalOfDate } from "../../components/goal";
 import {
+  BANS_COLLECTION,
   activeBanOf,
   hasBanForDay,
+  idVariants,
   publicBan,
   recomputeDayPoints,
+  thaiYmd,
 } from "../../../lib/bans";
 
 const unauthorized = () =>
@@ -143,7 +146,23 @@ export async function GET() {
       .limit(300)
       .toArray();
 
-    const sessions = docs.map((d) => ({
+    // วันที่ถูกแบน (ยังไม่ถูกปลด) ถูกตัดคะแนนทั้งวัน: ซ่อนรอบของวันนั้น
+    // ข้อมูลจริงยังอยู่ใน DB ปลดแบนแล้วรอบกลับมา
+    const bannedDays = new Set(
+      (
+        (await db
+          .collection(BANS_COLLECTION)
+          .find(
+            { userId: { $in: idVariants(user.id) }, revokedAt: null },
+            { projection: { day: 1 } }
+          )
+          .toArray()) as unknown as { day: string }[]
+      ).map((b) => b.day)
+    );
+
+    const sessions = docs
+      .filter((d) => bannedDays.size === 0 || !bannedDays.has(thaiYmd(d.ts as number)))
+      .map((d) => ({
       id: d.ts as number,
       ts: d.ts as number,
       total: d.total as number,

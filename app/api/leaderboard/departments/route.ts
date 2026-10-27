@@ -4,6 +4,7 @@ import { currentUser } from "../../../../lib/auth";
 import { getDb } from "../../../../lib/mongodb";
 import { DEPARTMENTS, getCompany } from "../../../components/departments";
 import { branchLabel, getBranch } from "../../../components/branches";
+import { voidedDeptFilter } from "../../../../lib/bans";
 
 const TOP = 20; // จำนวนกลุ่ม (แผนก/สาขา) ที่แสดง
 const MEMBERS_PER_GROUP = 100; // จำกัดสมาชิกที่ส่งต่อกลุ่ม (กัน response ใหญ่)
@@ -62,12 +63,15 @@ export async function GET() {
     const db = await getDb();
 
     // รวมคะแนนทั้งหมด ไม่กรองช่วงเวลา
+    // ตัดแถวของคนที่ถูกแบนในวันที่ถูกแบนออก (ไม่นับเข้าแผนก) null = ไม่มีแบน
+    const voidFilter = await voidedDeptFilter(db);
     const rows = await db
       .collection("dept_jumps")
       .aggregate<{
         _id: { u: ObjectId; d: number | null; b: number | null };
         total: number;
       }>([
+        ...(voidFilter ? [{ $match: voidFilter }] : []),
         {
           $group: {
             _id: { u: "$userId", d: "$departmentId", b: "$branchId" },
@@ -236,4 +240,4 @@ export async function GET() {
     console.error("dept leaderboard failed", e);
     return NextResponse.json({ error: "เซิร์ฟเวอร์ผิดพลาด" }, { status: 500 });
   }
-} 
+}

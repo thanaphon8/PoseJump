@@ -685,6 +685,7 @@ export default function Home() {
   const activeBan =
     user?.ban && user.ban.expiresAt > Date.now() ? user.ban : null;
   const banId = activeBan?.id ?? null;
+  const banExpiresAt = activeBan?.expiresAt ?? 0;
   const loggedIn = !!user;
 
   // เด้งหน้าต่างแจ้งแบนครั้งเดียวต่อรายการแบน (ปิดแล้วไม่เด้งซ้ำ จนกว่าจะถูกแบนรายการใหม่)
@@ -698,6 +699,26 @@ export default function Home() {
     banSeenRef.current = banId;
     setBanOpen(true);
   }, [banId]);
+
+  // สถานะแบนเปลี่ยน (โดนแบน/ปลดแบน/หมดเวลา): โหลดประวัติใหม่ ให้ยอดวันที่ถูกแบนเป็น 0
+  const prevBanRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!loggedIn) {
+      prevBanRef.current = null;
+      return;
+    }
+    if (prevBanRef.current === banId) return;
+    prevBanRef.current = banId;
+    loadRemote();
+  }, [banId, loggedIn, loadRemote]);
+
+  // ถึงเวลาหมดแบนพอดี render ใหม่ให้ปุ่มเล่นกลับมาทันที
+  useEffect(() => {
+    if (!banExpiresAt) return;
+    const ms = Math.min(Math.max(banExpiresAt - Date.now(), 0) + 300, 2 ** 31 - 1);
+    const t = setTimeout(() => setBanTick((n) => n + 1), ms);
+    return () => clearTimeout(t);
+  }, [banExpiresAt]);
 
   // ทุก 1 นาที: อัปเดตสถานะแบนจากเซิร์ฟเวอร์ (โดนแบน/ปลดแบน/หมดเวลา) และ render ใหม่
   useEffect(() => {

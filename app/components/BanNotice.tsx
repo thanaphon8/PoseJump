@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ICONS, Icon } from "./auth-shared";
 import type { UserBan } from "./auth-shared";
 
@@ -14,6 +14,29 @@ const fmtDateTime = (t: number) =>
     hour: "2-digit",
     minute: "2-digit",
   });
+
+// เวลาถอยหลังจนหมดแบน อัปเดตทุกวินาที รูปแบบ HH:MM:SS
+export function BanCountdown({
+  expiresAt,
+  className = "",
+}: {
+  expiresAt: number;
+  className?: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [expiresAt]);
+  const s = Math.max(0, Math.ceil((expiresAt - now) / 1000));
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    <span className={`tabular-nums ${className}`} role="timer">
+      {p(Math.floor(s / 3600))}:{p(Math.floor((s % 3600) / 60))}:{p(s % 60)}
+    </span>
+  );
+}
 
 export default function BanNotice({
   ban,
@@ -57,6 +80,11 @@ export default function BanNotice({
           <p className="mt-1 break-words text-[15px] font-semibold">
             {ban.reason}
           </p>
+          <div className="mt-3 text-[12px] text-[#6B7A6E]">เหลือเวลาอีก</div>
+          <BanCountdown
+            expiresAt={ban.expiresAt}
+            className="mt-1 block text-[32px] font-bold leading-none text-[#D92D20]"
+          />
           <div className="mt-3 text-[12px] text-[#6B7A6E]">หมดแบนเมื่อ</div>
           <p className="mt-1 text-[15px] font-semibold tabular-nums">
             {fmtDateTime(ban.expiresAt)}

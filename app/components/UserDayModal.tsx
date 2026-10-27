@@ -473,6 +473,14 @@ export default function UserDayModal({
               {fmtLong(date)}
             </div>
           </div>
+          {state === "ok" && data && !data.ban && isToday && !banOpen && (
+            <button
+              onClick={() => setBanOpen(true)}
+              className="flex h-10 shrink-0 items-center rounded-full bg-[#FDE8E6] px-4 text-[14px] font-semibold text-[#D92D20] transition-transform hover:bg-[#FBD5D1] active:scale-95"
+            >
+              แบน
+            </button>
+          )}
           <button
             onClick={onClose}
             aria-label="ปิด"
@@ -481,6 +489,89 @@ export default function UserDayModal({
             ×
           </button>
         </div>
+
+        {/* แถบแบน: อยู่ใต้หัวหน้าต่าง ไม่ทับข้อมูลผู้เล่น */}
+        {state === "ok" && data && (data.ban || banOpen) && (
+          <div className="mx-5 mb-3 shrink-0 rounded-2xl bg-white p-4 lg:mx-7">
+            {data.ban ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="rounded-full bg-[#FDE8E6] px-3 py-0.5 text-[12px] font-semibold text-[#D92D20]">
+                      {data.ban.active ? "ถูกแบนอยู่" : "หมดแบนแล้ว"}
+                    </span>
+                    <span className="text-[12px] text-[#6B7A6E]">
+                      หมด {fmtDateTime(data.ban.expiresAt)}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 break-words text-[14px]">
+                    เหตุผล: {data.ban.reason}
+                  </p>
+                  <p className="mt-0.5 text-[12px] text-[#6B7A6E]">
+                    แบนเมื่อ {fmtDateTime(data.ban.bannedAt)} · คะแนนของ{" "}
+                    {fmtLong(data.ban.day)} ไม่ถูกนับ
+                  </p>
+                  {banErr && (
+                    <p role="alert" className="mt-1 text-[13px] text-[#D92D20]">
+                      {banErr}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => doUnban(data.ban!.id)}
+                  disabled={banBusy}
+                  className="h-10 shrink-0 rounded-full bg-[#1B2A21] px-5 text-[14px] font-semibold text-[#C9F25B] transition-transform active:scale-95 disabled:opacity-50"
+                >
+                  ปลดแบน (กรณีตรวจผิด)
+                </button>
+              </div>
+            ) : (
+              <>
+                <label className="block">
+                  <span className="mb-1.5 block text-[13px] font-medium text-[#6B7A6E]">
+                    เหตุผลที่แบน (แบน 24 ชั่วโมง)
+                  </span>
+                  <textarea
+                    value={banReason}
+                    onChange={(e) => {
+                      setBanReason(e.target.value);
+                      setBanErr("");
+                    }}
+                    maxLength={500}
+                    rows={2}
+                    className="w-full rounded-2xl bg-[#F3F6EC] p-3 text-[14px] outline-none ring-2 ring-transparent focus:ring-[#C9F25B]"
+                  />
+                </label>
+                {banErr && (
+                  <p role="alert" className="mt-2 text-[13px] text-[#D92D20]">
+                    {banErr}
+                  </p>
+                )}
+                <p className="mt-2 text-[12px] text-[#6B7A6E]">
+                  เล่นไม่ได้ 24 ชม. คะแนนวันนี้ถูกตัด point ที่ได้วันนี้ถูกดึงคืนและให้คนถัดไปแทน
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => {
+                      setBanOpen(false);
+                      setBanErr("");
+                    }}
+                    className="h-10 flex-1 rounded-full bg-[#EEF2E4] text-[14px] font-semibold sm:flex-none sm:px-6"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    onClick={doBan}
+                    disabled={banBusy || banReason.trim().length < 3}
+                    className="h-10 flex-1 rounded-full bg-[#D92D20] text-[14px] font-semibold text-white transition-transform active:scale-95 disabled:opacity-40 sm:flex-none sm:px-6"
+                  >
+                    {banBusy ? "กำลังแบน" : "ยืนยันแบน"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 lg:overflow-hidden lg:px-7 lg:pb-6">
           {state === "loading" && (
@@ -513,7 +604,7 @@ export default function UserDayModal({
             <div className="lg:grid lg:h-full lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-5">
               {/* ซ้าย: สรุปยอด */}
               <div className="flex flex-col lg:min-h-0 lg:overflow-y-auto">
-                <section className="rounded-3xl bg-[#1B2A21] px-5 py-6 text-center text-white lg:py-8">
+                <section className="shrink-0 rounded-3xl bg-[#1B2A21] px-5 py-6 text-center text-white lg:py-8">
                   <div className="text-[13px] text-white/60">ครั้งรวมวันนี้</div>
                   <div className="mt-1 flex items-baseline justify-center gap-2">
                     <span className="text-[64px] font-semibold leading-none tabular-nums tracking-tight lg:text-[72px]">
@@ -538,7 +629,7 @@ export default function UserDayModal({
                   </div>
                 </section>
 
-                <div className="mt-3 grid grid-cols-3 gap-3">
+                <div className="mt-3 grid shrink-0 grid-cols-3 gap-3">
                   <StatBox label="รอบ">{fmtNum(data.rounds)}</StatBox>
                   <StatBox label="ถึงเป้า">
                     <span className="text-[18px] lg:text-[17px]">
@@ -556,100 +647,8 @@ export default function UserDayModal({
                   </StatBox>
                 </div>
 
-                <section className="mt-3 rounded-2xl bg-white p-4">
-                  {data.ban ? (
-                    <>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="rounded-full bg-[#FDE8E6] px-3 py-0.5 text-[12px] font-semibold text-[#D92D20]">
-                          {data.ban.active ? "ถูกแบนอยู่" : "หมดแบนแล้ว"}
-                        </span>
-                        <span className="text-[12px] text-[#6B7A6E]">
-                          หมด {fmtDateTime(data.ban.expiresAt)}
-                        </span>
-                      </div>
-                      <p className="mt-2 break-words text-[14px]">
-                        เหตุผล: {data.ban.reason}
-                      </p>
-                      <p className="mt-1 text-[12px] text-[#6B7A6E]">
-                        แบนเมื่อ {fmtDateTime(data.ban.bannedAt)} · คะแนนของ{" "}
-                        {fmtLong(data.ban.day)} ไม่ถูกนับ
-                      </p>
-                      <button
-                        onClick={() => doUnban(data.ban!.id)}
-                        disabled={banBusy}
-                        className="mt-3 h-10 w-full rounded-full bg-[#1B2A21] text-[14px] font-semibold text-[#C9F25B] transition-transform active:scale-95 disabled:opacity-50"
-                      >
-                        ปลดแบน (กรณีตรวจผิด)
-                      </button>
-                    </>
-                  ) : isToday ? (
-                    banOpen ? (
-                      <>
-                        <label className="block">
-                          <span className="mb-1.5 block text-[13px] font-medium text-[#6B7A6E]">
-                            เหตุผลที่แบน (แบน 24 ชั่วโมง)
-                          </span>
-                          <textarea
-                            value={banReason}
-                            onChange={(e) => {
-                              setBanReason(e.target.value);
-                              setBanErr("");
-                            }}
-                            maxLength={500}
-                            rows={3}
-                            className="w-full rounded-2xl bg-[#F3F6EC] p-3 text-[14px] outline-none ring-2 ring-transparent focus:ring-[#C9F25B]"
-                          />
-                        </label>
-                        {banErr && (
-                          <p role="alert" className="mt-2 text-[13px] text-[#D92D20]">
-                            {banErr}
-                          </p>
-                        )}
-                        <div className="mt-3 flex gap-2">
-                          <button
-                            onClick={() => {
-                              setBanOpen(false);
-                              setBanErr("");
-                            }}
-                            className="h-10 flex-1 rounded-full bg-[#EEF2E4] text-[14px] font-semibold"
-                          >
-                            ยกเลิก
-                          </button>
-                          <button
-                            onClick={doBan}
-                            disabled={banBusy || banReason.trim().length < 3}
-                            className="h-10 flex-1 rounded-full bg-[#D92D20] text-[14px] font-semibold text-white transition-transform active:scale-95 disabled:opacity-40"
-                          >
-                            {banBusy ? "กำลังแบน" : "ยืนยันแบน"}
-                          </button>
-                        </div>
-                        <p className="mt-2 text-[12px] text-[#6B7A6E]">
-                          บัญชีนี้จะเล่นไม่ได้ 24 ชม. คะแนนของวันนี้ถูกตัด
-                          point ที่ได้วันนี้ถูกดึงคืนและให้คนถัดไปแทน
-                        </p>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => setBanOpen(true)}
-                        className="h-10 w-full rounded-full bg-[#FDE8E6] text-[14px] font-semibold text-[#D92D20] transition-transform active:scale-95"
-                      >
-                        แบนผู้เล่นคนนี้
-                      </button>
-                    )
-                  ) : (
-                    <p className="text-[12px] text-[#6B7A6E]">
-                      แบนได้เฉพาะตอนดูวันนี้
-                    </p>
-                  )}
-                  {banErr && !banOpen && (
-                    <p role="alert" className="mt-2 text-[13px] text-[#D92D20]">
-                      {banErr}
-                    </p>
-                  )}
-                </section>
-
                 {orgRows.length > 0 && (
-                  <dl className="mt-3 divide-y divide-[#E3EAD6] overflow-hidden rounded-2xl bg-white text-[14px]">
+                  <dl className="mt-3 shrink-0 divide-y divide-[#E3EAD6] overflow-hidden rounded-2xl bg-white text-[14px]">
                     {orgRows.map(([label, value]) => (
                       <div
                         key={label}

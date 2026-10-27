@@ -12,6 +12,7 @@ import type { User } from "./auth-shared";
 import type { Session } from "./History";
 import DepartmentCard from "./DepartmentCard";
 import Jumper from "./Jumper";
+import { BanCountdown } from "./BanNotice";
 import { GOAL_WEEKS, fmtGoalRange, goalRangeOfTime } from "./goal";
 
 /* ------------------------------------------------------------------ */
@@ -408,7 +409,12 @@ export default function Home({
               <div className="text-[16px] font-bold">
                 บัญชีถูกแบน เล่นไม่ได้ชั่วคราว
               </div>
-              <p className="mt-1 text-[13px]">
+              <div className="mt-2 text-[12px]">เหลือเวลาอีก</div>
+              <BanCountdown
+                expiresAt={banned.expiresAt}
+                className="block text-[34px] font-bold leading-none"
+              />
+              <p className="mt-2 text-[13px]">
                 หมดแบน{" "}
                 {new Date(banned.expiresAt).toLocaleString("th-TH", {
                   day: "numeric",
