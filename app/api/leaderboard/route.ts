@@ -8,11 +8,11 @@ import { purgeOrphansThrottled } from "../../../lib/purge-orphans";
 // ถ้า path ไม่ตรงโครงสร้างโปรเจกต์ ให้แก้บรรทัดนี้ให้ชี้ไปที่ branches.ts
 import { orgOf, getBranch, branchLabel } from "../../components/branches";
 import { getDepartment } from "../../components/departments";
-import { goalOfDate } from "../../components/goal";
+import { goalOfDate, gameDayStart, gameDayKey } from "../../components/goal";
 import { voidedUsersOfDay } from "../../../lib/bans";
 
-// "วันนี้" นับตามเวลาไทย (UTC+7) อันดับจึงรีเซ็ตตอนเที่ยงคืนของไทย
-const TZ_OFFSET = 7 * 3_600_000;
+// "วันนี้" นับเป็นวันเกมตามเวลาไทย (UTC+7) อันดับจึงรีเซ็ตตอน 06:00 น. ของไทย
+// (ดูตัวช่วย gameDayStart / gameDayKey และ RESET_HOUR ใน app/components/goal.ts)
 const DAY = 864e5;
 const TOP = 100;
 
@@ -64,9 +64,10 @@ export async function GET() {
   await connection();
   try {
     const now = Date.now();
-    const start = Math.floor((now + TZ_OFFSET) / DAY) * DAY - TZ_OFFSET;
-    // ต้องตรงกับ key ที่ /api/sessions ใช้บันทึก goal_hits (YYYY-MM-DD เวลาไทย)
-    const dayStr = new Date(start + TZ_OFFSET).toISOString().slice(0, 10);
+    // ต้นวันเกม = 06:00 น. ไทยล่าสุด
+    const start = gameDayStart(now);
+    // ต้องตรงกับ key ที่ /api/sessions ใช้บันทึก goal_hits (YYYY-MM-DD ของวันเกม เวลาไทย)
+    const dayStr = gameDayKey(now);
 
     const user = await currentUser();
     const myId = user ? String(user.id) : null;

@@ -20,6 +20,8 @@ import {
   goalOfTime,
   goalRangeOfTime,
   fmtGoalRange,
+  gameDayStart,
+  gameDayKey,
 } from "./components/goal";
 import type { Tab, NavItem } from "./components/Navbar";
 import type { Session } from "./components/History";
@@ -107,10 +109,9 @@ function formatTime(ms: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const dayKey = (t: number) => {
-  const d = new Date(t);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-};
+// key ของ "วันเกม" (เวลาไทย รีเซ็ต 06:00 น.) ใช้จัดกลุ่มประวัติ/ภาพยืนยัน/สตรีค
+// ไม่ขึ้นกับเขตเวลาของเครื่อง ต้องตรงกับ dayKey ใน app/components/Pose.tsx
+const dayKey = gameDayKey;
 const fmtNum = (n: number) => n.toLocaleString("en-US");
 
 /* ------------------------------------------------------------------ */
@@ -584,7 +585,7 @@ export default function Home() {
   const [target, setTarget] = useState(100);
   const [history, setHistory] = useState<Session[]>([]);
   const [now0, setNow0] = useState<number | null>(null);
-  // เป้ารายวันเปลี่ยนตามสัปดาห์ (app/components/goal.ts) คำนวณจากวันนี้เวลาไทย
+  // เป้ารายวันเปลี่ยนตามสัปดาห์ (app/components/goal.ts) คำนวณจากวันเกมนี้ (เวลาไทย รีเซ็ต 06:00 น.)
   // ต้องตรงกับที่ /api/sessions ใช้ตัดสิน point
   const dailyGoal = now0 ? goalOfTime(now0) : DEFAULT_DAILY_GOAL;
   // ช่วงวันที่ของสัปดาห์นี้ เช่น "1 – 7 พ.ย." (null ถ้าอยู่นอกตาราง)
@@ -846,6 +847,36 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [user, remoteReady, mode, seconds, target, dailyGoal, facing, sound]);
 
+  // ถึง 06:00 น. เวลาไทย (เวลารีเซ็ต): เริ่มวันเกมใหม่เอง ไม่ต้องให้ผู้ใช้รีเฟรช
+  // อัปเดตวันที่/เป้า ล้างภาพยืนยันของเมื่อวาน และโหลดประวัติจากเซิร์ฟเวอร์ใหม่
+  // กลับมาเปิดแอป/แท็บ (เช่น มือถือพักจอข้ามคืน) ก็อัปเดตวันที่ทันที
+  useEffect(() => {
+    const t0 = Date.now();
+    const ms = Math.min(gameDayStart(t0) + DAY - t0 + 500, 2 ** 31 - 1);
+    const t = setTimeout(() => {
+      setNow0(Date.now());
+      shotsRef.current = EMPTY_SHOTS;
+      setShots(EMPTY_SHOTS);
+      if (userRef.current) loadRemote();
+    }, ms);
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      const n = Date.now();
+      // ข้ามวันเกมระหว่างที่แอปอยู่เบื้องหลัง
+      if (now0 !== null && gameDayKey(n) !== gameDayKey(now0)) {
+        shotsRef.current = EMPTY_SHOTS;
+        setShots(EMPTY_SHOTS);
+        if (userRef.current) loadRemote();
+      }
+      setNow0(n);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [now0, loadRemote]);
+
   useEffect(() => {
     document.title = APP_NAME;
     let meta = document.querySelector('meta[name="theme-color"]');
@@ -947,7 +978,13 @@ export default function Home() {
             }
             return r.ok ? r.json() : null;
           })
-          .then((d: { points?: number } | null) => {
+          .then((d: { points?: number; voided?: boolean } | null) => {
+            // รอบข้าม 06:00 น.: เซิร์ฟเวอร์ไม่บันทึกและไม่ให้ point เอารอบนี้ออกจากประวัติในเครื่อง
+            if (d?.voided) {
+              setHistory((p) => p.filter((s) => s.id !== entry.id));
+              setError("รอบนี้ข้ามเวลารีเซ็ต 06:00 น. คะแนนเป็นโมฆะ");
+              return;
+            }
             const pts = d?.points;
             if (typeof pts === "number") {
               if (pts > before) setReward({ gain: POINT_REWARD, total: pts });
@@ -968,6 +1005,15 @@ export default function Home() {
     setPhase("setup");
   }, []);
 
+  // รอบที่ข้าม 06:00 น. เป็นโมฆะ: ไม่บันทึกประวัติ ไม่ส่งเซิร์ฟเวอร์ กลับหน้าหลักพร้อมข้อความ
+  // และขยับวันที่เป็นวันเกมใหม่ทันที
+  const handleVoid = useCallback(() => {
+    setError("รอบนี้ข้ามเวลารีเซ็ต 06:00 น. คะแนนเป็นโมฆะ เริ่มรอบใหม่ได้เลย");
+    setNow0(Date.now());
+    setTab("home");
+    setPhase("setup");
+  }, []);
+
   const handlePoints = useCallback((pts: number) => {
     setUser((u) => (u && u.points !== pts ? { ...u, points: pts } : u));
   }, []);
@@ -984,7 +1030,7 @@ export default function Home() {
       return;
     }
     setGyroPromise(Pose.prime(facing, audioRef));
-    // อัปเดตวันที่ ให้เป้าตรงวันนี้ถ้าเปิดแอปค้างข้ามเที่ยงคืน
+    // อัปเดตวันที่ ให้เป้าตรงวันนี้ถ้าเปิดแอปค้างข้ามเวลารีเซ็ต 06:00 น.
     setNow0(Date.now());
     setError(null);
     setDayMode(false);
@@ -1092,6 +1138,7 @@ export default function Home() {
           onShot={commitShot}
           onVideoSize={(w: number, h: number) => setVdim({ w, h })}
           onFinish={handleFinish}
+          onVoid={handleVoid}
           onCancel={goHome}
           onError={handleError}
         />
@@ -1186,12 +1233,17 @@ export default function Home() {
 
   if (!summary) return null;
 
+  // วันที่ที่แสดงในหน้า "ผลวันนี้" = วันเกม (ก่อน 06:00 น. ยังนับเป็นวันก่อนหน้า)
   const sub = dayMode
-    ? `${new Date(now0 ?? Date.now()).toLocaleDateString("th-TH", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      })} · ${todayList.length} รอบ`
+    ? `${new Date(gameDayStart(now0 ?? Date.now())).toLocaleDateString(
+        "th-TH",
+        {
+          timeZone: "Asia/Bangkok",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }
+      )} · ${todayList.length} รอบ`
     : summary.reason === "time"
       ? "ครบเวลา"
       : summary.reason === "count"

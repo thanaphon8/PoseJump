@@ -41,6 +41,7 @@ type Board = {
   entries: BoardEntry[];
   me: { rank: number; total: number; gap: number; points: number } | null;
   count: number;
+  // เวลารีเซ็ตรอบถัดไป (epoch ms) = 06:00 น. เวลาไทย คำนวณจากเซิร์ฟเวอร์
   resetAt: number;
 };
 
@@ -440,7 +441,7 @@ function PromoBanner({
           >
             {done
               ? "เป้าหมายวันนี้สำเร็จ โดดต่อเพื่อไต่อันดับและทำสถิติใหม่ได้เลย"
-              : "ทำเป้าหมายรายวันให้สำเร็จก่อนคนอื่น เซ็ตทุกเที่ยงคืนเวลาไทย"}
+              : "ทำเป้าหมายรายวันให้สำเร็จก่อนคนอื่น เซ็ตทุก 06:00 น. เวลาไทย"}
           </p>
         </div>
       </div>
@@ -487,6 +488,16 @@ function RankView(props: RankProps) {
     const t = setInterval(loadBoard, 30000);
     return () => clearInterval(t);
   }, [loadBoard, props.username]);
+
+  // ถึงเวลารีเซ็ต (06:00 น. เวลาไทย) โหลดอันดับใหม่ทันที ให้ตารางเป็นของวันเกมใหม่เลย
+  // ไม่ต้องรอรอบรีเฟรช 30 วินาที (+1 วินาทีกันเซิร์ฟเวอร์ยังนับเป็นวันเดิม)
+  const resetAt = board?.resetAt;
+  useEffect(() => {
+    if (!resetAt) return;
+    const ms = Math.min(Math.max(resetAt - Date.now(), 0) + 1000, 2 ** 31 - 1);
+    const t = setTimeout(loadBoard, ms);
+    return () => clearTimeout(t);
+  }, [resetAt, loadBoard]);
 
   // โหลดอันดับแผนกรอไว้ล่วงหน้า กดสลับไปแท็บ "แผนก" แล้วเห็นข้อมูลทันที ไม่ต้องรอ
   useEffect(() => {
@@ -688,7 +699,7 @@ function RankView(props: RankProps) {
               </>
             )}
             <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-              {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุกเที่ยงคืนเวลาไทย
+              {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุก 06:00 น. เวลาไทย
             </p>
           </section>
           <div className="pj-stagger space-y-4">

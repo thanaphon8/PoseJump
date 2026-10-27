@@ -7,6 +7,7 @@ import type {
   PoseLandmarker,
 } from "@mediapipe/tasks-vision";
 import { APP_NAME, ICONS, Icon, Logo } from "./auth-shared";
+import { gameDayKey, gameDayStart } from "./goal";
 
 /* ------------------------------------------------------------------ */
 /* ค่าคงที่                                                             */
@@ -70,6 +71,8 @@ type PoseProps = {
   onShot: (kind: "start" | "end", img: string | null) => void;
   onVideoSize: (w: number, h: number) => void;
   onFinish: (result: Summary) => void;
+  // รอบที่ข้ามเวลารีเซ็ต 06:00 น. เป็นโมฆะ ไม่เรียก onFinish ไม่บันทึกคะแนน
+  onVoid: () => void;
   onCancel: () => void;
   onError: (message: string) => void;
 };
@@ -475,10 +478,9 @@ function formatTime(ms: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const dayKey = (t: number) => {
-  const d = new Date(t);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-};
+// key ของ "วันเกม" (รีเซ็ต 06:00 น. เวลาไทย) ใช้เทียบกับ shots.day
+// ต้องตรงกับ dayKey ใน app/page.tsx (ทั้งคู่ใช้ gameDayKey จาก ./goal)
+const dayKey = gameDayKey;
 
 function summarize(
   ts: number[],
@@ -744,6 +746,9 @@ function PoseSession(props: PoseProps) {
   const detectorRef = useRef(createJumpDetector());
   // ยอดรวมวันนี้ก่อนเริ่มรอบปัจจุบัน
   const todayBaseRef = useRef(0);
+  // เวลาสิ้นสุดวันเกมของรอบปัจจุบัน (epoch ms) = 06:00 น. ถัดไป
+  // ถ้ารอบยังวิ่งอยู่ตอนถึงเวลานี้ รอบนั้นเป็นโมฆะ
+  const dayEndRef = useRef(Infinity);
 
   const sessionRef = useRef(0);
   const runningRef = useRef(false);
@@ -984,6 +989,16 @@ function PoseSession(props: PoseProps) {
     [stopCamera]
   );
 
+  // รอบที่ยังวิ่งอยู่ตอนถึง 06:00 น. เป็นโมฆะ: ปิดกล้อง ไม่ส่งผล ไม่บันทึกคะแนน
+  // แจ้ง app/page.tsx ให้กลับหน้าหลักพร้อมข้อความ
+  const voidRound = useCallback(() => {
+    if (!runningRef.current) return;
+    runningRef.current = false;
+    if (settingsRef.current.sound) beep(P.current.audioRef.current, 440, 0.4);
+    stopCamera();
+    P.current.onVoid();
+  }, [stopCamera]);
+
   const loop = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -1115,6 +1130,12 @@ function PoseSession(props: PoseProps) {
     }
 
     if (runningRef.current) {
+      // ถึง 06:00 น. ระหว่างรอบ: รอบนี้ข้ามวันเกม เป็นโมฆะทันที
+      if (Date.now() >= dayEndRef.current) {
+        voidRound();
+        return;
+      }
+
       const el = now - startRef.current;
       const tick = Math.floor(el / 100);
       if (tick !== lastTickRef.current) {
@@ -1152,7 +1173,7 @@ function PoseSession(props: PoseProps) {
     }
 
     rafRef.current = requestAnimationFrame(loop);
-  }, [finish, captureShot]);
+  }, [finish, captureShot, voidRound]);
 
   const stopAll = useCallback(() => {
     sessionRef.current++;
@@ -1321,6 +1342,8 @@ function PoseSession(props: PoseProps) {
       startRef.current = performance.now();
       lastTickRef.current = -1;
       lastWarnRef.current = -1;
+      // วันเกมของรอบนี้สิ้นสุดตอน 06:00 น. ถัดไป ถ้ารอบยังไม่จบตอนนั้น = โมฆะ
+      dayEndRef.current = gameDayStart(Date.now()) + 864e5;
       runningRef.current = true;
       phaseRef.current = "running";
       setPhase("running");

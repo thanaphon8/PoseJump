@@ -3,7 +3,7 @@ import type { Db } from "mongodb";
 import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
 import { addUserPoints, getUserPoints } from "../../../lib/points";
-import { goalOfDate } from "../../components/goal";
+import { goalOfDate, gameDayStart, gameDayKey } from "../../components/goal";
 import {
   BANS_COLLECTION,
   activeBanOf,
@@ -28,17 +28,14 @@ const num = (v: unknown, min: number, max: number) =>
 /* ระบบ point                                                           */
 /* ------------------------------------------------------------------ */
 
-// 100 คนแรกของวัน (เวลาไทย) ที่ทำเป้าหมายรายวันสำเร็จ ได้ 50 point
+// 100 คนแรกของวัน (วันเกม เวลาไทย รีเซ็ต 06:00 น.) ที่ทำเป้าหมายรายวันสำเร็จ ได้ 50 point
 const POINT_QUOTA = 100;
 const POINT_REWARD = 50;
 
-const TH_OFFSET = 7 * 3600_000; // ไทย UTC+7 ไม่มี DST
-
-// ช่วงวันไทยของเวลา t [start, end) เป็น epoch ms
+// ช่วงวันเกมของเวลา t [start, end) เป็น epoch ms (วันใหม่เริ่ม 06:00 น. ไทย)
 function thaiDay(t: number) {
-  const start = Math.floor((t + TH_OFFSET) / 864e5) * 864e5 - TH_OFFSET;
-  const key = new Date(start + TH_OFFSET).toISOString().slice(0, 10); // YYYY-MM-DD
-  return { start, end: start + 864e5, key };
+  const start = gameDayStart(t);
+  return { start, end: start + 864e5, key: gameDayKey(t) };
 }
 
 // สร้าง index ครั้งเดียวต่อโปรเซส
@@ -75,7 +72,7 @@ async function settleDailyGoal(db: Db, userId: unknown, now: number) {
   const already = await db.collection("goal_hits").findOne({ userId, day: key });
   if (already) return;
 
-  // ยอดรวมวันนี้ (วันไทย) ของผู้ใช้
+  // ยอดรวมวันนี้ (วันเกม เวลาไทย) ของผู้ใช้
   const agg = await db
     .collection("jumps")
     .aggregate<{ total: number }>([
@@ -224,6 +221,18 @@ export async function POST(req: Request) {
     const now = Date.now();
     let ts = typeof b.ts === "number" && Number.isFinite(b.ts) ? b.ts : now;
     if (Math.abs(now - ts) > 864e5) ts = now;
+
+    // รอบที่ข้ามเวลารีเซ็ต 06:00 น. (เริ่มก่อน จบหลัง) เป็นโมฆะ ไม่บันทึก ไม่ให้ point
+    // กันไว้อีกชั้นกรณีฝั่งหน้าเว็บไม่ได้ตัดรอบเอง หรือส่งเวลามาคลาดเคลื่อน
+    if (
+      gameDayKey(ts - durationMs) !== gameDayKey(ts) ||
+      gameDayKey(ts) !== gameDayKey(now)
+    ) {
+      return NextResponse.json(
+        { ok: true, voided: true, points: await getUserPoints(user.id) },
+        { status: 200 }
+      );
+    }
 
     await ensureIndexes(db);
 

@@ -2,11 +2,12 @@ import { NextResponse, connection } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
+import { gameDayKey } from "../../components/goal";
 
 // วางที่ app/api/snapshot/route.ts
 // POST: รับ FormData: kind ("first-of-day" | "near-goal"), photo (ไฟล์รูป)
 //   อัปโหลดขึ้น Google Drive ผ่าน Apps Script ตัวเดียวกับรูปโปรไฟล์ (ลงโฟลเดอร์ย่อยตาม kind)
-//   เก็บได้ 1 รูปต่อ kind ต่อผู้ใช้ต่อวัน (วันเวลาไทย) ถ้ามีแล้วจะไม่บันทึกซ้ำ
+//   เก็บได้ 1 รูปต่อ kind ต่อผู้ใช้ต่อวัน (วันเกม รีเซ็ต 06:00 น. เวลาไทย) ถ้ามีแล้วจะไม่บันทึกซ้ำ
 // GET: คืนรูปของผู้ใช้ที่ล็อกอินสำหรับวันนี้ (หรือ ?date=YYYY-MM-DD)
 
 const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
@@ -27,14 +28,9 @@ const fail = (error: string, status: number) =>
 const toId = (v: ObjectId | string) =>
   typeof v === "string" && ObjectId.isValid(v) ? new ObjectId(v) : v;
 
-// วันที่เวลาไทย YYYY-MM-DD (คำนวณฝั่งเซิร์ฟเวอร์ ไม่เชื่อค่าจากเครื่องผู้ใช้)
-const thaiDate = (d = new Date()) =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Bangkok",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
+// วันที่ของวันเกม YYYY-MM-DD (เวลาไทย รีเซ็ต 06:00 น.)
+// คำนวณฝั่งเซิร์ฟเวอร์ ไม่เชื่อค่าจากเครื่องผู้ใช้
+const thaiDate = (d = new Date()) => gameDayKey(d.getTime());
 
 type SnapshotDoc = {
   userId: ObjectId | string;

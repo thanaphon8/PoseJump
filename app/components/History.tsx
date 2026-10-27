@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ICONS, Icon, Segmented } from "./auth-shared";
+import { gameDayStart, TH_MS, RESET_MS } from "./goal";
 
 /* ------------------------------------------------------------------ */
 /* หน้าประวัติ (แท็บ "ประวัติ")                                          */
@@ -38,11 +39,18 @@ function formatTime(ms: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// เลื่อนเวลาให้ getUTC*() ได้วันที่ของ "วันเกม" (เวลาไทย รีเซ็ต 06:00 น.)
+// เช่น 22 ต.ค. 02:00 น. ไทย → นับเป็นวันที่ 21 ต.ค.
+const gameShift = (t: number) => new Date(t + TH_MS - RESET_MS);
+
+// key วันเกมแบบเดือนเริ่มที่ 0 (ตรงกับ key ที่ Calendar สร้าง `${y}-${m}-${d}`)
+// ต้องตรงกับ dayKey ใน app/page.tsx ในแง่ขอบเขตวัน (ทั้งคู่ใช้ 06:00 น. ไทย)
 const dayKey = (t: number) => {
-  const d = new Date(t);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const d = gameShift(t);
+  return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
 };
-const startOfDay = (t: number) => new Date(t).setHours(0, 0, 0, 0);
+// ต้นวันเกม (06:00 น. ไทยล่าสุด) เป็น epoch ms
+const startOfDay = gameDayStart;
 const fmtDate = (t: number) =>
   new Date(t).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 const fmtClock = (t: number) =>
@@ -91,6 +99,8 @@ function BarChart({
 }
 
 // ปฏิทินรายเดือน: วันที่ทำถึงเป้าหมายต่อวันจะขึ้นติ๊กถูกสีเขียว
+// คิดเป็นวันเกม (เวลาไทย รีเซ็ต 06:00 น.) และคำนวณเดือนด้วย UTC ล้วน
+// ไม่ขึ้นกับเขตเวลาของเครื่องผู้ใช้
 function Calendar({
   history,
   goal,
@@ -102,12 +112,14 @@ function Calendar({
 }) {
   const [offset, setOffset] = useState(0);
 
-  const base = new Date(now);
-  const first = new Date(base.getFullYear(), base.getMonth() + offset, 1);
-  const y = first.getFullYear();
-  const m = first.getMonth();
-  const daysIn = new Date(y, m + 1, 0).getDate();
-  const lead = first.getDay();
+  const base = gameShift(now);
+  const first = new Date(
+    Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + offset, 1)
+  );
+  const y = first.getUTCFullYear();
+  const m = first.getUTCMonth();
+  const daysIn = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const lead = first.getUTCDay();
 
   const totals = new Map<string, number>();
   history.forEach((s) => {
@@ -144,6 +156,7 @@ function Calendar({
             {first.toLocaleDateString("th-TH", {
               month: "long",
               year: "numeric",
+              timeZone: "UTC",
             })}
           </div>
           <div className="text-[12px] text-[#6B7A6E]">ถึงเป้า {hits} วัน</div>
@@ -328,6 +341,7 @@ export default function History({
   const [hTab, setHTab] = useState<"week" | "month">("week");
   const [hPage, setHPage] = useState(1);
 
+  // ต้นวันเกมวันนี้ (06:00 น. ไทยล่าสุด)
   const sod = now0 ? startOfDay(now0) : 0;
 
   const sumRange = (from: number, to: number) =>
@@ -338,7 +352,8 @@ export default function History({
       ? Array.from({ length: 7 }, (_, i) => {
           const from = sod - (6 - i) * DAY;
           return {
-            label: DAY_NAMES[new Date(from).getDay()],
+            // ชื่อวันของวันเกมนั้น (อิงเวลาไทย ไม่ขึ้นกับเขตเวลาเครื่อง)
+            label: DAY_NAMES[gameShift(from).getUTCDay()],
             value: sumRange(from, from + DAY),
           };
         })

@@ -1,13 +1,15 @@
 import { ObjectId, type Db } from "mongodb";
 import { addUserPoints } from "./points";
+import { gameDayKey, RESET_MS } from "../app/components/goal";
 
 // ระบบแบนผู้เล่น (collection "bans")
 // - แบนครั้งละ 24 ชม. นับจากเวลาที่กดแบน
 // - ผู้เล่นที่ถูกแบนจะเล่น/บันทึกรอบไม่ได้ (ดู app/api/sessions/route.ts)
-// - คะแนนของ "วันไทยที่ถูกแบน" ถูกตัดออกทั้งหมด เหมือนไม่ได้เล่นวันนั้น
+// - คะแนนของ "วันเกมที่ถูกแบน" ถูกตัดออกทั้งหมด เหมือนไม่ได้เล่นวันนั้น
 //   (ยอดโดด ลำดับถึงเป้า point ยอดสะสมแผนก) โดยไม่ลบข้อมูลจริง กรองออกตอนอ่าน
 //   ปลดแบนแล้วทุกอย่างกลับมา
-// - แบนข้ามเที่ยงคืน: ตัดเฉพาะวันที่กดแบน วันถัดไปแค่เล่นไม่ได้จนกว่าจะหมดเวลา
+// - วันเกม = 06:00 น. ถึง 05:59 น. ของวันถัดไป เวลาไทย (ดู app/components/goal.ts)
+// - แบนข้ามเวลารีเซ็ต 06:00 น.: ตัดเฉพาะวันเกมที่กดแบน วันถัดไปแค่เล่นไม่ได้จนกว่าจะหมดเวลา
 
 export const BANS_COLLECTION = "bans";
 export const BAN_MS = 24 * 3600e3;
@@ -26,7 +28,7 @@ export type BanDoc = {
   reason: string;
   bannedAt: number;
   expiresAt: number;
-  day: string; // วันไทย YYYY-MM-DD ที่กดแบน (วันที่ถูกตัดคะแนน)
+  day: string; // วันเกม YYYY-MM-DD ที่กดแบน (วันที่ถูกตัดคะแนน)
   bannedBy: string;
   revokedAt: number | null;
   revokedBy: string | null;
@@ -41,12 +43,14 @@ export type PublicBan = {
   active: boolean;
 };
 
-export const thaiYmd = (t: number) =>
-  new Date(t + TZ_MS).toISOString().slice(0, 10);
+// YYYY-MM-DD ของวันเกม (รีเซ็ต 06:00 น. เวลาไทย) ที่เวลา t
+// ชื่อเดิมคงไว้เพราะไฟล์อื่น import ใช้อยู่
+export const thaiYmd = (t: number) => gameDayKey(t);
 
+// เวลาเริ่มวันเกม (epoch ms) ของ YYYY-MM-DD = 06:00 น. ไทยของวันนั้น
 const dayStartOfYmd = (ymd: string) => {
   const [y, m, d] = ymd.split("-").map(Number);
-  return Date.UTC(y, m - 1, d) - TZ_MS;
+  return Date.UTC(y, m - 1, d) - TZ_MS + RESET_MS;
 };
 
 const toId = (v: unknown) =>
@@ -200,7 +204,7 @@ export type BanResult =
   | { ok: true; ban: BanDoc }
   | { ok: false; error: "notfound" | "active" | "exists" };
 
-// แบนผู้ใช้ 24 ชม. นับจากตอนนี้ แล้วตัดคะแนนของวันนี้ (วันไทย)
+// แบนผู้ใช้ 24 ชม. นับจากตอนนี้ แล้วตัดคะแนนของวันเกมนี้
 export async function banUser(
   db: Db,
   userId: string,
