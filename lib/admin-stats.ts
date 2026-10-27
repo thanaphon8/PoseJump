@@ -10,6 +10,14 @@ import {
 } from "../app/components/branches";
 import { getCompany, getDepartment } from "../app/components/departments";
 import { DEFAULT_DAILY_GOAL, goalOfDate } from "../app/components/goal";
+import {
+  bansOfDay,
+  idVariants,
+  publicBan,
+  voidedUsersByDay,
+  voidedUsersOfDay,
+  type PublicBan,
+} from "./bans";
 
 // ชื่อ collection ที่เก็บรอบกระโดด ดูจาก app/api/sessions/route.ts
 // ห้ามใช้ "sessions" เพราะ lib/auth.ts ใช้เก็บเซสชันล็อกอิน
@@ -89,6 +97,20 @@ export type DayEntry = {
   points: number;
   avatarUrl: string | null;
   org: OrgInfo;
+};
+
+// ผู้เล่นที่ถูกแบนในวันนั้น (คะแนนของวันนั้นถูกตัด ไม่อยู่ในอันดับ)
+// total / rounds = ยอดที่เคยโดดในวันนั้น (ไว้ให้ admin ดูเท่านั้น ไม่นับเข้ารวม)
+export type BannedEntry = {
+  userId: string;
+  name: string;
+  username: string;
+  employeeId: string | null;
+  avatarUrl: string | null;
+  org: OrgInfo;
+  total: number;
+  rounds: number;
+  ban: PublicBan;
 };
 
 type Row = Record<string, unknown>;
@@ -221,9 +243,13 @@ export async function withOrg<T extends { userId: string }>(
 }
 
 // ผลของทุกคนในหนึ่งวัน
+// ผู้เล่นที่ถูกแบนในวันนั้นถูกตัดออกก่อนคำนวณ เหมือนไม่ได้เล่น
+// ลำดับถึงเป้าและ point ของคนที่เหลือจึงเลื่อนขึ้นเอง (คนที่ 101 ขึ้นมาแทน)
 export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
   // ลบข้อมูลของบัญชีที่ไม่มีอยู่แล้วออกจากฐานข้อมูลจริง (ไม่เกิน 1 ครั้ง/นาที)
   await purgeOrphansThrottled(db);
+
+  const voided = await voidedUsersOfDay(db, ymdOf(start));
 
   const rows = (await db
     .collection(JUMPS_COLLECTION)
@@ -232,11 +258,66 @@ export async function computeDay(db: Db, start: number): Promise<DayEntry[]> {
     .toArray()) as Row[];
   if (rows.length === 0) return [];
   const userMap = await loadUserMap(db, rows);
-  return buildDay(aliveOnly(rows, userMap), userMap);
+  const kept = aliveOnly(rows, userMap).filter(
+    (r) => !voided.has(String(r.userId))
+  );
+  return buildDay(kept, userMap);
+}
+
+// ผู้เล่นที่ถูกแบนในวันนั้น (ไว้ให้หน้า admin แสดงและปลดแบน)
+export async function computeDayBanned(
+  db: Db,
+  start: number
+): Promise<BannedEntry[]> {
+  const bans = await bansOfDay(db, ymdOf(start));
+  if (bans.length === 0) return [];
+
+  const userMap = await loadUserMap(
+    db,
+    bans.map((b) => ({ userId: b.userId }))
+  );
+  const rows = (await db
+    .collection(JUMPS_COLLECTION)
+    .find({
+      ts: { $gte: start, $lt: start + DAY_MS },
+      userId: { $in: bans.flatMap((b) => idVariants(b.userId)) },
+    })
+    .toArray()) as Row[];
+
+  const sums = new Map<string, { total: number; rounds: number }>();
+  for (const r of rows) {
+    const k = String(r.userId);
+    const a = sums.get(k) ?? { total: 0, rounds: 0 };
+    a.total += Number(r.total) || 0;
+    a.rounds += 1;
+    sums.set(k, a);
+  }
+
+  const now = Date.now();
+  const out: BannedEntry[] = [];
+  for (const b of bans) {
+    const k = String(b.userId);
+    const u = userMap.get(k);
+    if (!u) continue; // บัญชีถูกลบแล้ว
+    const s = sums.get(k) ?? { total: 0, rounds: 0 };
+    out.push({
+      userId: k,
+      name: String(u.nickname ?? u.display ?? "?"),
+      username: String(u.username ?? ""),
+      employeeId: employeeIdOf(u),
+      avatarUrl: avatarOf(u),
+      org: orgFromUser(u),
+      total: s.total,
+      rounds: s.rounds,
+      ban: publicBan(b, now),
+    });
+  }
+  return out.sort((a, b) => b.ban.bannedAt - a.ban.bannedAt);
 }
 
 // ผลหลายวันในครั้งเดียว (ดึงฐานข้อมูลรอบเดียว) start ต้องเป็นเที่ยงคืนเวลาไทย
 // คืนอาร์เรย์ยาว (end - start) / 1 วัน แต่ละช่อง = ผลของวันนั้น
+// วันที่ผู้เล่นถูกแบนถูกตัดออก (ยอดโดด ลำดับ point) เหมือนไม่ได้เล่นวันนั้น
 export async function computeRange(
   db: Db,
   start: number,
@@ -256,11 +337,17 @@ export async function computeRange(
     .toArray()) as Row[];
   if (rows.length === 0) return out;
 
+  const voidedByDay = await voidedUsersByDay(db, ymdOf(start), ymdOf(end - 1));
+
   const userMap = await loadUserMap(db, rows);
   const buckets: Row[][] = Array.from({ length: n }, () => []);
   for (const r of aliveOnly(rows, userMap)) {
     const i = Math.floor((Number(r.ts) - start) / DAY_MS);
-    if (i >= 0 && i < n) buckets[i].push(r);
+    if (i >= 0 && i < n) {
+      if (voidedByDay.get(ymdOf(start + i * DAY_MS))?.has(String(r.userId)))
+        continue;
+      buckets[i].push(r);
+    }
   }
   buckets.forEach((b, i) => {
     out[i] = buildDay(b, userMap);

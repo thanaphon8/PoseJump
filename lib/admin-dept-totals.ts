@@ -1,4 +1,5 @@
 import type { Db, ObjectId } from "mongodb";
+import { voidedDeptFilter } from "./bans";
 
 // ตัววัดที่รวม: "total" = รวมค่า total ในแถว (จำนวนครั้ง), "rows" = นับจำนวนแถว dept_jumps
 type Metric = "total" | "rows";
@@ -7,12 +8,16 @@ export async function computeDeptTotals(
   db: Db,
   metric: Metric = "total"
 ): Promise<Record<string, number>> {
+  // ตัดแถวของคนที่ถูกแบนในวันที่ถูกแบนออก (ไม่นับเข้าคะแนนแผนก) null = ไม่มีแบน
+  const voidFilter = await voidedDeptFilter(db);
+
   const rows = await db
     .collection("dept_jumps")
     .aggregate<{
       _id: { u: ObjectId; d: number | null; b: number | null };
       total: number;
     }>([
+      ...(voidFilter ? [{ $match: voidFilter }] : []),
       {
         $group: {
           _id: { u: "$userId", d: "$departmentId", b: "$branchId" },

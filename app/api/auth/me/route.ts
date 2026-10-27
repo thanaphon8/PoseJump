@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { currentUser } from "../../../../lib/auth";
 import { getDb } from "../../../../lib/mongodb";
 import { getUserPoints } from "../../../../lib/points";
+import { activeBanOf, publicBan, type PublicBan } from "../../../../lib/bans";
 
 export async function GET() {
   await connection();
@@ -12,6 +13,8 @@ export async function GET() {
 
     // employeeId อ่านจาก DB โดยตรง (currentUser อาจไม่ได้ส่งฟิลด์นี้มา)
     let employeeId: string | undefined;
+    // แบนที่ยังมีผลอยู่ (null = ไม่ถูกแบน) หน้าแรกใช้โชว์ popup และปิดปุ่มเล่น
+    let ban: PublicBan | null = null;
     if (u) {
       const db = await getDb();
       const doc = await db
@@ -22,6 +25,8 @@ export async function GET() {
         );
       employeeId =
         typeof doc?.employeeId === "string" ? doc.employeeId : undefined;
+      const b = await activeBanOf(db, u.id);
+      ban = b ? publicBan(b) : null;
     }
 
     return NextResponse.json(
@@ -36,6 +41,7 @@ export async function GET() {
               companyId: u.companyId ?? null,
               departmentId: u.departmentId ?? null,
               branchId: u.branchId ?? null,
+              ban,
             }
           : null,
       },

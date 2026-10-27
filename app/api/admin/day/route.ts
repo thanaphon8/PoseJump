@@ -5,12 +5,15 @@ import {
   POINT_QUOTA,
   POINT_REWARD,
   computeDay,
+  computeDayBanned,
   dayStartOf,
   validYmd,
   ymdOf,
 } from "@/lib/admin-stats";
 
 // GET /api/admin/day?date=YYYY-MM-DD (ไม่ส่ง = วันนี้เวลาไทย)
+// entries = ผู้เล่นที่นับคะแนน (ไม่รวมคนที่ถูกแบนในวันนั้น)
+// banned  = ผู้เล่นที่ถูกแบนในวันนั้น (ไว้แสดงและปลดแบน)
 export async function GET(req: Request) {
   if (!(await isAdminSession()))
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -19,7 +22,11 @@ export async function GET(req: Request) {
   const date = validYmd(q) ? q : ymdOf(Date.now());
 
   const db = await getDb();
-  const list = await computeDay(db, dayStartOf(date));
+  const start = dayStartOf(date);
+  const [list, banned] = await Promise.all([
+    computeDay(db, start),
+    computeDayBanned(db, start),
+  ]);
   const entries = list.map((e, i) => ({ rank: i + 1, ...e }));
 
   return NextResponse.json({
@@ -29,5 +36,6 @@ export async function GET(req: Request) {
     reachedCount: entries.filter((e) => e.goalRank !== null).length,
     awardedCount: entries.filter((e) => e.points > 0).length,
     entries,
+    banned,
   });
 }

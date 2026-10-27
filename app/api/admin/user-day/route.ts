@@ -4,14 +4,19 @@ import { getDb } from "@/lib/mongodb";
 import { isAdminSession } from "@/lib/admin-auth";
 import {
   computeDay,
+  computeDayBanned,
   dayStartOf,
   employeeIdOf,
   validYmd,
 } from "@/lib/admin-stats";
+import { goalOfDate } from "@/app/components/goal";
+import { activeBanOf, bansOfDay, publicBan } from "@/lib/bans";
 
 // วางที่ app/api/admin/user-day/route.ts
 // GET ?userId=...&date=YYYY-MM-DD  (เฉพาะผู้ดูแลที่ล็อกอินแล้ว)
 // คืนผลของผู้เล่นคนนั้นในวันนั้น: ยอดโดดรวม รอบ ลำดับถึงเป้า point และภาพยืนยัน 2 ภาพจาก Drive
+// ถ้าผู้เล่นถูกแบนในวันนั้น: ลำดับถึงเป้า/point เป็นว่าง ยอดโดดแสดงไว้ดูเท่านั้น (ไม่นับ)
+// ban = แบนของวันนั้น หรือแบนที่ยังมีผลอยู่ (กรณีแบนข้ามเที่ยงคืน) ไว้โชว์และปลดแบน
 
 const noStore = { "Cache-Control": "no-store" };
 
@@ -37,11 +42,22 @@ export async function GET(req: Request) {
     if (!validYmd(date)) return fail("วันที่ไม่ถูกต้อง", 400);
 
     const db = await getDb();
+    const start = dayStartOf(date);
 
     // ยอดรวมและอันดับของวันนั้น ใช้ตัวคำนวณเดียวกับตารางรายวัน ตัวเลขจึงตรงกัน
-    const entries = await computeDay(db, dayStartOf(date));
-    const me = entries.find((e) => e.userId === userId);
+    const [entries, bannedList] = await Promise.all([
+      computeDay(db, start),
+      computeDayBanned(db, start),
+    ]);
+    const live = entries.find((e) => e.userId === userId);
+    const bannedMe = bannedList.find((e) => e.userId === userId);
+    const me = live ?? bannedMe;
     if (!me) return fail("ไม่พบข้อมูลของผู้เล่นในวันนี้", 404);
+
+    // แบนที่จะแสดง: แบนของวันนั้น ถ้าไม่มีให้ใช้แบนที่ยังมีผลอยู่ (แบนข้ามวัน)
+    const dayBans = await bansOfDay(db, date);
+    const dayBan = dayBans.find((b) => String(b.userId) === userId) ?? null;
+    const ban = dayBan ?? (await activeBanOf(db, userId));
 
     // employeeId อ่านจาก user doc โดยตรง เหมือน user-month
     const userDoc = await db.collection("users").findOne({
@@ -76,13 +92,14 @@ export async function GET(req: Request) {
         },
         total: me.total,
         rounds: me.rounds,
-        goal: me.goal,
-        goalRank: me.goalRank,
-        points: me.points,
+        goal: live ? live.goal : goalOfDate(date),
+        goalRank: live ? live.goalRank : null,
+        points: live ? live.points : 0,
         snapshots: {
           start: pick("first-of-day"),
           end: pick("near-goal"),
         },
+        ban: ban ? publicBan(ban) : null,
       },
       { headers: noStore }
     );
