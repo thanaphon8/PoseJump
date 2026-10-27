@@ -26,7 +26,7 @@ export type User = {
   branchId?: number | null; // รหัสสาขา (ดู branches.ts)
 };
 
-export type AuthMode = "login" | "register";
+export type AuthMode = "login" | "register" | "forgot";
 
 export type AuthErrors = Partial<
   Record<
@@ -43,7 +43,7 @@ export type AuthErrors = Partial<
   >
 >;
 
-// props ของหน้า login / register (ส่งมาจาก app/page.tsx)
+// props ของหน้า login / register / forgot (ส่งมาจาก app/page.tsx)
 export type AuthFormProps = {
   onAuthed: (u: User) => void;
   onSwitch: (m: AuthMode) => void;
@@ -297,12 +297,15 @@ export function EyeButton({
   );
 }
 
-// โครงหน้า login/register: พื้นหลัง + แผงแบรนด์ (เดสก์ท็อป) + โลโก้ (มือถือ)
+// โครงหน้า login/register/forgot: พื้นหลัง + แผงแบรนด์ (เดสก์ท็อป) + โลโก้ (มือถือ)
+// title: ป้ายสำหรับโปรแกรมอ่านหน้าจอ (ไม่ใส่ = ใช้ "สมัครสมาชิก" / "เข้าสู่ระบบ" ตาม isReg)
 export function AuthShell({
   isReg,
+  title,
   children,
 }: {
   isReg: boolean;
+  title?: string;
   children: ReactNode;
 }) {
   const [imgOk, setImgOk] = useState(true);
@@ -318,7 +321,7 @@ export function AuthShell({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={isReg ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
+      aria-label={title ?? (isReg ? "สมัครสมาชิก" : "เข้าสู่ระบบ")}
       className="pj-in fixed inset-0 z-50 overflow-y-auto overflow-x-hidden bg-gradient-to-t from-[#1B2A21] to-[#8FB54A] text-white lg:grid lg:grid-cols-[1fr_1fr] lg:bg-none lg:bg-[#F3F6EC] lg:text-[#1B2A21]"
     >
       <div className="pointer-events-none fixed inset-0 lg:hidden" aria-hidden>

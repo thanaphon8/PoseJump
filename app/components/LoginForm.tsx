@@ -99,10 +99,22 @@ export default function LoginForm({ onAuthed, onSwitch }: AuthFormProps) {
           />
         </div>
 
+        {/* ลืมรหัสผ่าน */}
+        <div className="mt-2 text-right">
+          <button
+            type="button"
+            onClick={() => onSwitch("forgot")}
+            disabled={busy}
+            className="px-2 py-1 text-[14px] font-semibold text-[#C9F25B] underline-offset-2 hover:underline disabled:opacity-60 lg:text-[#3F5E1F]"
+          >
+            ลืมรหัสผ่าน?
+          </button>
+        </div>
+
         {errors.form && (
           <p
             role="alert"
-            className="pj-in mt-4 rounded-2xl bg-[#FDE8E6] px-4 py-3 text-[14px] text-[#D92D20]"
+            className="pj-in mt-2 rounded-2xl bg-[#FDE8E6] px-4 py-3 text-[14px] text-[#D92D20]"
           >
             {errors.form}
           </p>
@@ -111,7 +123,7 @@ export default function LoginForm({ onAuthed, onSwitch }: AuthFormProps) {
         <button
           type="submit"
           disabled={busy}
-          className="mt-[clamp(14px,3dvh,24px)] flex h-[clamp(48px,7dvh,56px)] w-full items-center justify-center rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348] disabled:opacity-60"
+          className="mt-[clamp(10px,2dvh,16px)] flex h-[clamp(48px,7dvh,56px)] w-full items-center justify-center rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348] disabled:opacity-60"
         >
           {busy ? "กำลังดำเนินการ" : "เข้าสู่ระบบ"}
         </button>

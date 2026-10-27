@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Prompt } from "next/font/google";
 import LoginForm from "./components/LoginForm";
 import RegisterForm from "./components/RegisterForm";
+import ForgotForm from "./components/ForgotForm";
 import Pose from "./components/Pose";
 import Rank from "./components/Rank";
 import History from "./components/History";
@@ -491,13 +492,14 @@ function SidebarUser({ user }: { user: User | null }) {
   );
 }
 
+// หน้า auth: login / register / forgot (ลืมรหัสผ่าน)
 function AuthScreen({ onAuthed }: { onAuthed: (u: User) => void }) {
   const [mode, setMode] = useState<AuthMode>("login");
-  return mode === "login" ? (
-    <LoginForm onAuthed={onAuthed} onSwitch={setMode} />
-  ) : (
-    <RegisterForm onAuthed={onAuthed} onSwitch={setMode} />
-  );
+  if (mode === "register")
+    return <RegisterForm onAuthed={onAuthed} onSwitch={setMode} />;
+  if (mode === "forgot")
+    return <ForgotForm onAuthed={onAuthed} onSwitch={setMode} />;
+  return <LoginForm onAuthed={onAuthed} onSwitch={setMode} />;
 }
 
 function Shell({
