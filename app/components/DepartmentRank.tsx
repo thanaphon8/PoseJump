@@ -11,6 +11,8 @@ import { ICONS, Icon } from "./auth-shared";
 
 const fmtNum = (n: number) => n.toLocaleString("en-US");
 const STACK_MAX = 5;
+// เวลาเล่นแอนิเมชันปิด modal (ms) ต้องตรงกับ dr-sheet-down / dr-bg-out ด้านล่าง
+const CLOSE_MS = 260;
 
 export type Member = {
   name: string;
@@ -447,15 +449,44 @@ export function DeptBoardView({
   emptyText?: string;
 }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
+  // closing = กำลังเล่นแอนิเมชันปิด (modal ยังอยู่บนจอ แต่กำลังเลื่อนลง)
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lg = useIsLg();
+
+  const openModal = useCallback((key: string) => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setClosing(false);
+    setOpenKey(key);
+  }, []);
+
+  const closeModal = useCallback(() => {
+    if (closeTimer.current) return; // กำลังปิดอยู่แล้ว
+    setClosing(true);
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      setOpenKey(null);
+      setClosing(false);
+    }, CLOSE_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (openKey == null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenKey(null);
+      if (e.key === "Escape") closeModal();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openKey]);
+  }, [openKey, closeModal]);
 
   if (entries.length === 0) {
     return (
@@ -471,14 +502,14 @@ export function DeptBoardView({
 
   return (
     <>
-      <DeptPodium entries={entries.slice(0, 3)} onOpen={setOpenKey} unit={unit} />
+      <DeptPodium entries={entries.slice(0, 3)} onOpen={openModal} unit={unit} />
       {rest.length > 0 && (
         <ul className="mt-3 space-y-2">
           {rest.map((e) => (
             <li key={gid(e)}>
               <button
                 type="button"
-                onClick={() => setOpenKey(gid(e))}
+                onClick={() => openModal(gid(e))}
                 aria-haspopup="dialog"
                 className={`pj-lift flex w-full items-center gap-3 rounded-full px-5 py-2.5 text-left transition-transform active:scale-[0.99] sm:px-6 ${
                   e.me ? "bg-[#E8F5C1]" : "bg-white"
@@ -540,8 +571,13 @@ export function DeptBoardView({
             role="dialog"
             aria-modal="true"
             aria-label={`สมาชิก ${opened.name}`}
-            className="pj-in fixed inset-0 z-50 flex items-end justify-center bg-[#1B2A21]/70 p-0 sm:items-center sm:p-5"
-            onClick={() => setOpenKey(null)}
+            className="dr-anim fixed inset-0 z-50 flex items-end justify-center bg-[#1B2A21]/70 p-0 sm:items-center sm:p-5"
+            style={{
+              animation: closing
+                ? `dr-bg-out ${CLOSE_MS}ms ease-in both`
+                : "dr-bg-in .3s ease-out both",
+            }}
+            onClick={closeModal}
           >
             <style>{`
               @keyframes dr-drop {
@@ -551,13 +587,28 @@ export function DeptBoardView({
                 100% { transform: translateY(0) scale(1); opacity: 1; }
               }
               @keyframes dr-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+              @keyframes dr-sheet-up {
+                from { transform: translateY(100%); opacity: .6; }
+                to { transform: translateY(0); opacity: 1; }
+              }
+              @keyframes dr-sheet-down {
+                from { transform: translateY(0); opacity: 1; }
+                to { transform: translateY(100%); opacity: .6; }
+              }
+              @keyframes dr-bg-in { from { opacity: 0; } to { opacity: 1; } }
+              @keyframes dr-bg-out { from { opacity: 1; } to { opacity: 0; } }
               @media (prefers-reduced-motion: reduce) {
                 .dr-anim { animation: none !important; opacity: 1 !important; }
               }
             `}</style>
 
             <div
-              className="relative flex max-h-[88dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[32px] bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] text-[#1B2A21] shadow-2xl sm:rounded-[32px]"
+              className="dr-anim relative flex max-h-[88dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[32px] bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] text-[#1B2A21] shadow-2xl sm:max-w-4xl sm:rounded-[32px]"
+              style={{
+                animation: closing
+                  ? `dr-sheet-down ${CLOSE_MS}ms cubic-bezier(.4,0,1,1) both`
+                  : "dr-sheet-up .38s cubic-bezier(.22,1,.36,1) both",
+              }}
               onClick={(ev) => ev.stopPropagation()}
             >
               {/* ลายตกแต่งพื้นหลัง เหมือนหน้า welcome */}
@@ -570,7 +621,7 @@ export function DeptBoardView({
                 className="pointer-events-none absolute -right-16 bottom-10 h-56 w-56 rounded-full bg-[#C9F25B]/50 blur-2xl"
               />
 
-              <div className="relative flex items-start justify-between gap-3 px-5 pb-2 pt-5">
+              <div className="relative flex items-start justify-between gap-3 px-5 pb-2 pt-5 sm:px-6">
                 <div className="min-w-0">
                   <div className="text-[13px] font-semibold text-[#3F5E1F]">
                     อันดับ {opened.rank} ·{" "}
@@ -587,7 +638,7 @@ export function DeptBoardView({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setOpenKey(null)}
+                  onClick={closeModal}
                   aria-label="ปิด"
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/80 shadow-sm transition-transform active:scale-90"
                 >
@@ -595,7 +646,7 @@ export function DeptBoardView({
                 </button>
               </div>
 
-              <div className="relative flex flex-wrap gap-2 px-5 pb-3">
+              <div className="relative flex flex-wrap gap-2 px-5 pb-3 sm:px-6">
                 <span className="inline-flex rounded-full bg-white/70 px-3.5 py-1.5 text-[13px] font-semibold text-[#3F5E1F]">
                   {opened.memberCount} คน
                 </span>
@@ -606,10 +657,11 @@ export function DeptBoardView({
                 </span>
               </div>
 
-              <ul className="relative grid grid-cols-3 gap-x-2 gap-y-5 overflow-y-auto px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 sm:grid-cols-4">
+              <ul className="relative grid grid-cols-3 gap-x-2 gap-y-5 overflow-y-auto px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 sm:grid-cols-4 sm:px-6 lg:grid-cols-6">
                 {opened.members.map((mb, i) => {
                   // ดีเลย์สูงสุด 12 คนแรก ที่เหลือโผล่พร้อมกัน ไม่ให้รอนาน
-                  const delay = Math.min(i, 12) * 0.06;
+                  // +0.2 = รอให้ sheet เลื่อนขึ้นมาเกือบถึงก่อน ค่อยเด้งรูป
+                  const delay = 0.2 + Math.min(i, 12) * 0.06;
                   return (
                     <li
                       key={mb.username}
@@ -624,7 +676,11 @@ export function DeptBoardView({
                             mb.isMe ? "ring-[#1B2A21]" : "ring-white"
                           }`}
                         >
-                          <Avatar name={mb.name} src={mb.avatarUrl} size={64} />
+                          <Avatar
+                            name={mb.name}
+                            src={mb.avatarUrl}
+                            size={lg ? 96 : 76}
+                          />
                           {mb.isMe && (
                             <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#1B2A21] px-2 py-0.5 text-[10px] font-bold text-[#C9F25B]">
                               คุณ
@@ -638,16 +694,10 @@ export function DeptBoardView({
                       >
                         {mb.name}
                       </span>
-                      <span
-                        className="dr-anim w-full truncate px-1 text-[11px] text-[#3F5E1F]/80"
-                        style={{ animation: `dr-fade .4s ease-out ${delay + 0.4}s both` }}
-                      >
-                        @{mb.username}
-                      </span>
                       {mb.total !== undefined && (
                         <span
                           className="dr-anim text-[11px] font-semibold tabular-nums"
-                          style={{ animation: `dr-fade .4s ease-out ${delay + 0.45}s both` }}
+                          style={{ animation: `dr-fade .4s ease-out ${delay + 0.4}s both` }}
                         >
                           {fmtNum(mb.total)} ครั้ง
                         </span>
