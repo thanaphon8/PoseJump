@@ -102,6 +102,11 @@ const LEVEL_RANGE_DEG = 22;
 // ราง 300px ลูกบอล 72px → ขอบสุด ±114px เว้นไว้ ±108px (ห่างขอบ 6px) พอดีสวยไม่ชน
 const LEVEL_PX_PER_DEG = 108 / LEVEL_RANGE_DEG;
 
+// ตั้งมือถือไม่ผ่านเกินเวลานี้ → แสดงปุ่มข้าม
+const GYRO_SKIP_MS = 30_000;
+// รอสัญญาณไจโรแรกหลังได้สิทธิ์ ไม่มีสัญญาณ = เครื่องไม่มีเซนเซอร์ (ข้ามหน้าตั้งมือถือ)
+const GYRO_WAIT_MS = 2000;
+
 // ท่าจับเชือก
 const HAND_MIN_OFFSET = 0.75;
 const HAND_MIN_VIS = 0.3;
@@ -145,6 +150,9 @@ const EMPTY_LEVEL: LevelInfo = {
   hold: 0,
   hint: "ปรับมุมเอียงมือถือ",
 };
+
+// wait = กำลังขอสิทธิ์/รอสัญญาณ, ok = มีสัญญาณ, denied = ไม่ได้สิทธิ์, none = เครื่องไม่มีเซนเซอร์
+type GyroState = "wait" | "ok" | "denied" | "none";
 
 function isHoldingRope(lm: NormalizedLandmark[], aspect: number): boolean {
   const lw = lm[15];
@@ -560,6 +568,19 @@ async function requestGyro(): Promise<boolean> {
   }
 }
 
+// iOS 13+ ต้องขอสิทธิ์ไจโรด้วยการแตะ (มี requestPermission) เครื่องอื่นไม่มี API นี้
+// ใช้แยกว่า "ผู้ใช้ปฏิเสธสิทธิ์" (iOS) กับ "เครื่องไม่มีไจโร" (PC / มือถือไม่มีเซนเซอร์)
+function needsGyroPermission(): boolean {
+  try {
+    const DOE = window.DeviceOrientationEvent as unknown as {
+      requestPermission?: unknown;
+    };
+    return typeof DOE?.requestPermission === "function";
+  } catch {
+    return false;
+  }
+}
+
 // งานที่ต้องทำทันทีที่ผู้ใช้แตะปุ่มเริ่ม (ก่อน await ใดๆ) เรียกจาก app/page.tsx ผ่าน Pose.prime
 // ขอสิทธิ์ไจโร เต็มจอ+ล็อกแนวตั้ง และเตรียมเสียง คืน Promise ของสิทธิ์ไจโรให้ส่งเข้า Pose
 function primeSession(
@@ -735,6 +756,8 @@ function PoseSession(props: PoseProps) {
   const [vp, setVp] = useState({ w: 0, h: 0 });
   const [vdim, setVdim] = useState({ w: 9, h: 16 });
   const [levelInfo, setLevelInfo] = useState<LevelInfo>(EMPTY_LEVEL);
+  const [gyroState, setGyroState] = useState<GyroState>("wait");
+  const [canSkip, setCanSkip] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1187,6 +1210,43 @@ function PoseSession(props: PoseProps) {
     stopCamera();
   }, [stopCamera]);
 
+  // ตรวจว่าเครื่องมีไจโรจริงไหม ไม่แตะ UI คืนผลให้ผู้เรียกตัดสินใจ
+  // ok = มีสัญญาณ / denied = iOS ผู้ใช้ปฏิเสธสิทธิ์ / none = เครื่องไม่มีไจโร / null = ถูกยกเลิก
+  const detectGyro = useCallback(
+    async (
+      granted: boolean,
+      cancelled: () => boolean
+    ): Promise<GyroState | null> => {
+      if (!granted) return needsGyroPermission() ? "denied" : "none";
+      const until = performance.now() + GYRO_WAIT_MS;
+      while (!gotGyroRef.current && performance.now() < until) {
+        if (cancelled()) return null;
+        await sleep(50);
+      }
+      if (cancelled()) return null;
+      return gotGyroRef.current ? "ok" : "none";
+    },
+    []
+  );
+
+  // ปุ่ม "ขอสิทธิ์อีกครั้ง" (เรียกจากการแตะของผู้ใช้จริง iOS จึงยอมให้ขอสิทธิ์)
+  const retryGyro = useCallback(async () => {
+    const sid = sessionRef.current;
+    setGyroState("wait");
+    const ok = await requestGyro();
+    const st = await detectGyro(ok, () => sessionRef.current !== sid);
+    if (!st) return;
+    setGyroState(st);
+    if (st !== "ok") setCanSkip(true);
+  }, [detectGyro]);
+
+  // ปุ่ม "ข้ามขั้นตอนนี้"
+  const skipLevel = () => {
+    const done = levelResolveRef.current;
+    levelResolveRef.current = null;
+    done?.();
+  };
+
   const startSession = useCallback(async () => {
     const sid = ++sessionRef.current;
     const cancelled = () => sessionRef.current !== sid;
@@ -1198,17 +1258,59 @@ function PoseSession(props: PoseProps) {
     // ยอดรวมวันนี้ก่อนรอบนี้ ใช้ตัดสินว่าเมื่อไรใกล้ถึงเป้าประจำวัน
     todayBaseRef.current = P.current.getTodayBase();
 
+    // โหลดโมเดลเบื้องหลังตั้งแต่ต้น ระหว่างผู้ใช้ตั้งมือถือ เน็ตช้าจะได้ไม่ต้องรอซ้ำ
+    const modelPromise = loadLandmarker();
+    modelPromise.catch(() => {}); // error ไปจัดการตอน await ด้านล่าง
+
     await sleep(50);
 
     try {
-      const { lm, connections } = await loadLandmarker();
+      const isFront = settingsRef.current.facing === "user";
+
+      // ขั้นที่ 1 (กล้องหน้าเท่านั้น): ตรวจไจโรก่อน ระหว่างนี้ยังแสดงหน้า loading
+      // เครื่องไม่มีไจโร (PC / มือถือไม่มีเซนเซอร์) → ข้ามหน้าตั้งมือถือไปเลย
+      if (isFront) {
+        const st = await detectGyro(await gyroPromise, cancelled);
+        if (cancelled() || !st) return;
+
+        if (st !== "none") {
+          // ok = ตั้งมือถือตามปกติ / denied = iOS ปฏิเสธสิทธิ์ แสดงปุ่มขอใหม่และข้าม
+          gyroRef.current = { init: false, p: 0, r: 0, buf: [] };
+          levelOkSinceRef.current = null;
+          setLevelInfo(EMPTY_LEVEL);
+          setGyroState(st);
+          setCanSkip(st !== "ok");
+          phaseRef.current = "leveling";
+          setPhase("leveling");
+
+          // ผ่านเมื่อตั้งนิ่งครบ (onOrient เรียก) หรือผู้ใช้กดข้าม (skipLevel เรียก)
+          const levelDone = new Promise<void>((resolve) => {
+            levelResolveRef.current = resolve;
+          });
+          // ตั้งไม่ผ่านเกิน 30 วิ → แสดงปุ่มข้าม
+          const skipTimer = setTimeout(() => setCanSkip(true), GYRO_SKIP_MS);
+          try {
+            await levelDone;
+          } finally {
+            clearTimeout(skipTimer);
+          }
+          if (cancelled()) return;
+          setCanSkip(false);
+          if (settingsRef.current.sound) beep(audio.current, 800, 0.08);
+        }
+      }
+
+      // ขั้นที่ 2: โหลดโมเดล + ขอสิทธิ์กล้อง
+      phaseRef.current = "loading";
+      setPhase("loading");
+
+      const { lm, connections } = await modelPromise;
       landmarkerRef.current = lm;
       connectionsRef.current = connections;
       if (cancelled()) return;
 
       // กล้องหน้า: ไม่บังคับ aspect ratio เพื่อไม่ให้เบราว์เซอร์ครอปภาพ (ลดอาการซูม)
       // กล้องหลัง: ใช้ค่าเดิม
-      const isFront = settingsRef.current.facing === "user";
       const stream = await navigator.mediaDevices.getUserMedia({
         video: isFront
           ? {
@@ -1268,30 +1370,6 @@ function PoseSession(props: PoseProps) {
       }
 
       rafRef.current = requestAnimationFrame(loop);
-
-      // ขั้นตอนตั้งมือถือ ไม่มีเซนเซอร์หรือไม่ได้รับอนุญาตจะข้ามไปสแกนตัวเลย
-      let hasGyro = false;
-      if (await gyroPromise) {
-        const until = performance.now() + 1000;
-        while (!gotGyroRef.current && performance.now() < until) {
-          if (cancelled()) return;
-          await sleep(50);
-        }
-        hasGyro = gotGyroRef.current;
-      }
-      if (cancelled()) return;
-      if (hasGyro) {
-        gyroRef.current = { init: false, p: 0, r: 0, buf: [] };
-        levelOkSinceRef.current = null;
-        setLevelInfo(EMPTY_LEVEL);
-        phaseRef.current = "leveling";
-        setPhase("leveling");
-        await new Promise<void>((resolve) => {
-          levelResolveRef.current = resolve;
-        });
-        if (cancelled()) return;
-        if (settingsRef.current.sound) beep(audio.current, 800, 0.08);
-      }
 
       const waitUnlessAborted = async (ms: number) => {
         const end = performance.now() + ms;
@@ -1359,7 +1437,7 @@ function PoseSession(props: PoseProps) {
             : "เริ่มไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตและสิทธิ์กล้อง แล้วลองใหม่"
       );
     }
-  }, [loop, stopAll, captureShot]);
+  }, [loop, stopAll, captureShot, detectGyro]);
 
   // เริ่มสแกนทันทีที่คอมโพเนนต์ถูกแสดง และปิดกล้องตอนถูกถอด
   useEffect(() => {
@@ -1397,6 +1475,15 @@ function PoseSession(props: PoseProps) {
   const glass = "bg-black/45 backdrop-blur-xl";
   const isPrep = phase === "positioning" || phase === "countdown";
   const isLevel = phase === "leveling";
+  // ข้อความบอกสถานะในหน้าตั้งมือถือ (ขอสิทธิ์ / ไม่ได้สิทธิ์ / ไม่มีเซนเซอร์ / คำแนะนำตั้งมุม)
+  const levelHint =
+    gyroState === "wait"
+      ? "กำลังขอสิทธิ์เซนเซอร์เอียง กด “อนุญาต” ที่หน้าต่างที่ขึ้นมา"
+      : gyroState === "denied"
+        ? "ยังไม่ได้รับสิทธิ์เซนเซอร์เอียง"
+        : gyroState === "none"
+          ? "เครื่องนี้ไม่มีเซนเซอร์เอียง"
+          : levelInfo.hint;
   // มุมหงายหลังเป้าหมาย (องศา) = 90 - beta เป้าหมาย → 20° (กล้องหน้า)
   const targetLean =
     90 - (facing === "user" ? LEVEL_TARGET_BETA : 180 - LEVEL_TARGET_BETA);
@@ -1486,7 +1573,7 @@ function PoseSession(props: PoseProps) {
           <div className="pj-in absolute inset-0 flex flex-col items-center bg-[#F3F6EC] px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] text-[#1B2A21]">
             <h2 className="text-[22px] font-semibold">ปรับมุมเอียงมือถือ</h2>
             <p className="mt-2 min-h-[24px] text-center text-[17px] font-medium">
-              {levelInfo.hint}
+              {levelHint}
             </p>
             <div
               className="mt-3 h-1.5 w-44 overflow-hidden rounded-full bg-[#E3EAD6]"
@@ -1541,12 +1628,35 @@ function PoseSession(props: PoseProps) {
             </div>
             </div>
 
-            <button
-              onClick={cancelScan}
-              className="mt-auto h-12 px-6 text-[17px] font-semibold text-[#3F5E1F] active:opacity-60"
-            >
-              ย้อนกลับ
-            </button>
+            <div className="mt-auto flex w-full max-w-xs flex-col items-center gap-2">
+              {gyroState === "denied" && (
+                <>
+                  <p className="text-center text-[12px] leading-4 text-[#6B7A6E]">
+                    iPhone: ปิด Safari แล้วเปิดใหม่ จากนั้นกด “ขอสิทธิ์อีกครั้ง” และเลือกอนุญาต
+                  </p>
+                  <button
+                    onClick={retryGyro}
+                    className="h-12 w-full rounded-full bg-[#C9F25B] text-[16px] font-semibold text-[#1B2A21] active:scale-[0.98]"
+                  >
+                    ขอสิทธิ์อีกครั้ง
+                  </button>
+                </>
+              )}
+              {canSkip && (
+                <button
+                  onClick={skipLevel}
+                  className="h-12 w-full rounded-full bg-white text-[16px] font-semibold text-[#1B2A21] active:scale-[0.98]"
+                >
+                  ข้ามขั้นตอนนี้
+                </button>
+              )}
+              <button
+                onClick={cancelScan}
+                className="h-12 px-6 text-[17px] font-semibold text-[#3F5E1F] active:opacity-60"
+              >
+                ย้อนกลับ
+              </button>
+            </div>
           </div>
         )}
 
