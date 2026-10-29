@@ -15,6 +15,9 @@ const STACK_MAX = 5;
 // เวลาเล่นแอนิเมชันปิด modal (ms) ต้องตรงกับ dr-sheet-down / dr-bg-out ด้านล่าง
 const CLOSE_MS = 260;
 
+const limeBtn =
+  "flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#C9F25B] text-[17px] font-semibold text-[#1B2A21] transition-all duration-150 active:scale-[0.98] active:bg-[#B8E348]";
+
 export type Member = {
   name: string;
   username: string;
@@ -47,30 +50,43 @@ export type DeptEntry = {
 
 type DeptBoard = {
   entries: DeptEntry[];
-  me: { rank: number; total: number; gap: number } | null;
+  // rank = 0 → กลุ่มของตัวเองยังไม่มีคะแนน / null → ไม่ได้เลือกแผนกหรือสาขา
+  me: {
+    rank: number;
+    total: number;
+    gap: number;
+    name?: string;
+    company?: string | null;
+  } | null;
+  // จำนวนกลุ่มที่มีคะแนนทั้งหมด
   count: number;
+  // หน้าปัจจุบัน / จำนวนหน้าทั้งหมด / จำนวนกลุ่มต่อหน้า
+  page: number;
+  totalPages: number;
+  pageSize: number;
   // สะสมไม่รีเซ็ต (API ส่ง null)
   resetAt?: number | null;
 };
 
 const gid = (e: DeptEntry) => e.key ?? String(e.id);
 
-// เก็บอันดับแผนกล่าสุดไว้ในหน่วยความจำ: สลับกลับมาหน้านี้แล้วเห็นทันที (แล้วค่อยรีเฟรชเงียบๆ)
+// เก็บอันดับแผนกหน้า 1 ล่าสุดไว้ในหน่วยความจำ: สลับกลับมาหน้านี้แล้วเห็นทันที (แล้วค่อยรีเฟรชเงียบๆ)
+// หน้า 2 ขึ้นไปไม่แคช
 let cachedBoard: DeptBoard | null = null;
 
-async function fetchDeptBoard(): Promise<DeptBoard> {
-  const r = await fetch("/api/leaderboard/departments", {
+async function fetchDeptBoard(page = 1): Promise<DeptBoard> {
+  const r = await fetch(`/api/leaderboard/departments?page=${page}`, {
     cache: "no-store",
   });
   if (!r.ok) throw new Error("load failed");
   const b = (await r.json()) as DeptBoard;
-  cachedBoard = b;
+  if (page === 1) cachedBoard = b;
   return b;
 }
 
 // โหลดล่วงหน้า (เรียกจากหน้าอันดับบุคคล) ให้กดสลับมาแผนกแล้วมีข้อมูลทันที
 export function prefetchDeptBoard() {
-  fetchDeptBoard().catch(() => {});
+  fetchDeptBoard(1).catch(() => {});
 }
 
 function Avatar({
@@ -438,15 +454,18 @@ function DeptPodium({
 // ส่วนแสดงอันดับแผนก/สาขา (แท่นยืน + รายการ + หน้าต่างสมาชิก)
 // ใช้ร่วมกันทั้งหน้าผู้ใช้ และหน้าแอดมิน (แอดมินส่ง entries ที่รวมเองตามช่วงเวลา/ตัวกรอง)
 // unit = หน่วยของ entries[].total / cumulative = true แสดงว่า "สะสม"
+// showPodium = false → ไม่แสดงแท่นยืน แสดง entries ทั้งหมดเป็นรายการ (หน้า 2 ขึ้นไป)
 export function DeptBoardView({
   entries,
   unit = "ครั้ง",
   cumulative = true,
+  showPodium = true,
   emptyText = "ยังไม่มีแผนกหรือสาขาไหนทำคะแนน ชวนเพื่อนมาโดดเลย",
 }: {
   entries: DeptEntry[];
   unit?: string;
   cumulative?: boolean;
+  showPodium?: boolean;
   emptyText?: string;
 }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -497,15 +516,21 @@ export function DeptBoardView({
     );
   }
 
-  const rest = entries.slice(3);
+  const rest = showPodium ? entries.slice(3) : entries;
   const opened = entries.find((e) => gid(e) === openKey) ?? null;
   const totalLabel = cumulative && unit === "ครั้ง" ? "ครั้งสะสม" : unit;
 
   return (
     <>
-      <DeptPodium entries={entries.slice(0, 3)} onOpen={openModal} unit={unit} />
+      {showPodium && (
+        <DeptPodium
+          entries={entries.slice(0, 3)}
+          onOpen={openModal}
+          unit={unit}
+        />
+      )}
       {rest.length > 0 && (
-        <ul className="mt-3 space-y-2">
+        <ul className={`${showPodium ? "mt-3" : ""} space-y-2`}>
           {rest.map((e) => (
             <li key={gid(e)}>
               <button
@@ -720,30 +745,101 @@ export function DeptBoardView({
   );
 }
 
+// ปุ่มเปลี่ยนหน้า (ก่อนหน้า / เลขหน้า / ถัดไป)
+function Pager({
+  page,
+  totalPages,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (p: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+  const btn =
+    "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#1B2A21] shadow-sm transition-transform active:scale-90 disabled:opacity-40";
+  return (
+    <nav
+      aria-label="เปลี่ยนหน้าอันดับ"
+      className="mt-4 flex items-center justify-center gap-3"
+    >
+      <button
+        type="button"
+        onClick={() => onPage(page - 1)}
+        disabled={page <= 1}
+        aria-label="หน้าก่อนหน้า"
+        className={btn}
+      >
+        <span className="rotate-180">
+          <Icon d={ICONS.right} size={18} />
+        </span>
+      </button>
+      <span className="min-w-[88px] text-center text-[14px] font-semibold tabular-nums">
+        หน้า {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        onClick={() => onPage(page + 1)}
+        disabled={page >= totalPages}
+        aria-label="หน้าถัดไป"
+        className={btn}
+      >
+        <Icon d={ICONS.right} size={18} />
+      </button>
+    </nav>
+  );
+}
+
 export default function DepartmentRank({
   hasDepartment,
+  onStart,
+  banned = false,
 }: {
   // true = ผู้ใช้มีแผนก หรือ สาขา อย่างใดอย่างหนึ่ง
   hasDepartment: boolean;
+  // แตะปุ่มเริ่มกระโดด (แสดงเมื่อกลุ่มของผู้ใช้ยังไม่มีอันดับ)
+  onStart?: () => void;
+  // บัญชีถูกแบน: ซ่อนปุ่มเริ่มกระโดด
+  banned?: boolean;
 }) {
+  const [page, setPage] = useState(1);
   const [board, setBoard] = useState<DeptBoard | null>(cachedBoard);
   const [err, setErr] = useState(false);
+  const topRef = useRef<HTMLDivElement>(null);
+  const firstPage = useRef(true);
+  // กันผลลัพธ์ของหน้าเก่าที่ตอบกลับช้า มาทับหน้าที่เลือกอยู่
+  const pageRef = useRef(page);
+  pageRef.current = page;
 
   const load = useCallback(async () => {
+    const want = page;
     try {
-      setBoard(await fetchDeptBoard());
+      const b = await fetchDeptBoard(want);
+      if (pageRef.current !== want) return;
+      setBoard(b);
       setErr(false);
+      // server ปรับหน้าให้ (เช่น จำนวนกลุ่มลดลงจนหน้านี้ไม่มีแล้ว)
+      if (b.page !== want) setPage(b.page);
     } catch {
       // มีข้อมูลเดิมแสดงอยู่แล้ว ไม่ต้องสลับเป็นหน้า error
-      setErr(true);
+      if (pageRef.current === want) setErr(true);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
     const t = setInterval(load, 30000);
     return () => clearInterval(t);
   }, [load]);
+
+  // เปลี่ยนหน้าแล้วเลื่อนกลับไปต้นรายการ (ไม่เลื่อนตอนเปิดหน้าครั้งแรก)
+  useEffect(() => {
+    if (firstPage.current) {
+      firstPage.current = false;
+      return;
+    }
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [page]);
 
   if (!board && err) {
     return (
@@ -759,22 +855,84 @@ export default function DepartmentRank({
     );
   }
 
+  // กำลังโหลดหน้าใหม่: ยังแสดงหน้าเก่าไว้แบบจางๆ
+  const switching = !!board && board.page !== page;
+  const me = board?.me && board.me.rank > 0 ? board.me : null;
+
   return (
     // หัวข้อ "ตารางอันดับ" + ตัวสลับ บุคคล/แผนก อยู่ใน Rank.tsx แล้ว (บรรทัดเดียวกับหน้าบุคคล)
-    // ความกว้างเท่าคอลัมน์ตารางของหน้าบุคคล ชิดซ้าย
+    // คอม (lg): 2 คอลัมน์ ซ้าย = ตาราง / ขวา = การ์ดอันดับของคุณ (กว้างเท่าหน้าบุคคล)
+    // มือถือ: การ์ดอยู่ใต้ตาราง
     // RankLoader = ตัวการ์ตูน Jumper ระหว่างรอข้อมูล พอข้อมูลมาจะเฟดจางทับเนื้อหาที่เฟดเข้า (pj-in)
-    <div className="relative w-full lg:max-w-[40rem]">
+    <div className="relative w-full">
+      <div ref={topRef} className="scroll-mt-4" />
       {board && (
-        <div className="pj-in">
-          <DeptBoardView entries={board.entries} />
-          <div className="mt-3 space-y-1 px-1 text-[12px] text-[#6B7A6E]">
-            <p>
-              คะแนนสะสมไม่รีเซ็ต · {board.count} กลุ่มลงสนาม
-              {!hasDepartment && " · บัญชีนี้ยังไม่ได้เลือกแผนกหรือสาขา"}
-            </p>
-            <p>
-              คะแนน = ผลรวมครั้งกระโดดของทุกคนในกลุ่ม (สำนักงานใหญ่นับเป็นแผนก หน้าร้านนับ 1 สาขาเป็น 1 กลุ่ม) นับสะสมตั้งแต่เริ่มและไม่รีเซ็ต แสดง 20 อันดับแรก กดที่กลุ่มเพื่อดูสมาชิก
-            </p>
+        <div className="pj-in space-y-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,23rem)] lg:items-start lg:gap-6 lg:space-y-0">
+          <section
+            className={`transition-opacity duration-200 ${
+              switching ? "opacity-50" : "opacity-100"
+            }`}
+          >
+            <DeptBoardView
+              entries={board.entries}
+              showPodium={board.page === 1}
+            />
+            <Pager
+              page={board.page}
+              totalPages={board.totalPages}
+              onPage={setPage}
+            />
+            <div className="mt-3 space-y-1 px-1 text-[12px] text-[#6B7A6E]">
+              <p>
+                คะแนนสะสมไม่รีเซ็ต · {board.count} กลุ่มลงสนาม
+                {!hasDepartment && " · บัญชีนี้ยังไม่ได้เลือกแผนกหรือสาขา"}
+              </p>
+              <p>
+                คะแนน = ผลรวมครั้งกระโดดของทุกคนในกลุ่ม (สำนักงานใหญ่นับเป็นแผนก หน้าร้านนับ 1 สาขาเป็น 1 กลุ่ม) นับสะสมตั้งแต่เริ่มและไม่รีเซ็ต แสดงหน้าละ {board.pageSize} กลุ่ม กดที่กลุ่มเพื่อดูสมาชิก
+              </p>
+            </div>
+          </section>
+
+          <div className="pj-stagger space-y-4">
+            {me ? (
+              <section className="rounded-3xl bg-[#E8F5C1] p-5">
+                <h2 className="text-[16px] font-semibold">อันดับของคุณ</h2>
+                <div className="mt-3 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight">
+                      #{me.rank}
+                    </div>
+                    {me.name && (
+                      <div className="mt-2 truncate text-[15px] font-semibold">
+                        {me.name}
+                      </div>
+                    )}
+                    {me.company && (
+                      <div className="truncate text-[12px] font-bold text-[#3F5E1F]">
+                        {me.company}
+                      </div>
+                    )}
+                    <div className="mt-1 text-[14px] text-[#4B5E3A]">
+                      {fmtNum(me.total)} ครั้งสะสม
+                    </div>
+                  </div>
+                  <div className="max-w-[160px] text-right text-[13px] font-medium text-[#3F5E1F]">
+                    {me.rank === 1
+                      ? "กลุ่มคุณนำอยู่!"
+                      : `อีก ${fmtNum(me.gap)} ครั้งจะแซงอันดับ ${me.rank - 1}`}
+                  </div>
+                </div>
+              </section>
+            ) : (
+              // ไม่มีอันดับ (ไม่ได้เลือกแผนก/สาขา หรือกลุ่มยังไม่มีคะแนน): ซ่อนการ์ด แสดงปุ่มเริ่มกระโดด
+              !banned &&
+              onStart && (
+                <button onClick={onStart} className={limeBtn}>
+                  <Icon d={ICONS.play} size={20} fill />
+                  เริ่มกระโดด
+                </button>
+              )
+            )}
           </div>
         </div>
       )}

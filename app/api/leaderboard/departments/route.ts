@@ -6,7 +6,7 @@ import { DEPARTMENTS, getCompany } from "../../../components/departments";
 import { branchLabel, getBranch } from "../../../components/branches";
 import { voidedDeptFilter } from "../../../../lib/bans";
 
-const TOP = 20; // จำนวนกลุ่ม (แผนก/สาขา) ที่แสดง
+const PAGE_SIZE = 35; // จำนวนกลุ่ม (แผนก/สาขา) ต่อหน้า
 const MEMBERS_PER_GROUP = 100; // จำกัดสมาชิกที่ส่งต่อกลุ่ม (กัน response ใหญ่)
 
 type Member = {
@@ -48,11 +48,12 @@ function describe(kind: Kind, id: number) {
   };
 }
 
-// GET /api/leaderboard/departments → อันดับแผนก/สาขาแบบสะสม (ไม่รีเซ็ต) + สมาชิก (ไว้แสดงรูปซ้อน)
+// GET /api/leaderboard/departments?page=N → อันดับแผนก/สาขาแบบสะสม (ไม่รีเซ็ต) แบ่งหน้าละ PAGE_SIZE
+// + สมาชิก (ไว้แสดงรูปซ้อน) เฉพาะกลุ่มในหน้านั้น
 // คะแนนมาจาก collection "dept_jumps" (บันทึกโดย /api/sessions) รวมทุกแถวตั้งแต่เริ่มเก็บ
 // ใช้ departmentId / branchId ที่บันทึกในแถวคะแนนก่อน ถ้าแถวไม่มีทั้งสองอย่าง
 // จะดูจากข้อมูลผู้ใช้ปัจจุบัน (กรณี /api/sessions ยังไม่ได้เก็บ branchId)
-export async function GET() {
+export async function GET(req: Request) {
   await connection();
   try {
     const me = await currentUser();
@@ -152,9 +153,16 @@ export async function GET() {
       .sort((a, b) => b.total - a.total || a.key.localeCompare(b.key))
       .map((d, i) => ({ ...d, rank: i + 1, me: d.key === myKey }));
 
-    const top = ranked.slice(0, TOP);
+    // แบ่งหน้า: ranked คำนวณเต็มไว้แล้ว (ให้ me และเลขอันดับถูกต้อง) ตัดเฉพาะตอนส่งออก
+    const totalPages = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE));
+    const rawPage = Number(new URL(req.url).searchParams.get("page"));
+    const page = Math.min(
+      totalPages,
+      Math.max(1, Number.isFinite(rawPage) ? Math.floor(rawPage) : 1)
+    );
+    const top = ranked.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-    // สมาชิกของกลุ่มที่แสดง (ใช้วาดรูปโปรไฟล์ซ้อน)
+    // สมาชิกของกลุ่มที่แสดง (ใช้วาดรูปโปรไฟล์ซ้อน) เฉพาะกลุ่มในหน้านี้
     const deptIds = top.filter((g) => g.kind === "dept").map((g) => g.id);
     const branchIds = top.filter((g) => g.kind === "branch").map((g) => g.id);
     const or: Record<string, unknown>[] = [];
@@ -216,6 +224,7 @@ export async function GET() {
       members: byGroup.get(d.key) ?? [],
     }));
 
+    // me คำนวณจากรายการเต็ม: แผนกอันดับ 80 ก็ได้ rank 80 ไม่ว่าอยู่หน้าไหน
     const mine = ranked.find((d) => d.me);
     const myInfo =
       myKey == null
@@ -228,12 +237,22 @@ export async function GET() {
                 mine.rank === 1
                   ? 0
                   : ranked[mine.rank - 2].total - mine.total + 1,
+              name: mine.name,
+              company: mine.company,
             }
-          : { rank: 0, total: 0, gap: 0 }; // กลุ่มตัวเองยังไม่มีคะแนน
+          : { rank: 0, total: 0, gap: 0, name: "", company: null }; // กลุ่มตัวเองยังไม่มีคะแนน
 
     // สะสมไม่รีเซ็ต จึงไม่มี resetAt
     return NextResponse.json(
-      { entries, me: myInfo, count: ranked.length, resetAt: null },
+      {
+        entries,
+        me: myInfo,
+        count: ranked.length,
+        page,
+        totalPages,
+        pageSize: PAGE_SIZE,
+        resetAt: null,
+      },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (e) {

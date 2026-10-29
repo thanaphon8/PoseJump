@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { getCompany, getDepartment } from "./departments";
 import { branchCode, branchLabel, branchProvince, getBranch } from "./branches";
 import { ICONS, Icon } from "./auth-shared";
-import Rank from "./Rank";
 import { prefetchDeptBoard } from "./DepartmentRank";
 
 // กรอบโน๊ต: none = ธรรมดา, fire = ติดไฟ, ice = น้ำแข็ง, gold = ถ้วยรางวัล, neon = นีออน
@@ -103,10 +102,6 @@ const NOTE_MAX = 60;
 // ช่องกรอกหุบ/ขยาย (ms) ต้องตรงกับ transition ด้านล่าง
 const EDITOR_MS = 340;
 const FLIGHT_MS = 650;
-// เวลาเล่นแอนิเมชันปิดหน้าอันดับ (ms) ต้องตรงกับ dc-page-out ด้านล่าง
-const PAGE_MS = 260;
-// สีพื้นหลังหน้าอันดับ (ปรับให้ตรงกับพื้นหลังหน้าแอปของคุณ)
-const PAGE_BG = "#F3F6EA";
 
 // server กรองหมดอายุให้แล้ว แต่กรองซ้ำฝั่ง client กันกรณีเปิดหน้าค้างไว้ข้าม 24 ชม.
 const activeNote = (m: Member): Note | null =>
@@ -622,11 +617,14 @@ export default function DepartmentCard({
   departmentId,
   branchId,
   myUsername,
+  onOpenRank,
 }: {
   companyId?: number | null;
   departmentId?: number | null;
   branchId?: number | null;
   myUsername?: string;
+  // กดปุ่ม "อันดับ" ใน popup: ให้หน้าแม่สลับไปแท็บอันดับ (เปิดที่มุมมองแผนก)
+  onOpenRank?: () => void;
 }) {
   const company = getCompany(companyId);
   const dept = getDepartment(departmentId);
@@ -656,10 +654,6 @@ export default function DepartmentCard({
   const [open, setOpen] = useState(false);
   // closing = กำลังเล่นแอนิเมชันเลื่อนลง ก่อนถอด popup ออกจริง
   const [closing, setClosing] = useState(false);
-
-  // หน้าอันดับ (เต็มจอ เลื่อนเข้าจากขวา): rankClosing = กำลังเล่นแอนิเมชันเลื่อนออก
-  const [rankOpen, setRankOpen] = useState(false);
-  const [rankClosing, setRankClosing] = useState(false);
 
   // โน๊ตสั้น (แบบ instagram note): เขียนเอง เพื่อนในกลุ่มเห็น หายใน 24 ชม.
   const [editing, setEditing] = useState(false);
@@ -699,7 +693,7 @@ export default function DepartmentCard({
     };
   }, [hasGroup, departmentId, branchId]);
 
-  // เปิด popup แล้วโหลดอันดับแผนกล่วงหน้า กดปุ่มอันดับแล้วมีข้อมูลทันที
+  // เปิด popup แล้วโหลดอันดับแผนกล่วงหน้า กดปุ่มอันดับแล้วแท็บอันดับมีข้อมูลทันที
   useEffect(() => {
     if (open) prefetchDeptBoard();
   }, [open]);
@@ -707,18 +701,11 @@ export default function DepartmentCard({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (rankOpen) {
-        // ถ้ามี modal สมาชิกของหน้าอันดับเปิดอยู่ (dialog > 1) ให้ modal นั้นปิดตัวเอง
-        if (document.querySelectorAll('[role="dialog"]').length > 1) return;
-        setRankClosing(true);
-      } else {
-        setClosing(true);
-      }
+      if (e.key === "Escape") setClosing(true);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, rankOpen]);
+  }, [open]);
 
   useEffect(() => {
     if (!closing) return;
@@ -726,21 +713,9 @@ export default function DepartmentCard({
       setOpen(false);
       setClosing(false);
       setEditing(false);
-      setRankOpen(false);
-      setRankClosing(false);
     }, 260);
     return () => clearTimeout(t);
   }, [closing]);
-
-  // หน้าอันดับเลื่อนออกเสร็จ แล้วค่อยถอดออกจริง
-  useEffect(() => {
-    if (!rankClosing) return;
-    const t = setTimeout(() => {
-      setRankOpen(false);
-      setRankClosing(false);
-    }, PAGE_MS);
-    return () => clearTimeout(t);
-  }, [rankClosing]);
 
   // ช่องกรอกเปิดแล้วโฟกัสช่องพิมพ์ (ไม่ให้หน้าเลื่อนตาม)
   useEffect(() => {
@@ -1035,15 +1010,6 @@ export default function DepartmentCard({
                 from { transform: translateY(0); opacity: 1; }
                 to { transform: translateY(100%); opacity: 0; }
               }
-              /* หน้าอันดับ: เลื่อนเข้าจากขวา / เลื่อนออกไปทางขวา */
-              @keyframes dc-page-in {
-                from { transform: translateX(100%); }
-                to { transform: translateX(0); }
-              }
-              @keyframes dc-page-out {
-                from { transform: translateX(0); }
-                to { transform: translateX(100%); }
-              }
               @keyframes dc-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
               @keyframes dc-ring {
                 from { transform: scale(1); opacity: .8; }
@@ -1304,12 +1270,11 @@ export default function DepartmentCard({
                     ครั้งตั้งแต่วันแรก
                   </span>
                 )}
+                {/* กดแล้วสลับไปแท็บ "อันดับ" ของ navbar (เปิดที่มุมมองแผนก)
+                    หน้าหลักถูกถอด popup นี้หายไปเองตอนสลับแท็บ */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setRankClosing(false);
-                    setRankOpen(true);
-                  }}
+                  onClick={() => onOpenRank?.()}
                   aria-label="ดูอันดับ"
                   className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-[13px] font-semibold text-[#3F5E1F] shadow-sm transition-transform active:scale-95"
                 >
@@ -1603,63 +1568,6 @@ export default function DepartmentCard({
                   />
                 </div>
               ))}
-          </div>,
-          document.body
-        )}
-
-      {/* หน้าอันดับ: เต็มจอ เลื่อนเข้าจากขวา (ไม่ใช่ popup)
-          ใช้ Rank ตัวเดียวกับ navbar "อันดับ" เปิดที่แท็บแผนก
-          popup รายชื่อยังอยู่ข้างใต้ กดย้อนกลับแล้วเจอที่เดิม */}
-      {open &&
-        rankOpen &&
-        createPortal(
-          <div
-            role="region"
-            aria-label={`อันดับ${kind}`}
-            className="dc-anim dc-font fixed inset-0 z-50 flex flex-col text-[#1B2A21] shadow-[-12px_0_32px_rgba(27,42,33,.25)]"
-            style={{
-              background: PAGE_BG,
-              animation: rankClosing
-                ? `dc-page-out ${PAGE_MS}ms cubic-bezier(.4,0,1,1) both`
-                : "dc-page-in .38s cubic-bezier(.22,1,.36,1) both",
-            }}
-          >
-            <style>{`
-              @keyframes dc-page-in {
-                from { transform: translateX(100%); }
-                to { transform: translateX(0); }
-              }
-              @keyframes dc-page-out {
-                from { transform: translateX(0); }
-                to { transform: translateX(100%); }
-              }
-              @media (prefers-reduced-motion: reduce) {
-                .dc-anim { animation: none !important; opacity: 1 !important; }
-              }
-            `}</style>
-            <div className="flex shrink-0 items-center px-4 pb-1 pt-[max(1rem,env(safe-area-inset-top))]">
-              <button
-                type="button"
-                onClick={() => setRankClosing(true)}
-                aria-label="ย้อนกลับ"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#1B2A21] shadow-sm transition-transform active:scale-90"
-              >
-                <span className="rotate-180">
-                  <Icon d={ICONS.right} size={18} />
-                </span>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-6">
-              <Rank
-                initialView="dept"
-                username={myUsername ?? null}
-                hasDepartment
-                hasToday={false}
-                onStart={() => setClosing(true)}
-                onOpenResult={() => {}}
-                onPoints={() => {}}
-              />
-            </div>
           </div>,
           document.body
         )}

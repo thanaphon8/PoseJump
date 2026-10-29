@@ -61,6 +61,8 @@ type RankProps = {
   onPoints: (points: number) => void;
   // บัญชีถูกแบน: ปิดปุ่มเริ่มกระโดด และไม่แสดงแบนเนอร์ชวนโดด
   banned?: boolean;
+  // มุมมองเริ่มต้น (เปิดจากปุ่มอันดับในการ์ดแผนก = "dept") ไม่ส่ง = "person"
+  initialView?: "person" | "dept";
 };
 
 /* ------------------------------------------------------------------ */
@@ -459,7 +461,10 @@ function RankView(props: RankProps) {
   const [boardErr, setBoardErr] = useState(false);
   const [boardNow, setBoardNow] = useState(0);
   // สลับมุมมอง: อันดับบุคคล (รายวัน) / อันดับแผนก (รายสัปดาห์)
-  const [view, setView] = useState<"person" | "dept">("person");
+  // เริ่มที่มุมมองตาม initialView (เช่น เปิดจากปุ่มอันดับในการ์ดแผนก)
+  const [view, setView] = useState<"person" | "dept">(
+    props.initialView ?? "person"
+  );
 
   // ให้ loadBoard อ่าน callback ล่าสุดได้โดยไม่ต้องสร้างฟังก์ชันใหม่
   const P = useRef(props);
@@ -623,7 +628,11 @@ function RankView(props: RankProps) {
           <span aria-hidden className="mb-1 h-10 shrink-0" />
         </header>
         {tableHead}
-        <DepartmentRank hasDepartment={props.hasDepartment} />
+        <DepartmentRank
+          hasDepartment={props.hasDepartment}
+          onStart={props.onStart}
+          banned={props.banned}
+        />
       </div>
     );
   }

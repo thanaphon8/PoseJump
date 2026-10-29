@@ -270,6 +270,7 @@ export default function Home({
   error,
   onStart,
   onViewHistory,
+  onOpenDeptRank,
   banned = null,
   onShowBan,
 }: {
@@ -285,6 +286,8 @@ export default function Home({
   error: string | null;
   onStart: () => void;
   onViewHistory: () => void;
+  // กดปุ่มอันดับในการ์ดแผนก: สลับไปแท็บอันดับ เปิดที่มุมมองแผนก
+  onOpenDeptRank?: () => void;
   // แบนที่ยังมีผลอยู่ (null = เล่นได้ปกติ)
   banned?: { reason: string; expiresAt: number } | null;
   onShowBan?: () => void;
@@ -454,6 +457,7 @@ export default function Home({
               departmentId={user.departmentId}
               branchId={user.branchId}
               myUsername={user.username}
+              onOpenRank={onOpenDeptRank}
             />
           )}
         </div>

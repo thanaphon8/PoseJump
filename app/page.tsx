@@ -580,6 +580,8 @@ function Shell({
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("setup");
   const [tab, setTab] = useState<Tab>("home");
+  // มุมมองเริ่มต้นของแท็บอันดับ: "dept" เมื่อเปิดจากปุ่มอันดับในการ์ดแผนก, "person" เมื่อกดแท็บเอง
+  const [rankView, setRankView] = useState<"person" | "dept">("person");
   const [mode, setMode] = useState<Mode>("count");
   const [seconds, setSeconds] = useState(60);
   const [target, setTarget] = useState(100);
@@ -1053,6 +1055,18 @@ export default function Home() {
     setPhase("setup");
   };
 
+  // ปุ่มอันดับในการ์ดแผนก: สลับไปแท็บอันดับ เปิดที่มุมมองแผนก
+  const openDeptRank = useCallback(() => {
+    setRankView("dept");
+    setTab("today");
+  }, []);
+
+  // กดแท็บจาก navbar/sidebar เอง: แท็บอันดับเริ่มที่บุคคลเสมอ
+  const handleTab = useCallback((t: Tab) => {
+    if (t === "today") setRankView("person");
+    setTab(t);
+  }, []);
+
   const login = (u: User) => {
     setUser(u);
     loadRemote();
@@ -1109,6 +1123,8 @@ export default function Home() {
   };
 
   const closeSummary = () => {
+    // กลับแท็บอันดับจากหน้าผลวันนี้ = เริ่มที่บุคคล
+    setRankView("person");
     setTab(dayMode ? "today" : "home");
     setDayMode(false);
     setReward(null);
@@ -1152,7 +1168,7 @@ export default function Home() {
         <style>{STYLES}</style>
         <Shell
           tab={tab}
-          onTab={setTab}
+          onTab={handleTab}
           profile={<ProfileMenu user={user} />}
           footer={<SidebarUser user={user} />}
           user={user}
@@ -1173,6 +1189,7 @@ export default function Home() {
               banned={activeBan}
               onShowBan={() => setBanOpen(true)}
               onViewHistory={() => setTab("history")}
+              onOpenDeptRank={openDeptRank}
             />
           )}
           {tab === "today" && (
@@ -1184,6 +1201,7 @@ export default function Home() {
               onOpenResult={openToday}
               hasToday={todayList.length > 0}
               onPoints={handlePoints}
+              initialView={rankView}
             />
           )}
           {tab === "history" && (
