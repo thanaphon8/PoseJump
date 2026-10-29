@@ -7,6 +7,7 @@ export type GroupMember = {
   userId: string;
   name: string;
   username: string;
+  employeeId?: string | null;
   avatarUrl?: string | null;
   total: number;
 };
@@ -39,6 +40,7 @@ type PlayerRow = {
   userId: string;
   name: string;
   username: string;
+  employeeId?: string | null;
   avatarUrl?: string | null;
   total: number;
   points: number;
@@ -83,6 +85,7 @@ export function buildGroups(
       userId: e.userId,
       name: e.name,
       username: e.username,
+      employeeId: e.employeeId,
       avatarUrl: e.avatarUrl,
       total: e.total,
     });
@@ -106,4 +109,24 @@ export const matchesGroup = (q: string, g: GroupRow) => {
   const s = q.trim().toLowerCase();
   if (!s) return true;
   return `${g.name} ${g.sub}`.toLowerCase().includes(s);
+};
+
+// ค้นหาในหน้าแผนก:
+// - ชื่อกลุ่ม/สังกัดตรง = แสดงทั้งกลุ่ม สมาชิกครบ
+// - ไม่ตรง แต่มีสมาชิกตรง (ชื่อ / username / รหัสพนักงาน) = แสดงกลุ่มนั้น เฉพาะคนที่ตรง
+// - ไม่ตรงเลย = null
+export const filterGroupByQuery = (
+  q: string,
+  g: GroupRow
+): GroupRow | null => {
+  const s = q.trim().toLowerCase();
+  if (!s) return g;
+  if (`${g.name} ${g.sub}`.toLowerCase().includes(s)) return g;
+  const hit = g.members.filter(
+    (m) =>
+      m.name.toLowerCase().includes(s) ||
+      m.username.toLowerCase().includes(s) ||
+      (m.employeeId ?? "").toLowerCase().includes(s)
+  );
+  return hit.length > 0 ? { ...g, members: hit } : null;
 };

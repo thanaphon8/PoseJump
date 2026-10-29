@@ -28,6 +28,7 @@ export async function GET(req: Request) {
     {
       name: string;
       username: string;
+      employeeId: string | null;
       avatarUrl: string | null;
       org: OrgInfo;
       points: number;
@@ -41,6 +42,7 @@ export async function GET(req: Request) {
       const a = acc.get(e.userId) ?? {
         name: e.name,
         username: e.username,
+        employeeId: e.employeeId,
         avatarUrl: e.avatarUrl,
         org: e.org,
         points: 0,

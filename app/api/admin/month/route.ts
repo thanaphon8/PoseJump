@@ -5,6 +5,7 @@ import {
   DAY_MS,
   avatarOf,
   computeRange,
+  employeeIdOf,
   orgFromUser,
   dayStartOf,
   firstJumpTs,
@@ -58,6 +59,7 @@ export async function GET(req: Request) {
     {
       name: string;
       username: string;
+      employeeId: string | null;
       avatarUrl: string | null;
       org: OrgInfo;
       points: number;
@@ -73,10 +75,11 @@ export async function GET(req: Request) {
   for (const list of perDay) {
     if (list.length > 0) activeDays += 1;
     for (const e of list) {
-      // name / avatarUrl / org มากับแถวรายวันจาก computeRange อยู่แล้ว
+      // name / avatarUrl / org / employeeId มากับแถวรายวันจาก computeRange อยู่แล้ว
       const a = acc.get(e.userId) ?? {
         name: e.name,
         username: e.username,
+        employeeId: e.employeeId,
         avatarUrl: e.avatarUrl,
         org: e.org,
         points: 0,
@@ -106,6 +109,7 @@ export async function GET(req: Request) {
           nickname: 1,
           display: 1,
           username: 1,
+          employeeId: 1,
           avatarUrl: 1,
           companyId: 1,
           departmentId: 1,
@@ -120,6 +124,7 @@ export async function GET(req: Request) {
     acc.set(id, {
       name: String(u.nickname ?? u.display ?? "?"),
       username: String(u.username ?? ""),
+      employeeId: employeeIdOf(u),
       avatarUrl: avatarOf(u),
       org: orgFromUser(u),
       points: 0,

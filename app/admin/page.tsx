@@ -7,7 +7,7 @@ import UserDayModal from "../components/UserDayModal";
 import UserMonthModal from "../components/UserMonthModal";
 import { DeptBoardView } from "../components/DepartmentRank";
 import type { DeptEntry } from "../components/DepartmentRank";
-import { buildGroups, matchesGroup } from "../components/adminGroups";
+import { buildGroups, filterGroupByQuery } from "../components/adminGroups";
 import WeekCalendar from "../components/WeekCalendar";
 
 const APP_NAME = "Daily Jump Challenge – ท้าให้กระโดด ลุ้นให้ได้แต้ม";
@@ -989,11 +989,13 @@ export default function AdminPage() {
   const groupReady =
     view === "month" && group === "group" && month?.scope === "all";
   const cum = groupReady ? month?.deptTotals : undefined;
+  // ค้นหา: ชื่อกลุ่ม/สังกัดตรง = ทั้งกลุ่ม / สมาชิกตรง (ชื่อ username รหัสพนักงาน) = เฉพาะคนนั้น
   const groupList =
     groupReady && cum
-      ? buildGroups(monthScoped, "points", cum).filter((g) =>
-          matchesGroup(q, g)
-        )
+      ? buildGroups(monthScoped, "points", cum).flatMap((g) => {
+          const r = filterGroupByQuery(q, g);
+          return r ? [r] : [];
+        })
       : [];
 
   const groupUnit = "ครั้งสะสม";
@@ -1301,7 +1303,7 @@ export default function AdminPage() {
                 onChange={(e) => setQ(e.target.value)}
                 placeholder={
                   group === "group"
-                    ? "ค้นหาแผนกหรือสาขา"
+                    ? "ค้นหาแผนก สาขา หรือรหัสพนักงาน"
                     : "ค้นหาชื่อ, username หรือรหัสพนักงาน"
                 }
                 className="h-10 w-full rounded-full bg-white pl-10 pr-4 text-[14px] shadow-sm outline-none ring-2 ring-transparent placeholder:text-[#A9B79A] focus:ring-[#C9F25B]"
