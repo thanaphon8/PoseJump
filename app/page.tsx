@@ -13,7 +13,7 @@ import HomeView from "./components/HomeView";
 import PromoPopup from "./components/PromoPopup";
 import BanNotice from "./components/BanNotice";
 import Setting from "./components/Setting";
-import Navbar from "./components/Navbar";
+import Navbar, { NAV_ITEMS } from "./components/Navbar";
 import { uploadShot } from "./components/snapshot";
 import {
   DEFAULT_DAILY_GOAL,
@@ -23,7 +23,7 @@ import {
   gameDayStart,
   gameDayKey,
 } from "./components/goal";
-import type { Tab, NavItem } from "./components/Navbar";
+import type { Tab } from "./components/Navbar";
 import type { Session } from "./components/History";
 import {
   APP_NAME,
@@ -519,12 +519,6 @@ function Shell({
   user: User | null;
   children: ReactNode;
 }) {
-  const items: NavItem[] = [
-    ["home", "หน้าหลัก", ICONS.home],
-    ["today", "อันดับ", ICONS.trophy],
-    ["history", "ประวัติ", ICONS.chart],
-    ["settings", "ตั้งค่า", ICONS.gear],
-  ];
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#F3F6EC] text-[#1B2A21] lg:flex">
       <aside className="hidden h-dvh w-72 shrink-0 p-4 lg:flex">
@@ -535,7 +529,7 @@ function Shell({
               {APP_SHORT}
             </span>
           </div>
-          {items.map(([t, label, d]) => (
+          {NAV_ITEMS.map(([t, label, d]) => (
             <button
               key={t}
               onClick={() => onTab(t)}
@@ -572,7 +566,7 @@ function Shell({
       </main>
       </div>
 
-      <Navbar tab={tab} onTab={onTab} items={items} user={user} />
+      <Navbar tab={tab} onTab={onTab} user={user} />
     </div>
   );
 }

@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Icon } from "./auth-shared";
+import { ICONS, Icon } from "./auth-shared";
 import type { User } from "./auth-shared";
 
 /* ------------------------------------------------------------------ */
 /* แถบเมนูล่าง (appbar ด้านล่าง) เฉพาะมือถือ                              */
 /* แยกมาจาก Shell ใน app/page.tsx (เดสก์ท็อปใช้ sidebar ซ้ายแทน)          */
-/* สไตล์ iOS 26: แถบลอยกระจกเบลอ แถบเลือกเลื่อนตามนิ้ว/สปริงตอนปล่อย         */
-/* เลื่อนหน้าลง = ย่อแถบ (ซ่อนป้ายชื่อ) เลื่อนขึ้น = ขยายกลับ              */
+/* สไตล์ iOS 26: แถบลอยกระจกเบลอ                                          */
+/* แถบเลือกเลื่อนตามนิ้ว/สปริงตอนปล่อย                                      */
+/* เลื่อนลง = แถบหดแคบ (ซ่อนป้ายชื่อ) เลื่อนขึ้นหรือหยุดเลื่อน 1 วิ = ขยายกลับ  */
 /* แท็บ "settings" แสดงเป็นรูปโปรไฟล์ ป้ายชื่อ "ฉัน" (ถ้าล็อกอินแล้ว)        */
 /* ------------------------------------------------------------------ */
 
@@ -17,6 +18,18 @@ export type Tab = "home" | "today" | "history" | "settings";
 
 // [แท็บ, ป้ายชื่อ, path ของไอคอน]
 export type NavItem = [Tab, string, string];
+
+// รายการแท็บ ใช้ร่วมกันทั้งแถบล่างมือถือและ sidebar เดสก์ท็อป (ย้ายมาจาก Shell ใน app/page.tsx)
+export const NAV_ITEMS: NavItem[] = [
+  ["home", "หน้าหลัก", ICONS.home],
+  ["today", "อันดับ", ICONS.trophy],
+  ["history", "ประวัติ", ICONS.chart],
+  ["settings", "ตั้งค่า", ICONS.gear],
+];
+
+// หยุดเลื่อนนานเท่านี้ (ms) แล้วแถบขยายกลับเต็ม
+const IDLE_MS = 1000;
+const SPRING = "ease-[cubic-bezier(0.22,1.25,0.36,1)]";
 
 const initialOf = (name: string) =>
   (Array.from(name.trim())[0] ?? "?").toUpperCase();
@@ -59,12 +72,12 @@ function NavAvatar({ user, active }: { user: User; active: boolean }) {
 export default function Navbar({
   tab,
   onTab,
-  items,
+  items = NAV_ITEMS,
   user = null,
 }: {
   tab: Tab;
   onTab: (t: Tab) => void;
-  items: NavItem[];
+  items?: NavItem[];
   user?: User | null;
 }) {
   const n = items.length;
@@ -75,22 +88,59 @@ export default function Navbar({
   const gridRef = useRef<HTMLDivElement>(null);
   // ตำแหน่งนิ้วขณะลาก หน่วยเป็นช่องแท็บ (ทศนิยมได้) null = ไม่ได้ลาก
   const [drag, setDrag] = useState<number | null>(null);
+  // compact = แถบหดแคบ (ซ่อนป้ายชื่อ)
   const [compact, setCompact] = useState(false);
+  const compactRef = useRef(false);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastY = useRef(0);
   const startX = useRef<number | null>(null); // จุดที่นิ้วแตะลง null = ไม่ได้กด
 
   // ฟังการเลื่อนของทุก element (ตัวที่เลื่อนจริงอาจเป็น div ใน Shell ไม่ใช่ window)
+  // เลื่อนลง = หด, เลื่อนขึ้น = ขยายกลับทันที, หยุดเลื่อน IDLE_MS = ขยายกลับ
+  // เอฟเฟกต์นี้ทำเฉพาะมือถือ (จอ < lg) เดสก์ท็อปไม่มีแถบนี้อยู่แล้ว
   useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 1024px)");
+
+    const arm = () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      idleTimer.current = setTimeout(() => {
+        compactRef.current = false;
+        setCompact(false);
+      }, IDLE_MS);
+    };
+
     const onScroll = (e: Event) => {
+      if (desktop.matches) return;
       const t = e.target;
       const y = t instanceof HTMLElement ? t.scrollTop : window.scrollY;
       const d = y - lastY.current;
-      if (Math.abs(d) < 6) return;
+      if (Math.abs(d) < 6) {
+        // ขยับนิดเดียวก็ยังนับว่าเลื่อนอยู่ ต่อเวลารอ
+        if (compactRef.current) arm();
+        return;
+      }
       lastY.current = y;
-      setCompact(y >= 24 && d > 0);
+      if (d < 0) {
+        // เลื่อนขึ้น = ขยายกลับทันที ไม่ต้องรอ
+        if (idleTimer.current) clearTimeout(idleTimer.current);
+        if (compactRef.current) {
+          compactRef.current = false;
+          setCompact(false);
+        }
+        return;
+      }
+      if (y >= 24 && !compactRef.current) {
+        compactRef.current = true;
+        setCompact(true);
+      }
+      if (compactRef.current) arm();
     };
+
     document.addEventListener("scroll", onScroll, { capture: true, passive: true });
-    return () => document.removeEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("scroll", onScroll, true);
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+    };
   }, []);
 
   const posAt = (clientX: number) => {
@@ -132,7 +182,9 @@ export default function Navbar({
     >
       <nav
         aria-label="เมนูหลัก"
-        className="pointer-events-auto relative w-full max-w-md rounded-full border border-white/70 bg-white/55 p-1 shadow-[0_8px_32px_rgba(27,42,33,0.14),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-2xl backdrop-saturate-[1.8]"
+        className={`pointer-events-auto relative rounded-full border border-white/70 bg-white/55 p-1 shadow-[0_8px_32px_rgba(27,42,33,0.14),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-2xl backdrop-saturate-[1.8] transition-[width,max-width] duration-[450ms] motion-reduce:transition-none ${SPRING} ${
+          compact ? "w-[70%] max-w-[19.6rem]" : "w-full max-w-md"
+        }`}
       >
         <div
           ref={gridRef}
@@ -147,9 +199,7 @@ export default function Navbar({
           <div
             aria-hidden
             className={`pointer-events-none absolute inset-y-0 left-0 transition-transform motion-reduce:transition-none ${
-              dragging
-                ? "duration-100 ease-out"
-                : "duration-[450ms] ease-[cubic-bezier(0.22,1.25,0.36,1)]"
+              dragging ? "duration-100 ease-out" : `duration-[450ms] ${SPRING}`
             }`}
             style={{
               width: `${100 / n}%`,
@@ -157,11 +207,15 @@ export default function Navbar({
             }}
           >
             <span
-              className={`block h-full w-full rounded-full bg-[#C9F25B] transition-[transform,box-shadow] duration-[450ms] ease-[cubic-bezier(0.22,1.25,0.36,1)] motion-reduce:transition-none ${
+              className={`block h-full w-full rounded-full transition-[transform,box-shadow] duration-[450ms] motion-reduce:transition-none ${SPRING} ${
                 dragging
-                  ? "scale-[1.12] shadow-[0_6px_18px_rgba(63,94,31,0.35)]"
-                  : "scale-100 shadow-[0_2px_8px_rgba(63,94,31,0.2)]"
+                  ? "scale-[1.12] shadow-[0_6px_18px_rgba(63,94,31,0.35),inset_0_1.5px_0_rgba(255,255,255,0.85),inset_0_-1px_0_rgba(255,255,255,0.35)]"
+                  : "scale-100 shadow-[0_2px_8px_rgba(63,94,31,0.2),inset_0_1.5px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(255,255,255,0.3)]"
               }`}
+              style={{
+                background:
+                  "linear-gradient(180deg, rgba(222,252,140,0.95), rgba(201,242,91,0.85))",
+              }}
             />
           </div>
 
@@ -183,7 +237,7 @@ export default function Navbar({
                   active ? "text-[#1B2A21]" : "text-[#6B7A6E]"}`}
               >
                 <span
-                  className={`flex h-7 items-center justify-center transition-transform duration-[450ms] ease-[cubic-bezier(0.22,1.25,0.36,1)] motion-reduce:transition-none ${
+                  className={`flex h-7 items-center justify-center transition-transform duration-[450ms] motion-reduce:transition-none ${SPRING} ${
                     active && dragging ? "scale-110" : "scale-100"
                   }`}
                 >
