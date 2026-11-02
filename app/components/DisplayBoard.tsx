@@ -21,7 +21,7 @@ const BODY_H = STAGE_H - PAD * 2 - HEADER_H - BODY_GAP; // 900
 const PODIUM_W = 640;
 const ROW_GAP = 8;
 // การ์ด QR มุมล่างขวา: กันที่ท้ายคอลัมน์ขวา ไม่ให้ทับรายการอันดับ
-const QR_H = 240;
+const QR_H = 300;
 const QR_GAP = 16;
 const RIGHT_H = BODY_H - QR_H - QR_GAP; // พื้นที่รายการอันดับ 4+ ที่เหลือ
 
@@ -302,8 +302,8 @@ function JoinQR() {
       src="/img/line.PNG"
       alt="QR code LINE"
       draggable={false}
-      className="shrink-0 self-end object-contain"
-      style={{ height: QR_H, width: QR_H }}
+      className="shrink-0 self-end object-contain object-right-bottom"
+      style={{ height: QR_H, width: "auto", maxWidth: "100%" }}
     />
   );
 }
