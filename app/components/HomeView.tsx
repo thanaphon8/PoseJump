@@ -190,7 +190,7 @@ function RulesBoard({ currentFrom }: { currentFrom: string | null }) {
             </span>
           </h2>
           <p className="mt-2 text-[14px] leading-6 text-white/85">
-            ทำเป้าหมายรายวันให้สำเร็จ เซ็ตใหม่ทุกเที่ยงคืนเวลาไทย
+            ทำเป้าหมายรายวันให้สำเร็จ เซ็ตใหม่ทุก 6 โมงเช้า เวลาไทย
           </p>
         </div>
 
