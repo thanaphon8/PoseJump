@@ -3,6 +3,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ICONS, Icon, POINT_QUOTA } from "./auth-shared";
 import type { DeptEntry } from "./DepartmentRank";
+import {
+  Face as MoodFace,
+  NoteBox,
+  NoteStyles,
+  styleOf,
+  type Note,
+} from "./NoteShared";
 
 /* ------------------------------------------------------------------ */
 /* หน้าจอใหญ่ (/display): อันดับบุคคล ↔ อันดับแผนก สลับอัตโนมัติ           */
@@ -54,6 +61,10 @@ const secParam = (k: string, def: number) => {
   return Number.isFinite(v) && v > 0 ? v * 1000 : def;
 };
 
+// กรองโน๊ตหมดอายุซ้ำฝั่ง client (หน้าจอเปิดค้างข้ามรอบรีเซ็ต)
+const activeNote = (n?: Note | null): Note | null =>
+  n && Date.parse(n.expiresAt) > Date.now() ? n : null;
+
 // ขนาดเวทีตามแนวจอ
 type Dims = {
   w: number;
@@ -92,6 +103,8 @@ type BoardEntry = {
   me: boolean;
   goalRank: number | null;
   goal: number;
+  // โน๊ตบนแท่นยืน (มีเฉพาะอันดับ 1-3 ที่เขียนไว้และยังไม่หมดอายุ)
+  note?: Note | null;
 };
 
 type Board = {
@@ -465,6 +478,7 @@ type PodItem = {
   caption: string; // ข้อความใต้ตัวเลข
   stepText?: string | null; // ชื่อบริษัทในแท่น
   reached?: boolean;
+  note?: Note | null; // โน๊ตบนแท่น (เฉพาะหน้าบุคคล)
 };
 
 const toPersonItem = (e: BoardEntry): PodItem => ({
@@ -475,6 +489,7 @@ const toPersonItem = (e: BoardEntry): PodItem => ({
   caption: `ครั้ง · ${e.rounds} รอบ`,
   stepText: e.company,
   reached: e.goalRank != null || e.total >= e.goal,
+  note: activeNote(e.note),
 });
 
 const toDeptItem = (e: DeptEntry): PodItem => ({
@@ -499,6 +514,9 @@ const PODIUM_SIZES = {
     caption: 18,
     stepNum: 76,
     stepText: 26,
+    // โน๊ต: noteZoom = ขยายตัวอักษรโน๊ตให้อ่านง่ายบนจอใหญ่ / shrinkFace = ย่อรูปอันดับ 1 ที่มีโน๊ต
+    noteZoom: 1.4,
+    shrinkFace: 20,
   },
   // แนวตั้ง: การ์ดแท่นยืนสูง 1/3 ของจอ (PODIUM_H_P) จึงย่อรูป/ตัวอักษร/แท่นลงให้พอดี
   portrait: {
@@ -511,6 +529,8 @@ const PODIUM_SIZES = {
     caption: 15,
     stepNum: 52,
     stepText: 18,
+    noteZoom: 1.15,
+    shrinkFace: 40,
   },
 } as const;
 
@@ -546,6 +566,12 @@ function Podium({
         <div className="flex items-end gap-3">
           {slots.map(({ place, e }) => {
             const L = PODIUM_LOOK[place];
+            const note = e?.note ?? null;
+            const ns = styleOf(note?.style);
+            // อันดับ 1 ที่มีโน๊ต: ย้ายถ้วยไปเป็นป้ายมุมรูป และย่อรูปลงเล็กน้อย
+            // เพื่อให้โน๊ตพอดีการ์ด (การ์ดสูงคงที่ ล้นแล้วถูกตัดด้านบน)
+            const crown = place === 1 && !!note;
+            const fSize = faceSize[place] - (crown ? S.shrinkFace : 0);
             return (
               <div
                 key={place}
@@ -555,14 +581,48 @@ function Podium({
               >
                 {e ? (
                   <>
-                    <span
-                      className={`mb-2 flex h-[44px] items-center text-[#3F5E1F] ${
-                        place === 1 ? "dp-float" : ""
-                      }`}
-                    >
-                      {place === 1 && <Icon d={ICONS.trophy} size={44} />}
-                    </span>
-                    <Faces faces={e.faces} size={faceSize[place]} />
+                    {!crown && (
+                      <span
+                        className={`mb-2 flex h-[44px] items-center text-[#3F5E1F] ${
+                          place === 1 ? "dp-float" : ""
+                        }`}
+                      >
+                        {place === 1 && <Icon d={ICONS.trophy} size={44} />}
+                      </span>
+                    )}
+                    {/* bubble โน๊ต เหนือรูป (กว้างกว่าคอลัมน์เล็กน้อย + zoom ให้อ่านบนจอใหญ่) */}
+                    {note && (
+                      <div
+                        className="relative mb-5 flex w-[125%] max-w-none justify-center"
+                        style={{ zoom: S.noteZoom }}
+                      >
+                        <div className="relative w-full text-center drop-shadow-md">
+                          <NoteBox text={note.text} frame={ns.frame} />
+                          {/* หางกรอบคำพูด ชี้ลงหารูป สีตามกรอบ */}
+                          <span
+                            aria-hidden
+                            className="absolute left-1/2 top-[calc(100%-1px)] h-2 w-3.5 -translate-x-1/2 [clip-path:polygon(0_0,100%_0,50%_100%)]"
+                            style={{ background: ns.tail }}
+                          />
+                          {ns.mood && (
+                            <span
+                              aria-hidden
+                              className="pointer-events-none absolute -right-3 -top-4"
+                            >
+                              <MoodFace kind={ns.mood} size={28} />
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <div className="relative inline-block">
+                      <Faces faces={e.faces} size={fSize} />
+                      {crown && (
+                        <span className="dp-float absolute -right-5 -top-6 text-[#3F5E1F]">
+                          <Icon d={ICONS.trophy} size={40} />
+                        </span>
+                      )}
+                    </div>
                     <div
                       className="mt-3 line-clamp-2 min-h-[2.4em] w-full break-words text-center font-medium leading-tight"
                       style={{ fontSize: S.name[place] }}
@@ -1334,6 +1394,8 @@ export default function DisplayBoard() {
       onDoubleClick={toggleFullscreen}
     >
       <style>{CSS}</style>
+      {/* CSS ของกรอบ/อารมณ์/เอฟเฟกต์โน๊ต อยู่ใน NoteShared.tsx */}
+      <NoteStyles />
 
       {/* กล่องจอ: ขนาดเท่าจอหลังหมุน (พื้นหลัง เวที และแถบกวาดอยู่ในนี้ หมุนไปพร้อมกัน) */}
       <div
