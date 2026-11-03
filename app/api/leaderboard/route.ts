@@ -84,6 +84,9 @@ export async function GET() {
       seqOf.set(String(h.userId), hitN);
     }
 
+    // จำนวนผู้ลงทะเบียนทั้งหมด (ทุกบัญชีที่ยังอยู่ใน users)
+    const registered = await db.collection("users").countDocuments({});
+
     // เป้าหมายรายวัน (เท่ากันทุกคน เปลี่ยนตามสัปดาห์ ดู app/components/goal.ts)
     // ใช้วาดหลอดความคืบหน้า ต้องตรงกับเป้าที่ /api/sessions ใช้ตัดสิน point
     const goal = goalOfDate(dayStr);
@@ -150,7 +153,15 @@ export async function GET() {
         : null;
 
     return NextResponse.json(
-      { entries, me, count: rows.length, resetAt: start + DAY },
+      {
+        entries,
+        me,
+        count: rows.length,
+        // ผู้ลงทะเบียนทั้งหมด + จำนวนคนที่ทำเป้าวันนี้สำเร็จแล้ว (รีเซ็ตทุก 06:00)
+        registered,
+        goalHits: hitN,
+        resetAt: start + DAY,
+      },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (e) {

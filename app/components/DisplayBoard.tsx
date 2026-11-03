@@ -29,7 +29,7 @@ const ROW_GAP = 8;
 
 // แนวนอน: แท่นยืนซ้าย / รายการ + QR ขวา
 const PODIUM_W = 640;
-const QR_H = 300; // การ์ด QR มุมล่างขวา กันที่ท้ายคอลัมน์ขวา ไม่ให้ทับรายการอันดับ
+const QR_H = 300; // แถวล่างขวา (card สถิติ + QR) กันที่ท้ายคอลัมน์ขวา ไม่ให้ทับรายการอันดับ
 const QR_GAP = 16;
 
 // แนวตั้ง: แท่นยืนบน / รายการกลาง / QR ล่างขวา
@@ -111,6 +111,15 @@ type Board = {
   entries: BoardEntry[];
   count: number;
   resetAt: number;
+  // ผู้ลงทะเบียนทั้งหมด / จำนวนคนที่ทำเป้าวันนี้สำเร็จแล้ว (รีเซ็ต 06:00)
+  registered?: number;
+  goalHits?: number;
+};
+
+// ตัวเลขใน card สถิติมุมล่างขวา
+type Stats = {
+  quotaLeft: number; // สิทธิ์รับ Point ที่เหลือ (0 = เต็มแล้ว ซ่อนส่วนนี้)
+  registered: number; // ผู้ลงทะเบียนทั้งหมด
 };
 
 type View = "person" | "dept";
@@ -344,17 +353,151 @@ function Clock({ compact = false }: { compact?: boolean }) {
   );
 }
 
-// QR เข้าร่วมกิจกรรม (มุมล่างขวา) แสดงแต่รูป ไม่มีกรอบ ไม่มีข้อความ
-function JoinQR({ h }: { h: number }) {
+// เหรียญ point ตกแต่งในการ์ด (x,y = % ของการ์ด / s = ขนาดอ้างอิงแนวนอน / o = ความทึบ / r = องศาหมุน / b = เบลอ px)
+const COINS = [
+  { x: -7, y: -14, s: 120, o: 0.14, r: -18, b: 2 },
+  { x: 58, y: -16, s: 70, o: 0.95, r: 14, b: 0 },
+  { x: 84, y: 8, s: 110, o: 0.16, r: 24, b: 2 },
+  { x: -4, y: 62, s: 84, o: 0.95, r: -10, b: 0 },
+  { x: 30, y: 78, s: 56, o: 0.2, r: 30, b: 1 },
+  { x: 74, y: 66, s: 96, o: 0.95, r: 8, b: 0 },
+  { x: 46, y: 40, s: 150, o: 0.07, r: -6, b: 3 },
+] as const;
+
+function Coin({
+  x,
+  y,
+  s,
+  o,
+  r,
+  b,
+}: {
+  x: number;
+  y: number;
+  s: number;
+  o: number;
+  r: number;
+  b: number;
+}) {
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src="/img/line.PNG"
-      alt="QR code LINE"
-      draggable={false}
-      className="shrink-0 self-end object-contain object-right-bottom"
-      style={{ height: h, width: "auto", maxWidth: "100%" }}
-    />
+    <span
+      aria-hidden
+      className="pointer-events-none absolute flex items-center justify-center rounded-full"
+      style={{
+        left: `${x}%`,
+        top: `${y}%`,
+        width: s,
+        height: s,
+        opacity: o,
+        transform: `rotate(${r}deg)`,
+        filter: b ? `blur(${b}px)` : undefined,
+        color: "#3F5E1F",
+        background:
+          "radial-gradient(circle at 30% 28%, #F6FFD0, #C9F25B 52%, #8FB54A)",
+        boxShadow:
+          "inset 0 0 0 3px rgba(63,94,31,.4), inset 0 0 0 8px rgba(255,255,255,.28), 0 8px 18px rgba(0,0,0,.4)",
+      }}
+    >
+      <Icon d={ICONS.star} size={Math.round(s * 0.5)} fill />
+    </span>
+  );
+}
+
+// card สถิติ: เหลือสิทธิ์รับ Point อีก N คน (ซ่อนเมื่อเต็ม) + ผู้ลงทะเบียนทั้งหมด M คน
+function StatCard({
+  label,
+  value,
+  compact,
+  dark,
+}: {
+  label: string;
+  value: number;
+  compact: boolean;
+  dark?: boolean;
+}) {
+  const k = compact ? 0.7 : 1; // ย่อเหรียญตามแนวตั้ง
+  const radius = compact ? 10 : 12; // มุมโค้งนิดเดียว (เท่ากันทั้งสองการ์ด ทั้ง 4 มุม)
+
+  return (
+    <div
+      className={`relative flex h-full min-w-0 flex-1 flex-col items-center justify-center overflow-hidden px-4 text-center ${
+        dark ? "bg-[#1B2A21] text-[#C9F25B]" : "bg-white text-[#1B2A21]"
+      }`}
+      style={{
+        borderRadius: radius,
+        boxShadow: CARD_SHADOW, // ไม่มีเส้นกรอบ เหลือแค่เงา
+      }}
+    >
+      {dark &&
+        COINS.map((c, i) => <Coin key={i} {...c} s={Math.round(c.s * k)} />)}
+
+      <div
+        className={`relative z-10 font-medium leading-tight ${
+          dark ? "text-[#C9F25B]/90" : "text-[#6B7A6E]"
+        }`}
+        style={{ fontSize: compact ? 18 : 26 }}
+      >
+        {label}
+      </div>
+      <div
+        className="relative z-10 mt-2 font-semibold leading-none tabular-nums"
+        style={{ fontSize: compact ? 64 : 96 }}
+      >
+        {fmtNum(value)}
+      </div>
+      <div
+        className={`relative z-10 mt-2 font-medium ${
+          dark ? "text-[#C9F25B]/90" : "text-[#6B7A6E]"
+        }`}
+        style={{ fontSize: compact ? 18 : 26 }}
+      >
+        คน
+      </div>
+    </div>
+  );
+}
+
+// แถวล่างขวา: card สถิติ (ซ้าย) + QR เข้าร่วมกิจกรรม (ขวา) สูงเท่ากัน
+function JoinQR({
+  h,
+  stats,
+  compact,
+}: {
+  h: number;
+  stats: Stats | null;
+  compact: boolean;
+}) {
+  return (
+    <div
+      className="flex min-w-0 items-end justify-end gap-4"
+      style={{ height: h }}
+    >
+      {stats && (
+        <div className="flex h-full min-w-0 flex-1 gap-4">
+          {stats.quotaLeft > 0 && (
+            <StatCard
+              dark
+              compact={compact}
+              label="เหลือสิทธิ์รับ Point อีก"
+              value={stats.quotaLeft}
+            />
+          )}
+          <StatCard
+            compact={compact}
+            label="ผู้ลงทะเบียนทั้งหมด"
+            value={stats.registered}
+          />
+        </div>
+      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/img/line.PNG"
+        alt="QR code LINE"
+        draggable={false}
+        className="shrink-0 object-contain object-right-bottom"
+        style={{ height: h, width: "auto", maxWidth: "100%" }}
+      />
+    </div>
   );
 }
 
@@ -703,23 +846,25 @@ function Podium({
 }
 
 // โครงเนื้อหา
-// แนวนอน: แท่นซ้าย / (รายการ + QR) ขวา
-// แนวตั้ง: แท่นบน / รายการกลาง / QR ล่างขวา
+// แนวนอน: แท่นซ้าย / (รายการ + แถว card สถิติ/QR) ขวา
+// แนวตั้ง: แท่นบน / รายการกลาง / แถว card สถิติ/QR ล่าง
 function BodyFrame({
   dims,
   podium,
   list,
+  stats,
 }: {
   dims: Dims;
   podium: ReactNode;
   list: ReactNode;
+  stats: Stats | null;
 }) {
   const listAndQr = (
     <div className="flex min-w-0 flex-col" style={{ gap: QR_GAP }}>
       <div className="min-h-0" style={{ height: dims.listH }}>
         {list}
       </div>
-      <JoinQR h={dims.qrH} />
+      <JoinQR h={dims.qrH} stats={stats} compact={dims.portrait} />
     </div>
   );
 
@@ -747,14 +892,22 @@ function BodyFrame({
   );
 }
 
-// กรณีไม่มีข้อมูลเลย: การ์ดข้อความเต็มพื้นที่ + QR ล่างขวา
-function EmptyFrame({ text, dims }: { text: string; dims: Dims }) {
+// กรณีไม่มีข้อมูลเลย: การ์ดข้อความเต็มพื้นที่ + แถว card สถิติ/QR ล่าง
+function EmptyFrame({
+  text,
+  dims,
+  stats,
+}: {
+  text: string;
+  dims: Dims;
+  stats: Stats | null;
+}) {
   return (
     <div className="flex h-full flex-col" style={{ gap: QR_GAP }}>
       <div className="min-h-0 flex-1">
         <Empty text={text} />
       </div>
-      <JoinQR h={dims.qrH} />
+      <JoinQR h={dims.qrH} stats={stats} compact={dims.portrait} />
     </div>
   );
 }
@@ -958,10 +1111,12 @@ function PersonRow({
 function PersonBody({
   board,
   dims,
+  stats,
   onDone,
 }: {
   board: Board;
   dims: Dims;
+  stats: Stats | null;
   onDone: () => void;
 }) {
   const rest = board.entries.slice(3);
@@ -971,7 +1126,13 @@ function PersonBody({
   );
 
   if (board.entries.length === 0) {
-    return <EmptyFrame text="ยังไม่มีอันดับ ลงสนามเป็นคนแรกเลย" dims={dims} />;
+    return (
+      <EmptyFrame
+        text="ยังไม่มีอันดับ ลงสนามเป็นคนแรกเลย"
+        dims={dims}
+        stats={stats}
+      />
+    );
   }
 
   const top = board.entries.slice(0, 3).map(toPersonItem);
@@ -1013,6 +1174,7 @@ function PersonBody({
   return (
     <BodyFrame
       dims={dims}
+      stats={stats}
       podium={
         <Podium
           items={[top[0], top[1], top[2]]}
@@ -1087,14 +1249,22 @@ function DeptEmptyRest({ onDone }: { onDone: () => void }) {
 function DeptBody({
   rows,
   dims,
+  stats,
   onDone,
 }: {
   rows: DeptEntry[];
   dims: Dims;
+  stats: Stats | null;
   onDone: () => void;
 }) {
   if (rows.length === 0) {
-    return <EmptyFrame text="ยังไม่มีแผนกหรือสาขาไหนทำคะแนน" dims={dims} />;
+    return (
+      <EmptyFrame
+        text="ยังไม่มีแผนกหรือสาขาไหนทำคะแนน"
+        dims={dims}
+        stats={stats}
+      />
+    );
   }
   const top = rows.slice(0, 3).map(toDeptItem);
   const rest = rows.slice(3);
@@ -1102,6 +1272,7 @@ function DeptBody({
   return (
     <BodyFrame
       dims={dims}
+      stats={stats}
       podium={
         <Podium
           items={[top[0], top[1], top[2]]}
@@ -1181,6 +1352,16 @@ export default function DisplayBoard() {
   const portrait = box?.portrait ?? false;
   const dims = useMemo(() => dimsOf(portrait), [portrait]);
   const hasDept = (dept?.length ?? 0) > 0;
+
+  // card สถิติ: โควต้า Point ที่เหลือ (100 คนแรกของวันเกม รีเซ็ต 06:00) + ผู้ลงทะเบียนทั้งหมด
+  // ยังโหลดไม่เสร็จ หรือ API ยังไม่ส่ง registered = ไม่แสดง card
+  const stats = useMemo<Stats | null>(() => {
+    if (!person || person.registered == null) return null;
+    return {
+      quotaLeft: Math.max(0, POINT_QUOTA - (person.goalHits ?? 0)),
+      registered: person.registered,
+    };
+  }, [person]);
 
   // แนวตั้งที่คนเยอะ: หน้าบุคคลเลื่อนเอง และเป็นฝ่ายแจ้งจบรอบ (ไม่ใช้ตัวจับเวลาคงที่)
   const personRest = Math.max(0, (person?.entries.length ?? 0) - 3);
@@ -1491,6 +1672,7 @@ export default function DisplayBoard() {
                     key={cycle}
                     board={person}
                     dims={dims}
+                    stats={stats}
                     onDone={onPersonScrollDone}
                   />
                 ) : (
@@ -1500,6 +1682,7 @@ export default function DisplayBoard() {
                 <DeptBody
                   rows={dept}
                   dims={dims}
+                  stats={stats}
                   onDone={() => goView("person")}
                 />
               ) : (
