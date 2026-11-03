@@ -6,24 +6,30 @@ import type { DeptEntry } from "./DepartmentRank";
 
 /* ------------------------------------------------------------------ */
 /* หน้าจอใหญ่ (/display): อันดับบุคคล ↔ อันดับแผนก สลับอัตโนมัติ           */
-/* เวที 1920x1080 คงที่ แล้วย่อ/ขยายให้พอดีจอ (ตัวอักษรไม่เพี้ยนตามจอ)        */
-/* ปรับเวลาผ่าน URL ได้: /display?p=20&d=15 (วินาที)                       */
-/*   p = เวลาโชว์อันดับบุคคล / d = เวลาโชว์อันดับแผนกขั้นต่ำ                   */
-/* กด F หรือดับเบิลคลิก = เต็มจอ                                            */
+/* รองรับจอแนวนอน (1920x1080) และแนวตั้ง (1080x1920) เลือกอัตโนมัติ        */
+/* ย่อ/ขยายเวทีให้พอดีจอ (ตัวอักษรไม่เพี้ยนตามจอ)                            */
+/*                                                                      */
+/* ปรับผ่าน URL:                                                         */
+/*   /display?p=20&d=15   p = เวลาโชว์บุคคล / d = เวลาโชว์แผนกขั้นต่ำ (วินาที) */
+/*   /display?rotate=90   จอวางตั้ง แต่เครื่องเล่นส่งภาพแนวนอน → หมุนภาพให้    */
+/*                        (ใช้ 90 หรือ 270 ตามทิศที่จอหมุน)                   */
+/* กด F หรือดับเบิลคลิก = เต็มจอ / กดอีกครั้ง = กลับมาปกติ                     */
 /* ------------------------------------------------------------------ */
 
-const STAGE_W = 1920;
-const STAGE_H = 1080;
 const PAD = 32;
-const HEADER_H = 96;
 const BODY_GAP = 20;
-const BODY_H = STAGE_H - PAD * 2 - HEADER_H - BODY_GAP; // 900
-const PODIUM_W = 640;
 const ROW_GAP = 8;
-// การ์ด QR มุมล่างขวา: กันที่ท้ายคอลัมน์ขวา ไม่ให้ทับรายการอันดับ
-const QR_H = 300;
+
+// แนวนอน: แท่นยืนซ้าย / รายการ + QR ขวา
+const PODIUM_W = 640;
+const QR_H = 300; // การ์ด QR มุมล่างขวา กันที่ท้ายคอลัมน์ขวา ไม่ให้ทับรายการอันดับ
 const QR_GAP = 16;
-const RIGHT_H = BODY_H - QR_H - QR_GAP; // พื้นที่รายการอันดับ 4+ ที่เหลือ
+
+// แนวตั้ง: แท่นยืนบน / รายการกลาง / QR ล่างขวา
+const PODIUM_H_P = 640; // = 1/3 ของความสูงจอแนวตั้ง (1920)
+const PODIUM_MAX_W_P = 820; // ความกว้างสูงสุดของกรอบแท่นยืนแนวตั้ง (จอกว้าง 1016 ใช้พื้นที่) วางกึ่งกลาง
+const PORTRAIT_GAP = 24;
+const QR_H_P = 220;
 
 const PERSON_MS = 20000; // เวลาโชว์อันดับบุคคล
 const DEPT_MIN_MS = 15000; // เวลาโชว์อันดับแผนกขั้นต่ำ (ถ้ารายการยาว จะอยู่จนเลื่อนจบรอบ)
@@ -46,6 +52,29 @@ const rowDelay = (i: number) =>
 const secParam = (k: string, def: number) => {
   const v = Number(new URLSearchParams(window.location.search).get(k));
   return Number.isFinite(v) && v > 0 ? v * 1000 : def;
+};
+
+// ขนาดเวทีตามแนวจอ
+type Dims = {
+  w: number;
+  h: number;
+  portrait: boolean;
+  headerH: number;
+  bodyH: number;
+  qrH: number;
+  listH: number; // ความสูงพื้นที่รายการอันดับ 4 ขึ้นไป
+};
+
+const dimsOf = (portrait: boolean): Dims => {
+  const w = portrait ? 1080 : 1920;
+  const h = portrait ? 1920 : 1080;
+  const headerH = portrait ? 128 : 96;
+  const bodyH = h - PAD * 2 - headerH - BODY_GAP;
+  const qrH = portrait ? QR_H_P : QR_H;
+  const listH = portrait
+    ? bodyH - PODIUM_H_P - PORTRAIT_GAP - qrH - QR_GAP
+    : bodyH - qrH - QR_GAP;
+  return { w, h, portrait, headerH, bodyH, qrH, listH };
 };
 
 /* ------------------------------------------------------------------ */
@@ -257,8 +286,8 @@ function Empty({ text }: { text: string }) {
 }
 
 // นาฬิกา + วันที่ (เวลาไทย, ปี พ.ศ.) แยก component เพื่อให้ tick ทุกวินาที
-// โดยไม่ทำให้ทั้งบอร์ดเรนเดอร์ใหม่
-function Clock() {
+// โดยไม่ทำให้ทั้งบอร์ดเรนเดอร์ใหม่ (compact = ตัวเล็กลงสำหรับแนวตั้ง)
+function Clock({ compact = false }: { compact?: boolean }) {
   const [t, setT] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -286,16 +315,24 @@ function Clock() {
 
   return (
     <div className="text-right">
-      <div className="text-[48px] font-semibold leading-none tabular-nums">
+      <div
+        className={`font-semibold leading-none tabular-nums ${
+          compact ? "text-[40px]" : "text-[48px]"
+        }`}
+      >
         {time}
       </div>
-      <div className="mt-1 text-[20px] text-[#6B7A6E]">{date}</div>
+      <div
+        className={`mt-1 text-[#6B7A6E] ${compact ? "text-[16px]" : "text-[20px]"}`}
+      >
+        {date}
+      </div>
     </div>
   );
 }
 
 // QR เข้าร่วมกิจกรรม (มุมล่างขวา) แสดงแต่รูป ไม่มีกรอบ ไม่มีข้อความ
-function JoinQR() {
+function JoinQR({ h }: { h: number }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -303,24 +340,12 @@ function JoinQR() {
       alt="QR code LINE"
       draggable={false}
       className="shrink-0 self-end object-contain object-right-bottom"
-      style={{ height: QR_H, width: "auto", maxWidth: "100%" }}
+      style={{ height: h, width: "auto", maxWidth: "100%" }}
     />
   );
 }
 
-// คอลัมน์ขวา: รายการอันดับ (สูง RIGHT_H) + การ์ด QR ท้ายคอลัมน์
-function RightCol({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col" style={{ gap: QR_GAP }}>
-      <div className="min-h-0" style={{ height: RIGHT_H }}>
-        {children}
-      </div>
-      <JoinQR />
-    </div>
-  );
-}
-
-// พลุกระดาษ: ยิงจากจุด (originX, originY) เป็นสัดส่วนของเวที จางหายใน ~2.6 วิ
+// พลุกระดาษ: ยิงจากจุด (originX, originY) เป็นสัดส่วนของเวที จางหายใน ~2.8 วิ
 function Confetti({
   count = 140,
   originX = 0.5,
@@ -429,7 +454,7 @@ function Confetti({
 }
 
 /* ------------------------------------------------------------------ */
-/* แท่นยืน 3 อันดับแรก (ใช้ร่วมกันทั้งบุคคลและแผนก)                          */
+/* แท่นยืน 3 อันดับแรก (ใช้ร่วมกันทั้งบุคคลและแผนก ทั้งสองแนวจอ)             */
 /* ------------------------------------------------------------------ */
 
 type PodItem = {
@@ -462,45 +487,55 @@ const toDeptItem = (e: DeptEntry): PodItem => ({
   stepText: e.company,
 });
 
+// ขนาดต่างๆ ของแท่นยืน แยกตามแนวจอ
+const PODIUM_SIZES = {
+  landscape: {
+    step: { 1: 360, 2: 280, 3: 210 },
+    num: { 1: 68, 2: 52, 3: 52 },
+    name: { 1: 30, 2: 26, 3: 26 },
+    facePerson: { 1: 176, 2: 132, 3: 132 },
+    faceDept: { 1: 112, 2: 84, 3: 84 },
+    org: 18,
+    caption: 18,
+    stepNum: 76,
+    stepText: 26,
+  },
+  // แนวตั้ง: การ์ดแท่นยืนสูง 1/3 ของจอ (PODIUM_H_P) จึงย่อรูป/ตัวอักษร/แท่นลงให้พอดี
+  portrait: {
+    step: { 1: 220, 2: 170, 3: 125 },
+    num: { 1: 48, 2: 38, 3: 38 },
+    name: { 1: 24, 2: 20, 3: 20 },
+    facePerson: { 1: 148, 2: 116, 3: 116 },
+    faceDept: { 1: 112, 2: 88, 3: 88 },
+    org: 15,
+    caption: 15,
+    stepNum: 52,
+    stepText: 18,
+  },
+} as const;
+
+const PODIUM_LOOK = {
+  1: { bg: "bg-[#C9F25B] text-[#1B2A21]", delay: ".35s" },
+  2: { bg: "bg-[#1B2A21] text-[#C9F25B]", delay: ".5s" },
+  3: { bg: "bg-[#3F5E1F] text-white", delay: ".65s" },
+} as const;
+
 function Podium({
   items,
   mode,
+  portrait,
 }: {
   items: (PodItem | undefined)[];
   mode: View;
+  portrait: boolean;
 }) {
+  const S = portrait ? PODIUM_SIZES.portrait : PODIUM_SIZES.landscape;
+  const faceSize = mode === "person" ? S.facePerson : S.faceDept;
   const slots = [
     { place: 2 as const, e: items[1] },
     { place: 1 as const, e: items[0] },
     { place: 3 as const, e: items[2] },
   ];
-  const look = {
-    1: {
-      step: 360,
-      bg: "bg-[#C9F25B] text-[#1B2A21]",
-      delay: ".35s",
-      num: 68,
-      name: 30,
-    },
-    2: {
-      step: 280,
-      bg: "bg-[#1B2A21] text-[#C9F25B]",
-      delay: ".5s",
-      num: 52,
-      name: 26,
-    },
-    3: {
-      step: 210,
-      bg: "bg-[#3F5E1F] text-white",
-      delay: ".65s",
-      num: 52,
-      name: 26,
-    },
-  } as const;
-  const faceSize =
-    mode === "person"
-      ? ({ 1: 176, 2: 132, 3: 132 } as const)
-      : ({ 1: 112, 2: 84, 3: 84 } as const);
 
   return (
     <section aria-label="3 อันดับแรก" className="h-full">
@@ -510,7 +545,7 @@ function Podium({
       >
         <div className="flex items-end gap-3">
           {slots.map(({ place, e }) => {
-            const L = look[place];
+            const L = PODIUM_LOOK[place];
             return (
               <div
                 key={place}
@@ -530,20 +565,26 @@ function Podium({
                     <Faces faces={e.faces} size={faceSize[place]} />
                     <div
                       className="mt-3 line-clamp-2 min-h-[2.4em] w-full break-words text-center font-medium leading-tight"
-                      style={{ fontSize: L.name }}
+                      style={{ fontSize: S.name[place] }}
                     >
                       {e.name}
                     </div>
-                    <div className="h-[26px] w-full truncate text-center text-[18px] text-[#6B7A6E]">
+                    <div
+                      className="w-full truncate text-center text-[#6B7A6E]"
+                      style={{ fontSize: S.org, height: S.org + 8 }}
+                    >
                       {e.org ?? ""}
                     </div>
                     <div
                       className="mt-1 font-semibold leading-none tabular-nums"
-                      style={{ fontSize: L.num }}
+                      style={{ fontSize: S.num[place] }}
                     >
                       {fmtNum(e.total)}
                     </div>
-                    <div className="mb-4 mt-2 text-[18px] text-[#6B7A6E]">
+                    <div
+                      className="mb-4 mt-2 text-[#6B7A6E]"
+                      style={{ fontSize: S.caption }}
+                    >
                       {e.caption}
                     </div>
                   </>
@@ -567,13 +608,19 @@ function Podium({
                   className={`dp-rise relative flex w-full flex-col items-center justify-start gap-2 overflow-hidden rounded-t-3xl px-2 pt-4 ${
                     e ? L.bg : "bg-[#EEF2E4] text-[#A9B79A]"
                   }`}
-                  style={{ height: L.step, animationDelay: L.delay }}
+                  style={{ height: S.step[place], animationDelay: L.delay }}
                 >
-                  <span className="text-[76px] font-semibold leading-none tabular-nums">
+                  <span
+                    className="font-semibold leading-none tabular-nums"
+                    style={{ fontSize: S.stepNum }}
+                  >
                     {place}
                   </span>
                   {e?.stepText && (
-                    <span className="line-clamp-2 w-full break-words text-center text-[26px] font-bold leading-tight">
+                    <span
+                      className="line-clamp-2 w-full break-words text-center font-bold leading-tight"
+                      style={{ fontSize: S.stepText }}
+                    >
                       {e.stepText}
                     </span>
                   )}
@@ -595,26 +642,188 @@ function Podium({
   );
 }
 
+// โครงเนื้อหา
+// แนวนอน: แท่นซ้าย / (รายการ + QR) ขวา
+// แนวตั้ง: แท่นบน / รายการกลาง / QR ล่างขวา
+function BodyFrame({
+  dims,
+  podium,
+  list,
+}: {
+  dims: Dims;
+  podium: ReactNode;
+  list: ReactNode;
+}) {
+  const listAndQr = (
+    <div className="flex min-w-0 flex-col" style={{ gap: QR_GAP }}>
+      <div className="min-h-0" style={{ height: dims.listH }}>
+        {list}
+      </div>
+      <JoinQR h={dims.qrH} />
+    </div>
+  );
+
+  if (dims.portrait) {
+    return (
+      <div className="flex h-full flex-col" style={{ gap: PORTRAIT_GAP }}>
+        <div
+          className="mx-auto w-full shrink-0"
+          style={{ height: PODIUM_H_P, maxWidth: PODIUM_MAX_W_P }}
+        >
+          {podium}
+        </div>
+        {listAndQr}
+      </div>
+    );
+  }
+  return (
+    <div
+      className="grid h-full gap-8"
+      style={{ gridTemplateColumns: `${PODIUM_W}px minmax(0,1fr)` }}
+    >
+      {podium}
+      {listAndQr}
+    </div>
+  );
+}
+
+// กรณีไม่มีข้อมูลเลย: การ์ดข้อความเต็มพื้นที่ + QR ล่างขวา
+function EmptyFrame({ text, dims }: { text: string; dims: Dims }) {
+  return (
+    <div className="flex h-full flex-col" style={{ gap: QR_GAP }}>
+      <div className="min-h-0 flex-1">
+        <Empty text={text} />
+      </div>
+      <JoinQR h={dims.qrH} />
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
-/* หน้าบุคคล: อันดับ 4 ขึ้นไปทุกคน จัดคอลัมน์ให้พอดีจอ ไม่เลื่อน                */
+/* เลื่อนรายการลงช้าๆ (ใช้ทั้งหน้าแผนก และหน้าบุคคลแนวตั้งที่คนเยอะ)           */
+/* หยุดต้น → เลื่อน → หยุดท้าย แล้วแจ้งจบรอบ (onDone)                        */
+/* ถ้ารายการสั้นจนไม่ต้องเลื่อน จะรอครบเวลาขั้นต่ำแล้วแจ้งจบรอบ                 */
+/* ------------------------------------------------------------------ */
+
+function AutoScroller({
+  children,
+  innerClassName,
+  minKey,
+  minDefault,
+  onDone,
+}: {
+  children: ReactNode;
+  innerClassName: string;
+  minKey: "p" | "d";
+  minDefault: number;
+  onDone: () => void;
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const doneRef = useRef(onDone);
+
+  useEffect(() => {
+    doneRef.current = onDone;
+  });
+
+  useEffect(() => {
+    const box = boxRef.current;
+    const inner = innerRef.current;
+    if (!box || !inner) return;
+
+    const minMs = secParam(minKey, minDefault);
+    const startedAt = performance.now();
+    let raf = 0;
+    let doneTimer: ReturnType<typeof setTimeout> | undefined;
+    let off = 0;
+    let phase: "pause1" | "scroll" | "pause2" | "done" = "pause1";
+    let phaseStart = startedAt;
+    let last = startedAt;
+
+    const finish = () => {
+      const wait = Math.max(0, minMs - (performance.now() - startedAt));
+      doneTimer = setTimeout(() => doneRef.current(), wait);
+    };
+
+    const tick = (t: number) => {
+      const dt = Math.max(0, Math.min(0.1, (t - last) / 1000));
+      last = t;
+      const max = Math.max(0, inner.offsetHeight - box.clientHeight);
+
+      if (max <= 0) {
+        phase = "done";
+        finish();
+        return;
+      }
+      if (phase === "pause1") {
+        if (t - phaseStart >= SCROLL_PAUSE) phase = "scroll";
+      } else if (phase === "scroll") {
+        off = Math.min(max, off + SCROLL_SPEED * dt);
+        inner.style.transform = `translateY(${-off}px)`;
+        if (off >= max) {
+          phase = "pause2";
+          phaseStart = t;
+        }
+      } else if (phase === "pause2") {
+        if (t - phaseStart >= SCROLL_PAUSE) {
+          phase = "done";
+          finish();
+          return;
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(doneTimer);
+    };
+    // รันครั้งเดียวตอนเมานต์ (ข้อมูลรีเฟรชระหว่างเลื่อนไม่ทำให้เริ่มใหม่)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fade =
+    "linear-gradient(to bottom, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%)";
+
+  return (
+    <div
+      ref={boxRef}
+      className="h-full overflow-hidden"
+      style={{ WebkitMaskImage: fade, maskImage: fade }}
+    >
+      <div ref={innerRef} className={`${innerClassName} will-change-transform`}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* หน้าบุคคล                                                             */
+/* แนวนอน: อันดับ 4 ขึ้นไปทุกคน จัดคอลัมน์ให้พอดีจอ ไม่เลื่อน                   */
+/* แนวตั้ง: จัดคอลัมน์ให้พอดีถ้าคนไม่มาก ถ้าเยอะเกินจะเลื่อนช้าๆ แทน               */
 /* ------------------------------------------------------------------ */
 
 // เลือกจำนวนคอลัมน์ให้แถวสูงพอ (ลองเกณฑ์สูงก่อน ไม่พอค่อยลด)
-function personLayout(n: number) {
+function personLayout(n: number, portrait: boolean, avail: number) {
   const MAX = 92;
-  if (n <= 0) return { cols: 1, rows: 1, h: MAX };
-  // คนไม่เยอะ (<= 6) ใช้ 1 คอลัมน์ ที่เหลือเริ่มที่ 2 คอลัมน์ ไม่ให้แถวยาวโล่งเกินไป
-  const startCols = n <= 6 ? 1 : 2;
+  if (n <= 0) return { cols: 1, rows: 1, h: MAX, scroll: false };
+  const maxCols = portrait ? 3 : 5;
+  // คนไม่เยอะใช้ 1 คอลัมน์ ที่เหลือเริ่มที่ 2 คอลัมน์ ไม่ให้แถวยาวโล่งเกินไป
+  const startCols = n <= (portrait ? 8 : 6) ? 1 : 2;
   for (const min of [72, 60, 50, 44]) {
-    for (let c = startCols; c <= 5; c++) {
+    for (let c = startCols; c <= maxCols; c++) {
       const rows = Math.ceil(n / c);
-      const h = Math.floor((RIGHT_H - (rows - 1) * ROW_GAP) / rows);
-      if (h >= min) return { cols: c, rows, h: Math.min(MAX, h) };
+      const h = Math.floor((avail - (rows - 1) * ROW_GAP) / rows);
+      if (h >= min) return { cols: c, rows, h: Math.min(MAX, h), scroll: false };
     }
   }
+  // แนวตั้งแน่นเกิน: เลื่อนอัตโนมัติ แถวละ 72px สองคอลัมน์
+  if (portrait) return { cols: 2, rows: 0, h: 72, scroll: true };
   const rows = Math.ceil(n / 5);
-  const h = Math.floor((RIGHT_H - (rows - 1) * ROW_GAP) / rows);
-  return { cols: 5, rows, h: Math.max(28, h) };
+  const h = Math.floor((avail - (rows - 1) * ROW_GAP) / rows);
+  return { cols: 5, rows, h: Math.max(28, h), scroll: false };
 }
 
 function PersonRow({
@@ -686,49 +895,73 @@ function PersonRow({
   );
 }
 
-function PersonBody({ board }: { board: Board }) {
+function PersonBody({
+  board,
+  dims,
+  onDone,
+}: {
+  board: Board;
+  dims: Dims;
+  onDone: () => void;
+}) {
   const rest = board.entries.slice(3);
-  const lay = useMemo(() => personLayout(rest.length), [rest.length]);
+  const lay = useMemo(
+    () => personLayout(rest.length, dims.portrait, dims.listH),
+    [rest.length, dims.portrait, dims.listH]
+  );
 
   if (board.entries.length === 0) {
-    return (
-      <div className="flex h-full flex-col" style={{ gap: QR_GAP }}>
-        <div style={{ height: RIGHT_H }}>
-          <Empty text="ยังไม่มีอันดับ ลงสนามเป็นคนแรกเลย" />
-        </div>
-        <JoinQR />
-      </div>
-    );
+    return <EmptyFrame text="ยังไม่มีอันดับ ลงสนามเป็นคนแรกเลย" dims={dims} />;
   }
 
   const top = board.entries.slice(0, 3).map(toPersonItem);
 
+  let list: ReactNode;
+  if (rest.length === 0) {
+    list = <Empty text="อันดับ 4 ขึ้นไปยังว่างอยู่ ชวนเพื่อนมาโดด" />;
+  } else if (lay.scroll) {
+    list = (
+      <AutoScroller
+        innerClassName="grid grid-cols-2 gap-x-4 gap-y-2 py-5"
+        minKey="p"
+        minDefault={PERSON_MS}
+        onDone={onDone}
+      >
+        {rest.map((e, i) => (
+          <PersonRow key={e.rank} e={e} h={lay.h} cols={2} i={i} />
+        ))}
+      </AutoScroller>
+    );
+  } else {
+    list = (
+      <ul
+        className="grid content-start"
+        style={{
+          gridAutoFlow: "column",
+          gridTemplateRows: `repeat(${lay.rows}, ${lay.h}px)`,
+          gridTemplateColumns: `repeat(${lay.cols}, minmax(0,1fr))`,
+          gap: `${ROW_GAP}px 16px`,
+        }}
+      >
+        {rest.map((e, i) => (
+          <PersonRow key={e.rank} e={e} h={lay.h} cols={lay.cols} i={i} />
+        ))}
+      </ul>
+    );
+  }
+
   return (
-    <div
-      className="grid h-full gap-8"
-      style={{ gridTemplateColumns: `${PODIUM_W}px minmax(0,1fr)` }}
-    >
-      <Podium items={[top[0], top[1], top[2]]} mode="person" />
-      <RightCol>
-      {rest.length > 0 ? (
-        <ul
-          className="grid content-start"
-          style={{
-            gridAutoFlow: "column",
-            gridTemplateRows: `repeat(${lay.rows}, ${lay.h}px)`,
-            gridTemplateColumns: `repeat(${lay.cols}, minmax(0,1fr))`,
-            gap: `${ROW_GAP}px 16px`,
-          }}
-        >
-          {rest.map((e, i) => (
-            <PersonRow key={e.rank} e={e} h={lay.h} cols={lay.cols} i={i} />
-          ))}
-        </ul>
-      ) : (
-        <Empty text="อันดับ 4 ขึ้นไปยังว่างอยู่ ชวนเพื่อนมาโดด" />
-      )}
-      </RightCol>
-    </div>
+    <BodyFrame
+      dims={dims}
+      podium={
+        <Podium
+          items={[top[0], top[1], top[2]]}
+          mode="person"
+          portrait={dims.portrait}
+        />
+      }
+      list={list}
+    />
   );
 }
 
@@ -757,9 +990,9 @@ function DeptRow({ e, i }: { e: DeptEntry; i: number }) {
         )}
       </div>
       <div className="flex shrink-0 -space-x-4">
-        {shown.map((m, i) => (
+        {shown.map((m, mi) => (
           <span
-            key={`${m.username}-${i}`}
+            key={`${m.username}-${mi}`}
             className="rounded-full ring-2 ring-white"
           >
             <Avatar name={m.name} src={m.avatarUrl} size={40} />
@@ -778,136 +1011,6 @@ function DeptRow({ e, i }: { e: DeptEntry; i: number }) {
   );
 }
 
-// เลื่อนรายการลงช้าๆ: หยุดต้น → เลื่อน → หยุดท้าย แล้วแจ้งว่าจบรอบ (onDone)
-// ถ้ารายการสั้นจนไม่ต้องเลื่อน จะรอครบเวลาขั้นต่ำแล้วแจ้งจบรอบ
-function DeptScroller({
-  rows,
-  onDone,
-}: {
-  rows: DeptEntry[];
-  onDone: () => void;
-}) {
-  const boxRef = useRef<HTMLDivElement>(null);
-  const innerRef = useRef<HTMLDivElement>(null);
-  const doneRef = useRef(onDone);
-
-  useEffect(() => {
-    doneRef.current = onDone;
-  });
-
-  useEffect(() => {
-    const box = boxRef.current;
-    const inner = innerRef.current;
-    if (!box || !inner) return;
-
-    const minMs = secParam("d", DEPT_MIN_MS);
-    const startedAt = performance.now();
-    let raf = 0;
-    let doneTimer: ReturnType<typeof setTimeout> | undefined;
-    let off = 0;
-    let phase: "pause1" | "scroll" | "pause2" | "done" = "pause1";
-    let phaseStart = startedAt;
-    let last = startedAt;
-
-    const finish = () => {
-      const wait = Math.max(0, minMs - (performance.now() - startedAt));
-      doneTimer = setTimeout(() => doneRef.current(), wait);
-    };
-
-    const tick = (t: number) => {
-      const dt = Math.max(0, Math.min(0.1, (t - last) / 1000));
-      last = t;
-      const max = Math.max(0, inner.offsetHeight - box.clientHeight);
-
-      if (max <= 0) {
-        phase = "done";
-        finish();
-        return;
-      }
-      if (phase === "pause1") {
-        if (t - phaseStart >= SCROLL_PAUSE) phase = "scroll";
-      } else if (phase === "scroll") {
-        off = Math.min(max, off + SCROLL_SPEED * dt);
-        inner.style.transform = `translateY(${-off}px)`;
-        if (off >= max) {
-          phase = "pause2";
-          phaseStart = t;
-        }
-      } else if (phase === "pause2") {
-        if (t - phaseStart >= SCROLL_PAUSE) {
-          phase = "done";
-          finish();
-          return;
-        }
-      }
-      raf = requestAnimationFrame(tick);
-    };
-
-    raf = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(doneTimer);
-    };
-  }, []);
-
-  const fade =
-    "linear-gradient(to bottom, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%)";
-
-  return (
-    <div
-      ref={boxRef}
-      className="h-full overflow-hidden"
-      style={{ WebkitMaskImage: fade, maskImage: fade }}
-    >
-      <div
-        ref={innerRef}
-        className="grid grid-cols-2 gap-x-4 gap-y-2 py-5 will-change-transform"
-      >
-        {rows.map((e, i) => (
-          <DeptRow key={e.key ?? e.id} e={e} i={i} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DeptBody({
-  rows,
-  onDone,
-}: {
-  rows: DeptEntry[];
-  onDone: () => void;
-}) {
-  if (rows.length === 0) {
-    return (
-      <div className="flex h-full flex-col" style={{ gap: QR_GAP }}>
-        <div style={{ height: RIGHT_H }}>
-          <Empty text="ยังไม่มีแผนกหรือสาขาไหนทำคะแนน" />
-        </div>
-        <JoinQR />
-      </div>
-    );
-  }
-  const top = rows.slice(0, 3).map(toDeptItem);
-  const rest = rows.slice(3);
-
-  return (
-    <div
-      className="grid h-full gap-8"
-      style={{ gridTemplateColumns: `${PODIUM_W}px minmax(0,1fr)` }}
-    >
-      <Podium items={[top[0], top[1], top[2]]} mode="dept" />
-      <RightCol>
-        {rest.length > 0 ? (
-          <DeptScroller rows={rest} onDone={onDone} />
-        ) : (
-          <DeptEmptyRest onDone={onDone} />
-        )}
-      </RightCol>
-    </div>
-  );
-}
-
 // ไม่มีอันดับ 4 ขึ้นไป: แสดงข้อความ รอครบเวลาขั้นต่ำแล้วสลับหน้า
 function DeptEmptyRest({ onDone }: { onDone: () => void }) {
   const doneRef = useRef(onDone);
@@ -919,6 +1022,54 @@ function DeptEmptyRest({ onDone }: { onDone: () => void }) {
     return () => clearTimeout(t);
   }, []);
   return <Empty text="อันดับ 4 ขึ้นไปยังว่างอยู่" />;
+}
+
+function DeptBody({
+  rows,
+  dims,
+  onDone,
+}: {
+  rows: DeptEntry[];
+  dims: Dims;
+  onDone: () => void;
+}) {
+  if (rows.length === 0) {
+    return <EmptyFrame text="ยังไม่มีแผนกหรือสาขาไหนทำคะแนน" dims={dims} />;
+  }
+  const top = rows.slice(0, 3).map(toDeptItem);
+  const rest = rows.slice(3);
+
+  return (
+    <BodyFrame
+      dims={dims}
+      podium={
+        <Podium
+          items={[top[0], top[1], top[2]]}
+          mode="dept"
+          portrait={dims.portrait}
+        />
+      }
+      list={
+        rest.length > 0 ? (
+          <AutoScroller
+            // แนวตั้ง = 1 คอลัมน์เต็มความกว้าง / แนวนอน = 2 คอลัมน์
+            innerClassName={`grid gap-y-2 py-5 ${
+              dims.portrait ? "grid-cols-1" : "grid-cols-2 gap-x-4"
+            }`}
+            minKey="d"
+            minDefault={DEPT_MIN_MS}
+            onDone={onDone}
+          >
+            {rest.map((e, i) => (
+              <DeptRow key={e.key ?? e.id} e={e} i={i} />
+            ))}
+          </AutoScroller>
+        ) : (
+          <DeptEmptyRest onDone={onDone} />
+        )
+      }
+    />
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -946,11 +1097,20 @@ const CSS = `
 }
 `;
 
+// กล่องจอที่ใช้จริง: vw/vh = ขนาดจอ "หลังหมุน" (px) / rot = องศาที่หมุนภาพ (?rotate=)
+type Box = {
+  scale: number;
+  portrait: boolean;
+  rot: 0 | 90 | 270;
+  vw: number;
+  vh: number;
+};
+
 export default function DisplayBoard() {
   const person = usePersonBoard();
   const dept = useDeptRows();
 
-  const [scale, setScale] = useState<number | null>(null);
+  const [box, setBox] = useState<Box | null>(null);
   const [view, setView] = useState<View>("person");
   const [cycle, setCycle] = useState(0);
   // เปลี่ยนค่า = ยิงพลุใหม่ (เปลี่ยนหน้า หรือ อันดับ 1 เปลี่ยนคน)
@@ -958,7 +1118,14 @@ export default function DisplayBoard() {
   // 0 = ยังไม่รู้เวลา (ตั้งค่าใน effect ฝั่งเบราว์เซอร์ ไม่เรียก Date.now() ตอน prerender)
   const [now, setNow] = useState(0);
 
+  const portrait = box?.portrait ?? false;
+  const dims = useMemo(() => dimsOf(portrait), [portrait]);
   const hasDept = (dept?.length ?? 0) > 0;
+
+  // แนวตั้งที่คนเยอะ: หน้าบุคคลเลื่อนเอง และเป็นฝ่ายแจ้งจบรอบ (ไม่ใช้ตัวจับเวลาคงที่)
+  const personRest = Math.max(0, (person?.entries.length ?? 0) - 3);
+  const personScrolls =
+    portrait && personLayout(personRest, true, dims.listH).scroll;
 
   // เอฟเฟกต์สลับหน้า: แถบสีกวาดทับจอ (wipe) แล้วสลับเนื้อหาตอนแถบปิดจอพอดี
   const [wipe, setWipe] = useState(0);
@@ -982,10 +1149,17 @@ export default function DisplayBoard() {
     }, 1150);
   };
 
-  // ย่อ/ขยายเวที 1920x1080 ให้พอดีจอ
+  // ย่อ/ขยายเวทีให้พอดีจอ + เลือกแนวจอ (?rotate=90|270 = หมุนภาพสำหรับจอที่วางตั้ง)
   useEffect(() => {
-    const fit = () =>
-      setScale(Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H));
+    const fit = () => {
+      const q = Number(new URLSearchParams(window.location.search).get("rotate"));
+      const rot: 0 | 90 | 270 = q === 90 ? 90 : q === 270 ? 270 : 0;
+      const vw = rot ? window.innerHeight : window.innerWidth;
+      const vh = rot ? window.innerWidth : window.innerHeight;
+      const p = vh > vw;
+      const d = dimsOf(p);
+      setBox({ scale: Math.min(vw / d.w, vh / d.h), portrait: p, rot, vw, vh });
+    };
     fit();
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
@@ -1026,7 +1200,7 @@ export default function DisplayBoard() {
     };
   }, []);
 
-  // เต็มจอ: กด F หรือดับเบิลคลิก
+  // เต็มจอ: กด F หรือดับเบิลคลิก (กดซ้ำ = ออกจากเต็มจอ)
   const toggleFullscreen = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
@@ -1046,9 +1220,10 @@ export default function DisplayBoard() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // หน้าบุคคล → หน้าแผนก (หน้าแผนกเป็นฝ่ายแจ้งจบเองตอนเลื่อนครบ)
+  // หน้าบุคคล → หน้าแผนก ด้วยตัวจับเวลา (ยกเว้นกรณีหน้าบุคคลเลื่อนเอง จะแจ้งจบรอบเอง)
+  // หน้าแผนกเป็นฝ่ายแจ้งจบเองตอนเลื่อนครบ
   useEffect(() => {
-    if (view !== "person") return;
+    if (view !== "person" || personScrolls) return;
     const t = setTimeout(() => {
       if (hasDept) goView("dept");
       else setCycle((c) => c + 1);
@@ -1056,7 +1231,13 @@ export default function DisplayBoard() {
     return () => clearTimeout(t);
     // goView สร้างใหม่ทุกเรนเดอร์ แต่ทำงานเหมือนเดิมเสมอ ไม่ต้องใส่ใน deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, cycle, hasDept]);
+  }, [view, cycle, hasDept, personScrolls]);
+
+  // หน้าบุคคลเลื่อนจบรอบ → ไปหน้าแผนก (ถ้าไม่มีข้อมูลแผนก เริ่มเลื่อนบุคคลใหม่)
+  const onPersonScrollDone = () => {
+    if (hasDept) goView("dept");
+    else setCycle((c) => c + 1);
+  };
 
   // อันดับ 1 เปลี่ยนคน → ยิงพลุ (เฉพาะตอนหน้านั้นกำลังแสดง)
   const leaderP = person?.entries[0]
@@ -1097,162 +1278,235 @@ export default function DisplayBoard() {
 
   const title = view === "person" ? "อันดับวันนี้" : "อันดับแผนก";
 
+  // จุดที่พลุยิงออก = กลางแท่นยืน (สัดส่วนของเวที)
+  const confettiX = portrait ? 0.5 : (PAD + PODIUM_W / 2) / dims.w;
+  const confettiY = portrait
+    ? (PAD + dims.headerH + BODY_GAP + PODIUM_H_P * 0.45) / dims.h
+    : 0.45;
+
+  // ขนาดอ้างอิงของแถบกวาดตอนสลับหน้า (px ตามจอหลังหมุน)
+  const vw = box?.vw ?? 1920;
+  const vh = box?.vh ?? 1080;
+
+  // แถบข้อมูลใต้ชื่อหน้า (รีเซ็ตใน / จำนวนคน / คำอธิบายติ๊กถูก)
+  const subtitle =
+    view === "person" ? (
+      person ? (
+        <>
+          {now > 0 && <span>รีเซ็ตใน {resetText}</span>}
+          <span>{person.count} คนลงสนาม</span>
+          <span className="inline-flex items-center gap-2">
+            <CheckBadge size={22} />
+            ทัน {POINT_QUOTA} คนแรกที่ถึงเป้าหมายรายวัน
+          </span>
+        </>
+      ) : null
+    ) : (
+      <>
+        <span>คะแนนสะสมไม่รีเซ็ต</span>
+        {dept && <span>{dept.length} กลุ่มลงสนาม</span>}
+      </>
+    );
+
+  const pills = (
+    <div className="flex shrink-0 items-center gap-3">
+      {(["person", "dept"] as const).map((v) => (
+        <span
+          key={v}
+          className={`rounded-full py-2 font-medium transition-colors duration-500 ${
+            portrait ? "px-5 text-[20px]" : "px-7 text-[24px]"
+          } ${
+            view === v
+              ? "bg-[#1B2A21] text-[#C9F25B]"
+              : "bg-[#E3EAD6] text-[#6B7A6E]"
+          }`}
+        >
+          {v === "person" ? "บุคคล" : "แผนก"}
+        </span>
+      ))}
+    </div>
+  );
+
   return (
     <div
-      className="fixed inset-0 z-[100] overflow-hidden text-[#1B2A21]"
-      style={{
-        cursor: "none",
-        backgroundColor: "#F3F6EC", // สีสำรองตอนรูปยังโหลดไม่เสร็จ
-        backgroundImage: "url(/img/bg.png)",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-      }}
+      className="fixed inset-0 z-[100] overflow-hidden bg-[#F3F6EC] text-[#1B2A21]"
+      style={{ cursor: "none" }}
       onDoubleClick={toggleFullscreen}
     >
       <style>{CSS}</style>
+
+      {/* กล่องจอ: ขนาดเท่าจอหลังหมุน (พื้นหลัง เวที และแถบกวาดอยู่ในนี้ หมุนไปพร้อมกัน) */}
       <div
         style={{
           position: "absolute",
           left: "50%",
           top: "50%",
-          width: STAGE_W,
-          height: STAGE_H,
-          transform: `translate(-50%, -50%) scale(${scale ?? 1})`,
-          visibility: scale === null ? "hidden" : "visible",
-          padding: PAD,
+          width: box ? box.vw : "100%",
+          height: box ? box.vh : "100%",
+          transform: `translate(-50%, -50%) rotate(${box?.rot ?? 0}deg)`,
+          overflow: "hidden",
+          visibility: box === null ? "hidden" : "visible",
+          backgroundColor: "#F3F6EC", // สีสำรองตอนรูปยังโหลดไม่เสร็จ
+          backgroundImage: "url(/img/bg.png)",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
         }}
       >
-        {/* หัวหน้า: โลโก้ + ชื่อหน้า (ซ้าย) / นาฬิกา + แท็บ (ขวา) */}
-        <header
-          className="flex items-end justify-between"
-          style={{ height: HEADER_H }}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            width: dims.w,
+            height: dims.h,
+            transform: `translate(-50%, -50%) scale(${box?.scale ?? 1})`,
+            padding: PAD,
+          }}
         >
-          <div className="flex min-w-0 items-end gap-6">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/img/logo.png"
-              alt="logo"
-              className="h-[88px] w-auto shrink-0 object-contain"
-            />
-            <div className="min-w-0">
-              <div className="flex h-[30px] items-center gap-6 text-[20px] text-[#6B7A6E]">
-                {view === "person" ? (
-                  person ? (
-                    <>
-                      {now > 0 && <span>รีเซ็ตใน {resetText}</span>}
-                      <span>{person.count} คนลงสนาม</span>
-                      <span className="inline-flex items-center gap-2">
-                        <CheckBadge size={22} />
-                        ทัน {POINT_QUOTA} คนแรกที่ถึงเป้าหมายรายวัน
-                      </span>
-                    </>
-                  ) : null
-                ) : (
-                  <>
-                    <span>คะแนนสะสมไม่รีเซ็ต</span>
-                    {dept && <span>{dept.length} กลุ่มลงสนาม</span>}
-                  </>
-                )}
+          {/* หัวหน้า */}
+          {portrait ? (
+            <header
+              className="flex flex-col justify-between"
+              style={{ height: dims.headerH }}
+            >
+              <div className="flex items-end justify-between gap-6">
+                <div className="flex min-w-0 items-end gap-5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/img/logo.png"
+                    alt="logo"
+                    className="h-[88px] w-auto shrink-0 object-contain"
+                  />
+                  <h1 className="truncate text-[56px] font-semibold leading-[1.1] tracking-tight">
+                    {title}
+                  </h1>
+                </div>
+                <div className="flex shrink-0 items-end gap-6">
+                  <Clock compact />
+                  <div className="mb-1">{pills}</div>
+                </div>
               </div>
-              <h1 className="text-[56px] font-semibold leading-[1.1] tracking-tight">
-                {title}
-              </h1>
-            </div>
-          </div>
+              <div className="flex h-[30px] items-center gap-6 text-[20px] text-[#6B7A6E]">
+                {subtitle}
+              </div>
+            </header>
+          ) : (
+            <header
+              className="flex items-end justify-between"
+              style={{ height: dims.headerH }}
+            >
+              <div className="flex min-w-0 items-end gap-6">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/img/logo.png"
+                  alt="logo"
+                  className="h-[88px] w-auto shrink-0 object-contain"
+                />
+                <div className="min-w-0">
+                  <div className="flex h-[30px] items-center gap-6 text-[20px] text-[#6B7A6E]">
+                    {subtitle}
+                  </div>
+                  <h1 className="text-[56px] font-semibold leading-[1.1] tracking-tight">
+                    {title}
+                  </h1>
+                </div>
+              </div>
 
-          <div className="flex items-end gap-10">
-            <Clock />
-            <div className="mb-2 flex items-center gap-3">
-              {(["person", "dept"] as const).map((v) => (
-                <span
-                  key={v}
-                  className={`rounded-full px-7 py-2 text-[24px] font-medium transition-colors duration-500 ${
-                    view === v
-                      ? "bg-[#1B2A21] text-[#C9F25B]"
-                      : "bg-[#E3EAD6] text-[#6B7A6E]"
-                  }`}
-                >
-                  {v === "person" ? "บุคคล" : "แผนก"}
-                </span>
-              ))}
-            </div>
-          </div>
-        </header>
+              <div className="flex items-end gap-10">
+                <Clock />
+                <div className="mb-2">{pills}</div>
+              </div>
+            </header>
+          )}
 
-        {/* เนื้อหา */}
-        <main style={{ height: BODY_H, marginTop: BODY_GAP }}>
-          <div key={view} className="dp-in h-full">
-            {view === "person" ? (
-              person ? (
-                <PersonBody board={person} />
+          {/* เนื้อหา */}
+          <main style={{ height: dims.bodyH, marginTop: BODY_GAP }}>
+            <div key={`${view}-${portrait}`} className="dp-in h-full">
+              {view === "person" ? (
+                person ? (
+                  <PersonBody
+                    key={cycle}
+                    board={person}
+                    dims={dims}
+                    onDone={onPersonScrollDone}
+                  />
+                ) : (
+                  <Empty text="กำลังโหลดอันดับ…" />
+                )
+              ) : dept ? (
+                <DeptBody
+                  rows={dept}
+                  dims={dims}
+                  onDone={() => goView("person")}
+                />
               ) : (
                 <Empty text="กำลังโหลดอันดับ…" />
-              )
-            ) : dept ? (
-              <DeptBody rows={dept} onDone={() => goView("person")} />
-            ) : (
-              <Empty text="กำลังโหลดอันดับ…" />
-            )}
-          </div>
-        </main>
+              )}
+            </div>
+          </main>
 
-        {/* พลุกระดาษ: ยิงจากกลางแท่นยืน (ซ้ายมือ) ขึ้นไปทั่วเวที */}
-        {ready && (
+          {/* พลุกระดาษ: ยิงจากกลางแท่นยืน ขึ้นไปทั่วเวที */}
+          {ready && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-20"
+            >
+              <Confetti
+                key={shot}
+                count={140}
+                originX={confettiX}
+                originY={confettiY}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* แถบกวาดตอนสลับหน้า บุคคล ↔ แผนก (คลุมทั้งจอ) */}
+        {wipe > 0 && (
           <div
+            key={wipe}
             aria-hidden
-            className="pointer-events-none absolute inset-0 z-20"
+            className="pointer-events-none absolute inset-0 z-30 overflow-hidden"
           >
-            <Confetti
-              key={shot}
-              count={140}
-              originX={(PAD + PODIUM_W / 2) / STAGE_W}
-              originY={0.45}
+            {/* แถบเขียวเข้มนำหน้า (เอียงเป็นเฉียง กว้างเกินจอ ขอบไม่เห็นมุมขาด) */}
+            <div
+              className="dp-wipe absolute top-0 h-full"
+              style={{ left: "-15%", width: "130%", background: "#1B2A21" }}
             />
+            {/* แถบเขียวมะนาวตามมา วางโลโก้ใหญ่กลางจอ (หมุนสวนกลับให้โลโก้ตรง) */}
+            <div
+              className="dp-wipe absolute top-0 h-full overflow-hidden"
+              style={{
+                left: "-15%",
+                width: "130%",
+                background: LIME,
+                animationDelay: ".2s",
+              }}
+            >
+              <div
+                className="flex h-full w-full flex-col items-center justify-center"
+                style={{ transform: "skewX(10deg)", gap: vh * 0.02 }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/img/logo.png"
+                  alt=""
+                  draggable={false}
+                  className="dp-logo h-auto object-contain"
+                  style={{ width: vw * 0.55, maxHeight: vh * 0.5 }}
+                />
+                <div
+                  className="dp-wipe-text font-semibold leading-none text-[#1B2A21]"
+                  style={{ fontSize: vw * 0.046 }}
+                >
+                  {wipeTo === "dept" ? "อันดับแผนก" : "อันดับบุคคล"}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
-
-      {/* แถบกวาดตอนสลับหน้า บุคคล ↔ แผนก (คลุมทั้งจอ) */}
-      {wipe > 0 && (
-        <div
-          key={wipe}
-          aria-hidden
-          className="pointer-events-none absolute inset-0 z-30 overflow-hidden"
-        >
-          {/* แถบเขียวเข้มนำหน้า (เอียงเป็นเฉียง กว้างเกินจอ ขอบไม่เห็นมุมขาด) */}
-          <div
-            className="dp-wipe absolute top-0 h-full"
-            style={{ left: "-15%", width: "130%", background: "#1B2A21" }}
-          />
-          {/* แถบเขียวมะนาวตามมา วางโลโก้ใหญ่กลางจอ (หมุนสวนกลับให้โลโก้ตรง) */}
-          <div
-            className="dp-wipe absolute top-0 h-full overflow-hidden"
-            style={{
-              left: "-15%",
-              width: "130%",
-              background: LIME,
-              animationDelay: ".2s",
-            }}
-          >
-            <div
-              className="flex h-full w-full flex-col items-center justify-center gap-[2vh]"
-              style={{ transform: "skewX(10deg)" }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/img/logo.png"
-                alt=""
-                draggable={false}
-                className="dp-logo h-auto max-h-[50vh] w-[55vw] max-w-[55vw] object-contain"
-              />
-              <div className="dp-wipe-text text-[4.6vw] font-semibold leading-none text-[#1B2A21]">
-                {wipeTo === "dept" ? "อันดับแผนก" : "อันดับบุคคล"}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
