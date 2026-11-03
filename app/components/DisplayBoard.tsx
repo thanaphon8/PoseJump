@@ -143,7 +143,10 @@ function usePersonBoard() {
         if (!r.ok) throw new Error("load failed");
         const b = (await r.json()) as Board;
         if (!alive) return;
-        setBoard(b);
+        // ข้อมูลไม่เปลี่ยน = ไม่เรนเดอร์ใหม่ (ลดอาการกระตุกทุก 30 วิ)
+        setBoard((prev) =>
+          prev && JSON.stringify(prev) === JSON.stringify(b) ? prev : b
+        );
         // ถึง 06:00 น. (เวลาไทย) โหลดใหม่ทันที ให้เป็นตารางของวันเกมใหม่
         clearTimeout(resetTimer);
         const ms = Math.min(
@@ -203,7 +206,10 @@ function useDeptRows() {
             return true;
           })
           .sort((a, b) => a.rank - b.rank);
-        setRows(uniq);
+        // ข้อมูลไม่เปลี่ยน = ไม่เรนเดอร์ใหม่ (ไม่ให้รายการที่กำลังเลื่อนถูกสร้างใหม่)
+        setRows((prev) =>
+          prev && JSON.stringify(prev) === JSON.stringify(uniq) ? prev : uniq
+        );
       } catch {
         // ใช้ข้อมูลเดิมต่อ
       }
@@ -524,7 +530,8 @@ function Confetti({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    // เวทีใหญ่ 1920x1080 อยู่แล้ว ใช้ 1x พอ (2x = พิกเซลมากกว่า 4 เท่า กินแรงมาก)
+    const dpr = 1;
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     canvas.width = w * dpr;
@@ -1323,6 +1330,7 @@ const CSS = `
 .dp-logo { animation: dp-logo 2.5s ease-in-out .63s both; }
 .dp-wipe-text { animation: dp-wipe-text 2.3s ease-out 1s both; }
 .dp-jumper { animation: dp-jumper 2.2s cubic-bezier(.22,1,.36,1) 1s both; }
+.dp-wipe, .dp-logo, .dp-wipe-text, .dp-jumper { will-change: transform, opacity; }
 .dp-row { animation: dp-row .7s cubic-bezier(.22,1,.36,1) both; }
 .dp-rise { transform-origin: bottom; animation: dp-rise .8s cubic-bezier(.22,1,.36,1) both; }
 .dp-float { animation: dp-float 2.4s ease-in-out infinite; }
@@ -1382,7 +1390,17 @@ export default function DisplayBoard() {
     undefined
   );
 
-  useEffect(() => () => clearTimeout(switchTimer.current), []);
+  const shotTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined
+  );
+
+  useEffect(
+    () => () => {
+      clearTimeout(switchTimer.current);
+      clearTimeout(shotTimer.current);
+    },
+    []
+  );
 
   const goView = (v: View) => {
     if (switching.current) return;
@@ -1391,8 +1409,9 @@ export default function DisplayBoard() {
     setWipe((w) => w + 1);
     switchTimer.current = setTimeout(() => {
       setView(v);
-      setShot((s) => s + 1);
       switching.current = false;
+      // ยิงพลุตอนแถบเริ่มกวาดออก (ไม่ให้ซ้อนกับแอนิเมชันแถบตอนกำลังหนักสุด)
+      shotTimer.current = setTimeout(() => setShot((s) => s + 1), 650);
     }, 1650);
   };
 
@@ -1415,7 +1434,16 @@ export default function DisplayBoard() {
   // นาฬิกาสำหรับนับถอยหลังรีเซ็ต
   useEffect(() => {
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30000);
+    // เรนเดอร์ใหม่เฉพาะตอนนาทีเปลี่ยน (ข้อความรีเซ็ตแสดงแค่ชั่วโมง/นาที)
+    const t = setInterval(
+      () =>
+        setNow((p) =>
+          Math.floor(p / 60000) === Math.floor(Date.now() / 60000)
+            ? p
+            : Date.now()
+        ),
+      15000
+    );
     return () => clearInterval(t);
   }, []);
 
@@ -1772,7 +1800,7 @@ export default function DisplayBoard() {
                   {wipeTo === "dept" ? "อันดับแผนก" : "อันดับบุคคล"}
                 </div>
                 <div className="dp-jumper">
-                  <Jumper size={Math.round(vh * 0.26)} cycle={false} effects />
+                  <Jumper size={Math.round(vh * 0.26)} cycle={false} effects={false} />
                 </div>
               </div>
             </div>
