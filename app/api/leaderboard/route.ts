@@ -1,33 +1,26 @@
 import { NextResponse, connection } from "next/server";
-import { ObjectId } from "mongodb";
 import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
 import { getUserPoints } from "../../../lib/points";
 import { purgeOrphansThrottled } from "../../../lib/purge-orphans";
+import {
+  DAY,
+  getDayRanking,
+  toId,
+  type UserDoc,
+} from "../../../lib/leaderboard-top";
 // แปลง companyId / departmentId / branchId เป็นชื่อ (ตัวเดียวกับที่หน้าตั้งค่าใช้)
 // ถ้า path ไม่ตรงโครงสร้างโปรเจกต์ ให้แก้บรรทัดนี้ให้ชี้ไปที่ branches.ts
 import { orgOf, getBranch, branchLabel } from "../../components/branches";
 import { getDepartment } from "../../components/departments";
-import { goalOfDate, gameDayStart, gameDayKey } from "../../components/goal";
-import { voidedUsersOfDay } from "../../../lib/bans";
+import { goalOfDate } from "../../components/goal";
 
 // "วันนี้" นับเป็นวันเกมตามเวลาไทย (UTC+7) อันดับจึงรีเซ็ตตอน 06:00 น. ของไทย
 // (ดูตัวช่วย gameDayStart / gameDayKey และ RESET_HOUR ใน app/components/goal.ts)
-const DAY = 864e5;
+// การคำนวณอันดับอยู่ใน lib/leaderboard-top.ts (ใช้ร่วมกับ /api/leaderboard/note)
 const TOP = 100;
-
-const toId = (v: ObjectId | string) =>
-  typeof v === "string" && ObjectId.isValid(v) ? new ObjectId(v) : v;
-
-type Row = { _id: ObjectId | string; total: number; rounds: number };
-type UserDoc = {
-  _id: ObjectId | string;
-  nickname?: string;
-  avatarUrl?: string | null;
-  companyId?: number | null;
-  departmentId?: number | null;
-  branchId?: number | null;
-};
+// โน๊ตบนแท่นยืน: แสดงเฉพาะ 3 อันดับแรก
+const PODIUM = 3;
 
 type Org = { company: string | null; department: string | null };
 
@@ -63,12 +56,6 @@ function orgInfo(u: UserDoc): Org {
 export async function GET() {
   await connection();
   try {
-    const now = Date.now();
-    // ต้นวันเกม = 06:00 น. ไทยล่าสุด
-    const start = gameDayStart(now);
-    // ต้องตรงกับ key ที่ /api/sessions ใช้บันทึก goal_hits (YYYY-MM-DD ของวันเกม เวลาไทย)
-    const dayStr = gameDayKey(now);
-
     const user = await currentUser();
     const myId = user ? String(user.id) : null;
 
@@ -77,56 +64,7 @@ export async function GET() {
     // ลบข้อมูลของบัญชีที่ไม่มีอยู่แล้วออกจากฐานข้อมูลจริง (รันไม่เกิน 1 ครั้ง/นาที)
     await purgeOrphansThrottled(db);
 
-    const rawRows = (await db
-      .collection("jumps")
-      .aggregate([
-        { $match: { ts: { $gte: start, $lt: start + DAY } } },
-        {
-          $group: {
-            _id: "$userId",
-            total: { $sum: "$total" },
-            rounds: { $sum: 1 },
-            first: { $min: "$ts" },
-          },
-        },
-        // แต้มเท่ากัน ใครถึงก่อนได้อันดับก่อน
-        { $sort: { total: -1, first: 1 } },
-      ])
-      .toArray()) as Row[];
-
-    // กันไว้อีกชั้น: ตัดบัญชีที่ไม่มีใน users ออกจากอันดับ
-    // (กรณีรอบ purge ยังไม่ถึงเวลา)
-    const existing = await db
-      .collection<UserDoc>("users")
-      .find({ _id: { $in: rawRows.map((r) => toId(r._id)) } })
-      .project({
-        _id: 1,
-        nickname: 1,
-        avatarUrl: 1,
-        companyId: 1,
-        departmentId: 1,
-        branchId: 1,
-      })
-      .toArray();
-    const names = new Map(
-      existing.map((u) => [String(u._id), u.nickname as string])
-    );
-    // รูปโปรไฟล์ของแต่ละคน (ไม่มี = null แล้วฝั่งหน้าเว็บแสดงตัวอักษรแรกแทน)
-    const avatars = new Map(
-      existing.map((u) => [
-        String(u._id),
-        (u.avatarUrl as string | null | undefined) ?? null,
-      ])
-    );
-    // บริษัท / แผนก ของแต่ละคน (แสดงใต้ชื่อในหน้าอันดับ)
-    const orgs = new Map(
-      existing.map((u) => [String(u._id), orgInfo(u as UserDoc)])
-    );
-    // คนที่ถูกแบนในวันนี้ถูกตัดคะแนนทั้งวัน ซ่อนจากอันดับเหมือนไม่ได้เล่น
-    const voided = await voidedUsersOfDay(db, dayStr);
-    const rows = rawRows.filter(
-      (r) => names.has(String(r._id)) && !voided.has(String(r._id))
-    );
+    const { start, dayStr, rows, users, voided } = await getDayRanking(db);
 
     const top = rows.slice(0, TOP);
 
@@ -150,12 +88,40 @@ export async function GET() {
     // ใช้วาดหลอดความคืบหน้า ต้องตรงกับเป้าที่ /api/sessions ใช้ตัดสิน point
     const goal = goalOfDate(dayStr);
 
+    // โน๊ตของ 3 อันดับแรกที่ยังไม่หมดอายุ (เก็บใน rank_notes แยกจากโน๊ตแผนก)
+    // (TTL index ลบแถวเก่าให้เอง แต่ monitor ช้าได้ ~60 วินาที จึงกรอง expiresAt ซ้ำที่นี่)
+    const podiumIds = top.slice(0, PODIUM).map((r) => toId(r._id));
+    const noteDocs =
+      podiumIds.length > 0
+        ? await db
+            .collection("rank_notes")
+            .find(
+              { userId: { $in: podiumIds }, expiresAt: { $gt: new Date() } },
+              { projection: { userId: 1, text: 1, style: 1, expiresAt: 1 } }
+            )
+            .toArray()
+        : [];
+    const noteByUser = new Map(
+      noteDocs.map((n) => [
+        String(n.userId),
+        {
+          text: n.text as string,
+          // โน๊ตเก่าที่ไม่มี style = กรอบธรรมดา
+          style: (n.style as string) ?? "none",
+          expiresAt: (n.expiresAt as Date).toISOString(),
+        },
+      ])
+    );
+
     const entries = top.map((r, i) => {
-      const org = orgs.get(String(r._id));
+      const u = users.get(String(r._id));
+      const org = u ? orgInfo(u) : undefined;
       return {
         rank: i + 1,
-        name: names.get(String(r._id)) ?? "ไม่ระบุชื่อ",
-        avatarUrl: avatars.get(String(r._id)) ?? null,
+        name: u?.nickname ?? "ไม่ระบุชื่อ",
+        // รูปโปรไฟล์ของแต่ละคน (ไม่มี = null แล้วฝั่งหน้าเว็บแสดงตัวอักษรแรกแทน)
+        avatarUrl: u?.avatarUrl ?? null,
+        // บริษัท / แผนก ของแต่ละคน (แสดงใต้ชื่อในหน้าอันดับ)
         company: org?.company ?? null,
         department: org?.department ?? null,
         total: r.total,
@@ -163,6 +129,8 @@ export async function GET() {
         me: String(r._id) === myId,
         goalRank: seqOf.get(String(r._id)) ?? null,
         goal,
+        // อันดับ 4 ขึ้นไป = null เสมอ
+        note: i < PODIUM ? (noteByUser.get(String(r._id)) ?? null) : null,
       };
     });
 

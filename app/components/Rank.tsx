@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ICONS,
   Icon,
@@ -10,6 +11,26 @@ import {
 } from "./auth-shared";
 import DepartmentRank, { prefetchDeptBoard } from "./DepartmentRank";
 import RankLoader from "./RankLoader";
+import {
+  BanIcon,
+  EDITOR_MS,
+  FLIGHT_MS,
+  FRAME_IDS,
+  FRAMES,
+  Face,
+  MOOD_IDS,
+  MOODS,
+  NOTE_MAX,
+  NoteBox,
+  NoteStyles,
+  PencilIcon,
+  TrashIcon,
+  XIcon,
+  styleOf,
+  type Flight,
+  type Note,
+  type NoteStyle,
+} from "./NoteShared";
 
 /* ------------------------------------------------------------------ */
 /* ค่าคงที่และชนิดข้อมูล (ซ้ำกับ app/page.tsx เพราะไฟล์ page.tsx export ได้แค่ default) */
@@ -36,6 +57,8 @@ type BoardEntry = {
   goalRank: number | null;
   // เป้าหมายรายวันของคนนั้น ใช้วาดหลอดความคืบหน้า
   goal: number;
+  // โน๊ตบนแท่นยืน (มีเฉพาะอันดับ 1-3 ที่เขียนไว้และยังไม่หมดอายุ)
+  note?: Note | null;
 };
 
 type Board = {
@@ -77,6 +100,10 @@ const limeBtn =
 
 const initialOf = (name: string) =>
   (Array.from(name.trim())[0] ?? "?").toUpperCase();
+
+// server กรองหมดอายุให้แล้ว แต่กรองซ้ำฝั่ง client กันกรณีเปิดหน้าค้างไว้ข้ามรอบรีเซ็ต
+const activeNote = (n?: Note | null): Note | null =>
+  n && Date.parse(n.expiresAt) > Date.now() ? n : null;
 
 // size = px ตายตัว / fill = เต็มกล่องแม่ (ให้ขนาดเปลี่ยนตามหน้าจอด้วย class)
 function Avatar({
@@ -265,7 +292,17 @@ function Confetti({
 }
 
 // แท่นยืน 3 อันดับแรก: เรียงซ้าย→ขวา = อันดับ 2, 1, 3 แท่นสูงตามอันดับ
-function Podium({ entries }: { entries: BoardEntry[] }) {
+// onEditNote: ส่งมาเมื่อผู้ใช้เขียนโน๊ตได้ (ไม่โดนแบน) ถ้าตัวเองอยู่บนแท่นจะมีปุ่มดินสอเหนือ avatar
+// pulse: วงแหวนที่รูปตัวเองตอนโน๊ตลอยมาถึง
+function Podium({
+  entries,
+  onEditNote,
+  pulse = false,
+}: {
+  entries: BoardEntry[];
+  onEditNote?: (note: Note | null) => void;
+  pulse?: boolean;
+}) {
   const slots: { place: 1 | 2 | 3; e?: BoardEntry }[] = [
     { place: 2, e: entries[1] },
     { place: 1, e: entries[0] },
@@ -299,13 +336,25 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
     },
   } as const;
 
+  // เว้นที่ด้านบนการ์ดให้โน๊ต (และเปลวไฟของกรอบ) เมื่อมีโน๊ตหรือมีปุ่มเขียนโน๊ต
+  const hasTop =
+    entries.some((e) => !!activeNote(e.note)) ||
+    (!!onEditNote && entries.some((e) => e.me));
+
   return (
     <section aria-label="3 อันดับแรก" className="relative">
-      <div className="overflow-hidden rounded-3xl bg-white px-3 pt-5 sm:px-6 sm:pt-6">
+      <div
+        className={`overflow-hidden rounded-3xl bg-white px-3 sm:px-6 ${
+          hasTop ? "pt-10 sm:pt-12" : "pt-5 sm:pt-6"
+        }`}
+      >
       <div className="flex items-end gap-2 sm:gap-4">
         {slots.map(({ place, e }) => {
           const L = look[place];
           const reached = !!e && (e.goalRank != null || e.total >= e.goal);
+          const note = e ? activeNote(e.note) : null;
+          const ns = styleOf(note?.style);
+          const canEdit = !!e && e.me && !!onEditNote;
           return (
             <div
               key={place}
@@ -318,8 +367,52 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
                       <Icon d={ICONS.trophy} size={26} />
                     </span>
                   )}
+                  {/* bubble โน๊ต เหนือ avatar (อันดับ 1: อยู่ระหว่างถ้วยกับ avatar) */}
+                  {note ? (
+                    <div className="relative mb-3 max-w-full text-center drop-shadow-md">
+                      {/* กรอบ = พื้นหลังไล่สีเคลื่อนไหว ข้างในเป็นกล่องข้อความ (สีตามกรอบ) */}
+                      <NoteBox text={note.text} frame={ns.frame} clamp />
+                      {/* หางกรอบคำพูด ชี้ลงหา avatar สีตามกรอบ */}
+                      <span
+                        aria-hidden
+                        className="absolute left-1/2 top-[calc(100%-1px)] h-2 w-3.5 -translate-x-1/2 [clip-path:polygon(0_0,100%_0,50%_100%)]"
+                        style={{ background: ns.tail }}
+                      />
+                      {ns.mood && (
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute -right-3 -top-4"
+                        >
+                          <Face kind={ns.mood} size={28} />
+                        </span>
+                      )}
+                      {/* ดินสอ = แก้ไข (เฉพาะโน๊ตตัวเอง) */}
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => onEditNote?.(note)}
+                          aria-label="แก้ไขโน๊ต"
+                          title="แก้ไขโน๊ต"
+                          className="absolute -left-2 -top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-[#1B2A21] text-[#C9F25B] shadow transition-transform active:scale-90"
+                        >
+                          <PencilIcon size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ) : canEdit ? (
+                    <button
+                      type="button"
+                      onClick={() => onEditNote?.(null)}
+                      aria-label="เขียนโน๊ต"
+                      title="เขียนโน๊ต"
+                      className="mb-2 flex h-7 w-9 items-center justify-center rounded-2xl border border-dashed border-[#3F5E1F]/50 text-[#3F5E1F] transition-transform active:scale-95"
+                    >
+                      <PencilIcon size={14} />
+                    </button>
+                  ) : null}
                   <span
-                    className={`rounded-full ${
+                    data-me-avatar={e.me ? "" : undefined}
+                    className={`relative rounded-full ${
                       e.me ? "ring-2 ring-[#3F5E1F] ring-offset-2" : ""
                     }`}
                   >
@@ -329,6 +422,13 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
                       fill
                       className={L.av}
                     />
+                    {e.me && pulse && (
+                      <span
+                        aria-hidden
+                        className="dc-anim pointer-events-none absolute inset-0 rounded-full ring-[3px] ring-[#C9F25B]"
+                        style={{ animation: "rk-ring .6s ease-out both" }}
+                      />
+                    )}
                   </span>
                   <div className="mt-2 w-full truncate text-center text-[14px] font-semibold">
                     {e.name}
@@ -408,6 +508,291 @@ function Podium({ entries }: { entries: BoardEntry[] }) {
   );
 }
 
+// ช่องเขียนโน๊ตบนแท่น (popup): เปิดเฉพาะตอนผู้ใช้อยู่อันดับ 1-3
+// onSaved ส่งตำแหน่งช่องตัวอย่าง (rect) กลับไปให้หน้าแม่เล่นแอนิเมชันโน๊ตลอยไปหา avatar
+// rect = null เมื่อผู้ใช้ตั้งค่าลดการเคลื่อนไหว หน้าแม่จะใส่โน๊ตลง state ทันที
+function NoteEditorModal({
+  initialText,
+  initialStyle,
+  hasNote,
+  onClose,
+  onSaved,
+  onDeleted,
+}: {
+  initialText: string;
+  initialStyle: NoteStyle;
+  hasNote: boolean;
+  onClose: () => void;
+  onSaved: (note: Note, rect: DOMRect | null) => void;
+  onDeleted: () => void;
+}) {
+  const [draft, setDraft] = useState(initialText);
+  const [draftStyle, setDraftStyle] = useState<NoteStyle>(initialStyle);
+  const [saving, setSaving] = useState(false);
+  // closing = กำลังเล่นแอนิเมชันเลื่อนลง ก่อนถอด popup ออกจริง
+  const [closing, setClosing] = useState(false);
+  const previewRef = useRef<HTMLSpanElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const draftSt = styleOf(draftStyle);
+
+  // เปิดแล้วโฟกัสช่องพิมพ์ (ไม่ให้หน้าเลื่อนตาม)
+  useEffect(() => {
+    const id = requestAnimationFrame(() =>
+      taRef.current?.focus({ preventScroll: true })
+    );
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !saving) setClosing(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [saving]);
+
+  useEffect(() => {
+    if (!closing) return;
+    const t = setTimeout(onClose, 260);
+    return () => clearTimeout(t);
+  }, [closing, onClose]);
+
+  async function saveNote() {
+    const text = draft.trim();
+    if (!text || saving) return;
+    setSaving(true);
+    try {
+      const r = await fetch("/api/leaderboard/note", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, style: draftStyle }),
+      });
+      if (r.status === 403) {
+        alert("เขียนโน๊ตได้เฉพาะอันดับ 1-3 ของวันนี้");
+        setSaving(false);
+        return;
+      }
+      if (!r.ok) throw new Error();
+      const { note } = (await r.json()) as { note: Note };
+      // วัดตำแหน่งช่องตัวอย่างก่อน popup หุบ
+      const el = previewRef.current;
+      const reduce = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+      onSaved(note, el && !reduce ? el.getBoundingClientRect() : null);
+      setClosing(true);
+    } catch {
+      alert("บันทึกโน๊ตไม่สำเร็จ ลองอีกครั้ง");
+      setSaving(false);
+    }
+  }
+
+  async function deleteNote() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const r = await fetch("/api/leaderboard/note", { method: "DELETE" });
+      if (!r.ok) throw new Error();
+      onDeleted();
+      setClosing(true);
+    } catch {
+      alert("ลบโน๊ตไม่สำเร็จ ลองอีกครั้ง");
+      setSaving(false);
+    }
+  }
+
+  // ปุ่มไอคอนกลมในช่องกรอก (ยกเลิก / ลบ)
+  const iconBtn =
+    "flex h-9 w-9 items-center justify-center rounded-full bg-white text-[#3F5E1F] transition-transform active:scale-90 disabled:opacity-40";
+  // ตัวเลือกกรอบ/อารมณ์: ไอคอนล้วน ไม่มีตัวหนังสือ
+  const pickBtn = (on: boolean) =>
+    `flex h-9 w-9 items-center justify-center rounded-full transition-transform active:scale-90 ${
+      on
+        ? "bg-white text-[#1B2A21] ring-2 ring-[#1B2A21]"
+        : "bg-white/70 text-[#3F5E1F]"
+    }`;
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="เขียนโน๊ตบนแท่น"
+      className="dc-anim fixed inset-0 z-50 flex items-end justify-center bg-[#1B2A21]/70 p-0 font-[inherit] sm:items-center sm:p-5"
+      style={{
+        animation: closing
+          ? "rk-back-out .26s ease-in both"
+          : "rk-back-in .3s ease-out both",
+      }}
+      onClick={() => {
+        if (!saving) setClosing(true);
+      }}
+    >
+      <NoteStyles />
+      <style>{`
+        @keyframes rk-back-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes rk-back-out { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes rk-sheet-in {
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes rk-sheet-out {
+          from { transform: translateY(0); opacity: 1; }
+          to { transform: translateY(100%); opacity: 0; }
+        }
+        /* ปุ่ม/ช่องกรอกใน popup ใช้ font เดียวกับทั้งแอป */
+        .rk-font, .rk-font button, .rk-font textarea { font-family: inherit; }
+        /* กัน iOS Safari ซูมหน้าจอตอนโฟกัสช่องพิมพ์: ต้องใช้ font-size >= 16px */
+        .rk-font textarea { font-size: 16px; }
+      `}</style>
+
+      <div
+        className="dc-anim rk-font relative flex max-h-[88dvh] w-full max-w-md flex-col overflow-y-auto rounded-t-[32px] bg-gradient-to-b from-[#EFF8CF] via-[#E1F2B4] to-[#CFEA85] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 text-[#1B2A21] shadow-2xl sm:rounded-[32px]"
+        style={{
+          animation: closing
+            ? "rk-sheet-out .26s ease-in both"
+            : "rk-sheet-in .38s cubic-bezier(.22,1,.36,1) both",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[12px] text-[#3F5E1F]">อันดับ 1-3 ของวันนี้</div>
+            <h3 className="text-[22px] font-bold leading-tight tracking-tight">
+              โน๊ตบนแท่น
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => setClosing(true)}
+            disabled={saving}
+            aria-label="ปิด"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/80 shadow-sm transition-transform active:scale-90 disabled:opacity-40"
+          >
+            <Icon d={ICONS.close} size={18} />
+          </button>
+        </div>
+
+        <div className="mt-3 rounded-2xl bg-white/80 p-3 shadow-sm">
+          <textarea
+            ref={taRef}
+            value={draft}
+            maxLength={NOTE_MAX}
+            rows={2}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="เขียนโน๊ตสั้นๆ ให้ทุกคนที่เปิดหน้าอันดับเห็น..."
+            className="w-full resize-none bg-transparent text-[16px] outline-none"
+          />
+
+          {/* ตัวอย่างกรอบ ตามที่เลือก */}
+          <div className="mt-2 flex justify-center pb-3 pt-7">
+            <div className="relative max-w-[80%]">
+              <NoteBox
+                text={draft.trim() || "ตัวอย่างโน๊ตของคุณ"}
+                frame={draftSt.frame}
+                boxRef={previewRef}
+              />
+              <span
+                aria-hidden
+                className="absolute left-1/2 top-[calc(100%-1px)] h-2 w-3.5 -translate-x-1/2 [clip-path:polygon(0_0,100%_0,50%_100%)]"
+                style={{ background: draftSt.tail }}
+              />
+              {draftSt.mood && (
+                <span aria-hidden className="absolute -right-4 -top-5">
+                  <Face kind={draftSt.mood} size={30} />
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* เลือกกรอบ + อารมณ์ (ไอคอนล้วน) */}
+          <div
+            role="radiogroup"
+            aria-label="เลือกกรอบหรืออารมณ์ของโน๊ต"
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            {FRAME_IDS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={draftStyle === id}
+                aria-label={FRAMES[id].label}
+                title={FRAMES[id].label}
+                onClick={() => setDraftStyle(id)}
+                className={pickBtn(draftStyle === id)}
+              >
+                {id === "none" ? (
+                  <BanIcon size={20} />
+                ) : (
+                  <span
+                    aria-hidden
+                    className="block h-5 w-5 rounded-full"
+                    style={{ background: FRAMES[id].swatch }}
+                  />
+                )}
+              </button>
+            ))}
+            <span aria-hidden className="mx-0.5 h-5 w-px bg-[#3F5E1F]/25" />
+            {MOOD_IDS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={draftStyle === id}
+                aria-label={MOODS[id].label}
+                title={MOODS[id].label}
+                onClick={() => setDraftStyle(id)}
+                className={pickBtn(draftStyle === id)}
+              >
+                <Face kind={id} size={26} animate={draftStyle === id} />
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="text-[12px] tabular-nums text-[#3F5E1F]">
+              {draft.length}/{NOTE_MAX} · หายตอน 06:00 น.
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setClosing(true)}
+                disabled={saving}
+                aria-label="ยกเลิก"
+                title="ยกเลิก"
+                className={iconBtn}
+              >
+                <XIcon size={18} />
+              </button>
+              {hasNote && (
+                <button
+                  type="button"
+                  onClick={deleteNote}
+                  disabled={saving}
+                  aria-label="ลบโน๊ต"
+                  title="ลบโน๊ต"
+                  className={iconBtn}
+                >
+                  <TrashIcon size={18} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={saveNote}
+                disabled={saving || !draft.trim()}
+                className="h-9 rounded-full bg-[#1B2A21] px-4 text-[13px] font-semibold text-[#C9F25B] transition-transform active:scale-95 disabled:opacity-40"
+              >
+                {saving ? "กำลังบันทึก..." : "แชร์"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // แบนเนอร์ชวนโดด: ยังไม่ถึงเป้า = ชวนรับ point / ถึงเป้าแล้ว = ยินดีกับคะแนนที่ทำได้
 function PromoBanner({
   status,
@@ -466,6 +851,17 @@ function RankView(props: RankProps) {
     props.initialView ?? "person"
   );
 
+  // โน๊ตบนแท่น: editor = ข้อมูลเริ่มต้นของ popup (null = ปิดอยู่)
+  const [editor, setEditor] = useState<{
+    text: string;
+    style: NoteStyle;
+    hasNote: boolean;
+  } | null>(null);
+  // เอฟเฟกต์ตอนแชร์: flight = โน๊ตกำลังลอยไปหาโปรไฟล์, pulse = วงแหวนที่รูปตอนถึง
+  const [flight, setFlight] = useState<Flight | null>(null);
+  const [pulse, setPulse] = useState(false);
+  const ghostRefs = useRef<(HTMLDivElement | null)[]>([]);
+
   // ให้ loadBoard อ่าน callback ล่าสุดได้โดยไม่ต้องสร้างฟังก์ชันใหม่
   const P = useRef(props);
   useEffect(() => {
@@ -509,6 +905,108 @@ function RankView(props: RankProps) {
   useEffect(() => {
     prefetchDeptBoard();
   }, []);
+
+  // วงแหวนที่รูปโปรไฟล์ตอนโน๊ตมาถึง
+  useEffect(() => {
+    if (!pulse) return;
+    const t = setTimeout(() => setPulse(false), 700);
+    return () => clearTimeout(t);
+  }, [pulse]);
+
+  // โน๊ตลอยจากช่องตัวอย่างไปหารูปตัวเองบนแท่น: ถือตำแหน่งเดิมรอ popup หุบเสร็จ
+  // แล้ววัดตำแหน่งรูปใหม่ ค่อยบินเป็นเส้นโค้ง (transform + opacity อย่างเดียว)
+  useEffect(() => {
+    if (!flight) return;
+    let done = false;
+    const anims: Animation[] = [];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const finish = () => {
+      if (done) return;
+      done = true;
+      setBoard(
+        (b) =>
+          b && {
+            ...b,
+            entries: b.entries.map((e) =>
+              e.me ? { ...e, note: flight.note } : e
+            ),
+          }
+      );
+      setPulse(true);
+    };
+    timers.push(
+      setTimeout(() => {
+        const target =
+          document.querySelector<HTMLElement>("[data-me-avatar]");
+        const els = ghostRefs.current.filter(
+          (el): el is HTMLDivElement => !!el
+        );
+        if (!target || els.length === 0) {
+          finish();
+          setFlight(null);
+          return;
+        }
+        const a = target.getBoundingClientRect();
+        const dx = a.left + a.width / 2 - (flight.left + flight.width / 2);
+        const dy = a.top - 4 - (flight.top + flight.height / 2);
+        els.forEach((el, i) => {
+          const anim = el.animate(
+            [
+              { transform: "translate(0,0) scale(1)", opacity: 1, offset: 0 },
+              {
+                transform: `translate(${dx * 0.4}px, ${dy * 0.4 - 50}px) scale(1.08)`,
+                opacity: 1,
+                offset: 0.4,
+              },
+              {
+                transform: `translate(${dx}px, ${dy}px) scale(.35)`,
+                opacity: 0,
+                offset: 1,
+              },
+            ],
+            {
+              duration: FLIGHT_MS,
+              delay: i * 70,
+              easing: "cubic-bezier(.45,0,.25,1)",
+              fill: "both",
+            }
+          );
+          anims.push(anim);
+          // ตัวหลัก (i = 0) ถึงก่อน เงาตามมาทีหลัง
+          if (i === 0) {
+            anim.onfinish = () => {
+              finish();
+              timers.push(setTimeout(() => setFlight(null), 250));
+            };
+          }
+        });
+      }, EDITOR_MS)
+    );
+    return () => {
+      timers.forEach(clearTimeout);
+      anims.forEach((a) => a.cancel());
+      // ออกจากหน้ากลางทาง: ยังต้องใส่โน๊ตลง state
+      finish();
+    };
+  }, [flight]);
+
+  // อัปเดต note ของตัวเองใน state ทันที ไม่ต้องรอรอบรีเฟรชถัดไป
+  const patchMe = (note: Note | null) =>
+    setBoard(
+      (b) =>
+        b && {
+          ...b,
+          entries: b.entries.map((e) => (e.me ? { ...e, note } : e)),
+        }
+    );
+
+  const openEditor = (note: Note | null) =>
+    setEditor({
+      text: note?.text ?? "",
+      style: styleOf(note?.style).id,
+      hasNote: !!note,
+    });
+  const closeEditor = useCallback(() => setEditor(null), []);
 
   const leader = board?.entries[0];
   const leftMs = Math.max(0, (board?.resetAt ?? 0) - boardNow);
@@ -639,6 +1137,15 @@ function RankView(props: RankProps) {
 
   return (
     <div className={wrap}>
+      {/* CSS ของกรอบ/อารมณ์/เอฟเฟกต์โน๊ต อยู่ใน NoteShared.tsx */}
+      <NoteStyles />
+      <style>{`
+        @keyframes rk-ring {
+          from { transform: scale(1); opacity: .8; }
+          to { transform: scale(1.55); opacity: 0; }
+        }
+      `}</style>
+
       <header className="mb-5 flex items-end justify-between gap-3">
         <div className="min-w-0">
           <p className="min-h-[18px] text-[13px] text-[#6B7A6E]">
@@ -687,7 +1194,11 @@ function RankView(props: RankProps) {
                 </p>
               ) : (
                 <>
-                  <Podium entries={board.entries.slice(0, 3)} />
+                  <Podium
+                    entries={board.entries.slice(0, 3)}
+                    onEditNote={props.banned ? undefined : openEditor}
+                    pulse={pulse}
+                  />
                   {board.entries.length > 3 && (
                     <>
                       {/* คำอธิบายไอคอนติ๊กเขียวในแถวด้านล่าง */}
@@ -705,7 +1216,7 @@ function RankView(props: RankProps) {
                 </>
               )}
               <p className="mt-3 px-1 text-[12px] text-[#6B7A6E]">
-                {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุก 06:00 น. เวลาไทย
+                {POINT_QUOTA} คนแรกที่ทำเป้าหมายรายวันสำเร็จ ได้ {POINT_REWARD} point อันดับ {POINT_QUOTA + 1} ขึ้นไปไม่ได้รับ นับจากรอบที่ผู้ใช้ล็อกอินบันทึกไว้ รีเซ็ตทุก 06:00 น. เวลาไทย อันดับ 1-3 เขียนโน๊ตบนแท่นได้ โน๊ตหายตอนรีเซ็ต
               </p>
             </section>
             <div className="pj-stagger space-y-4">
@@ -808,6 +1319,63 @@ function RankView(props: RankProps) {
         )}
         <RankLoader loading={!board && !boardErr} />
       </div>
+
+      {/* popup เขียนโน๊ตบนแท่น */}
+      {editor && (
+        <NoteEditorModal
+          initialText={editor.text}
+          initialStyle={editor.style}
+          hasNote={editor.hasNote}
+          onClose={closeEditor}
+          onSaved={(note, rect) => {
+            if (rect) {
+              setFlight({
+                note,
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+              });
+            } else {
+              patchMe(note);
+            }
+          }}
+          onDeleted={() => patchMe(null)}
+        />
+      )}
+
+      {/* โน๊ตที่กำลังลอยไปหาโปรไฟล์ + เงาตามหลัง 2 ชั้น
+          วางใน portal แยกจาก popup เพราะ popup ถูกถอดออกระหว่างบิน */}
+      {flight &&
+        createPortal(
+          <>
+            {[2, 1, 0].map((i) => (
+              <div
+                key={i}
+                ref={(el) => {
+                  ghostRefs.current[i] = el;
+                }}
+                aria-hidden
+                className="pointer-events-none fixed z-[60]"
+                style={{
+                  left: flight.left,
+                  top: flight.top,
+                  width: flight.width,
+                  height: flight.height,
+                  fontFamily: "inherit",
+                  willChange: "transform, opacity",
+                }}
+              >
+                <NoteBox
+                  text={flight.note.text}
+                  frame={styleOf(flight.note.style).frame}
+                  opacity={[1, 0.45, 0.2][i]}
+                />
+              </div>
+            ))}
+          </>,
+          document.body
+        )}
     </div>
   );
 }
