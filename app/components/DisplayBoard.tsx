@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ICONS, Icon, POINT_QUOTA } from "./auth-shared";
 import type { DeptEntry } from "./DepartmentRank";
+import Jumper from "./Jumper";
 import {
   Face as MoodFace,
   NoteBox,
@@ -1310,22 +1311,24 @@ function DeptBody({
 
 const CSS = `
 @keyframes dp-in { from { opacity: 0; transform: translateY(28px) scale(.985); } to { opacity: 1; transform: none; } }
-@keyframes dp-wipe { 0% { transform: translateX(-105%) skewX(-10deg); } 40% { transform: translateX(0) skewX(-10deg); } 60% { transform: translateX(0) skewX(-10deg); } 100% { transform: translateX(105%) skewX(-10deg); } }
-@keyframes dp-logo { 0% { opacity: 0; transform: scale(.2); } 25% { opacity: 1; transform: scale(1.22); } 40% { transform: scale(.92); } 55% { transform: scale(1.06); } 68% { transform: scale(1); } 85% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.2); } }
+@keyframes dp-wipe { 0% { transform: translateX(-105%) skewX(-10deg); } 27% { transform: translateX(0) skewX(-10deg); } 73% { transform: translateX(0) skewX(-10deg); } 100% { transform: translateX(105%) skewX(-10deg); } }
+@keyframes dp-logo { 0% { opacity: 0; transform: scale(.2); } 15% { opacity: 1; transform: scale(1.22); } 24% { transform: scale(.92); } 33% { transform: scale(1.06); } 41% { transform: scale(1); } 90% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.2); } }
 @keyframes dp-wipe-text { 0% { opacity: 0; transform: translateY(40px); } 30% { opacity: 1; transform: none; } 85% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-20px); } }
+@keyframes dp-jumper { 0% { opacity: 0; transform: translateY(40px) scale(.6); } 18% { opacity: 1; transform: none; } 88% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-20px); } }
 @keyframes dp-row { from { opacity: 0; transform: translateY(70px) scale(.96); } to { opacity: 1; transform: none; } }
 @keyframes dp-rise { from { transform: scaleY(.15); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes dp-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 .dp-in { animation: dp-in 1.2s cubic-bezier(.22,1,.36,1) .2s both; }
-.dp-wipe { animation: dp-wipe 2.1s cubic-bezier(.45,.05,.25,1) both; }
-.dp-logo { animation: dp-logo 1.5s ease-in-out .63s both; }
-.dp-wipe-text { animation: dp-wipe-text 1.3s ease-out 1s both; }
+.dp-wipe { animation: dp-wipe 3.1s cubic-bezier(.45,.05,.25,1) both; }
+.dp-logo { animation: dp-logo 2.5s ease-in-out .63s both; }
+.dp-wipe-text { animation: dp-wipe-text 2.3s ease-out 1s both; }
+.dp-jumper { animation: dp-jumper 2.2s cubic-bezier(.22,1,.36,1) 1s both; }
 .dp-row { animation: dp-row .7s cubic-bezier(.22,1,.36,1) both; }
 .dp-rise { transform-origin: bottom; animation: dp-rise .8s cubic-bezier(.22,1,.36,1) both; }
 .dp-float { animation: dp-float 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .dp-in, .dp-rise, .dp-float, .dp-row { animation: none !important; }
-  .dp-wipe, .dp-logo, .dp-wipe-text { display: none !important; }
+  .dp-wipe, .dp-logo, .dp-wipe-text, .dp-jumper { display: none !important; }
 }
 `;
 
@@ -1390,7 +1393,7 @@ export default function DisplayBoard() {
       setView(v);
       setShot((s) => s + 1);
       switching.current = false;
-    }, 1150);
+    }, 1650);
   };
 
   // ย่อ/ขยายเวทีให้พอดีจอ + เลือกแนวจอ (?rotate=90|270 = หมุนภาพสำหรับจอที่วางตั้ง)
@@ -1760,13 +1763,16 @@ export default function DisplayBoard() {
                   alt=""
                   draggable={false}
                   className="dp-logo h-auto object-contain"
-                  style={{ width: vw * 0.55, maxHeight: vh * 0.5 }}
+                  style={{ width: vw * 0.5, maxHeight: vh * 0.38 }}
                 />
                 <div
                   className="dp-wipe-text font-semibold leading-none text-[#1B2A21]"
                   style={{ fontSize: vw * 0.046 }}
                 >
                   {wipeTo === "dept" ? "อันดับแผนก" : "อันดับบุคคล"}
+                </div>
+                <div className="dp-jumper">
+                  <Jumper size={Math.round(vh * 0.26)} cycle={false} effects />
                 </div>
               </div>
             </div>
