@@ -630,7 +630,15 @@ export default function Home() {
   const audioRef = useRef<AudioContext | null>(null);
   const shotsRef = useRef<DayShots>(EMPTY_SHOTS);
 
-  const settingsRef = useRef({ mode, seconds, target, dailyGoal, facing, sound });
+  // 1 รอบ = เป้ารายวันของสัปดาห์นั้น (โหมดนับครั้งเสมอ) ไม่ใช้ mode/target ที่เคยบันทึกไว้
+  const settingsRef = useRef({
+    mode: "count" as Mode,
+    seconds,
+    target: dailyGoal,
+    dailyGoal,
+    facing,
+    sound,
+  });
   const historyRef = useRef<Session[]>([]);
 
   const [remoteReady, setRemoteReady] = useState(false);
@@ -671,8 +679,15 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    settingsRef.current = { mode, seconds, target, dailyGoal, facing, sound };
-  }, [mode, seconds, target, dailyGoal, facing, sound]);
+    settingsRef.current = {
+      mode: "count",
+      seconds,
+      target: dailyGoal,
+      dailyGoal,
+      facing,
+      sound,
+    };
+  }, [seconds, dailyGoal, facing, sound]);
 
   useEffect(() => {
     historyRef.current = history;
@@ -1168,7 +1183,14 @@ export default function Home() {
         <style>{STYLES}</style>
         <Pose
           key={sessionKey}
-          settings={{ mode, seconds, target, dailyGoal, facing, sound }}
+          settings={{
+            mode: "count",
+            seconds,
+            target: dailyGoal,
+            dailyGoal,
+            facing,
+            sound,
+          }}
           audioRef={audioRef}
           gyroPromise={gyroPromise}
           shotsRef={shotsRef}
