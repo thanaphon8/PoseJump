@@ -9,7 +9,11 @@ import {
   getBranch,
 } from "../app/components/branches";
 import { getCompany, getDepartment } from "../app/components/departments";
-import { DEFAULT_DAILY_GOAL, goalOfDate } from "../app/components/goal";
+import {
+  DEFAULT_DAILY_GOAL,
+  goalOfDate,
+  pointsEnabledOfDate,
+} from "../app/components/goal";
 import {
   bansOfDay,
   idVariants,
@@ -28,6 +32,7 @@ export const DAY_MS = 864e5;
 const TZ_MS = 7 * 3600e3;
 
 // กติกา: 100 คนแรกที่ถึงเป้ารายวัน ได้ 50 point
+// (ตั้งแต่วันเกม POINTS_END_DAY ใน goal.ts ไม่ให้ point แล้ว)
 export const POINT_QUOTA = 100;
 export const POINT_REWARD = 50;
 // เป้ารายวันเปลี่ยนตามสัปดาห์ ดู app/components/goal.ts (goalOfDate)
@@ -177,7 +182,10 @@ function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
   if (rows.length === 0) return [];
 
   // เป้าของวันนี้ (ทุกแถวใน rows อยู่วันไทยเดียวกัน)
-  const goal = goalOfDate(ymdOf(Number(rows[0].ts)));
+  const dayYmd = ymdOf(Number(rows[0].ts));
+  const goal = goalOfDate(dayYmd);
+  // ตั้งแต่ POINTS_END_DAY (goal.ts) ไม่ให้ point แต่ยังจัดอันดับถึงเป้าตามเดิม
+  const pointsOn = pointsEnabledOfDate(dayYmd);
 
   const acc = new Map<
     string,
@@ -213,7 +221,10 @@ function buildDay(rows: Row[], userMap: Map<string, Row>): DayEntry[] {
         rounds: a.rounds,
         goal,
         goalRank,
-        points: goalRank !== null && goalRank <= POINT_QUOTA ? POINT_REWARD : 0,
+        points:
+          pointsOn && goalRank !== null && goalRank <= POINT_QUOTA
+            ? POINT_REWARD
+            : 0,
         avatarUrl: avatarOf(u),
         org: orgFromUser(u),
       };

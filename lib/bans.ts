@@ -1,6 +1,10 @@
 import { ObjectId, type Db } from "mongodb";
 import { addUserPoints } from "./points";
-import { gameDayKey, RESET_MS } from "../app/components/goal";
+import {
+  gameDayKey,
+  RESET_MS,
+  pointsEnabledOfDate,
+} from "../app/components/goal";
 
 // ระบบแบนผู้เล่น (collection "bans")
 // - แบนครั้งละ 24 ชม. นับจากเวลาที่กดแบน
@@ -174,9 +178,11 @@ export async function voidedDeptFilter(
 
 // คำนวณ point ของวันนั้นใหม่จาก goal_hits (เรียงตาม seq = ลำดับเวลาถึงเป้า)
 // ข้ามคนที่ถูกตัดคะแนน แล้วให้ POINT_REWARD กับ POINT_QUOTA คนแรกที่เหลือ
+// วันเกมตั้งแต่ POINTS_END_DAY (goal.ts) ไม่ให้ point: want = 0 ทุกคน
 // เทียบกับ award เดิม แล้วปรับ users.points ตามส่วนต่าง
 // เรียกซ้ำกี่ครั้งก็ได้ผลเท่าเดิม (อัปเดต award แบบมีเงื่อนไข กันบวกซ้ำ)
 export async function recomputeDayPoints(db: Db, day: string) {
+  const pointsOn = pointsEnabledOfDate(day);
   const voided = await voidedUsersOfDay(db, day);
   const hits = await db
     .collection("goal_hits")
@@ -189,7 +195,7 @@ export async function recomputeDayPoints(db: Db, day: string) {
     let want = 0;
     if (!voided.has(String(h.userId))) {
       n += 1;
-      want = n <= POINT_QUOTA ? POINT_REWARD : 0;
+      want = pointsOn && n <= POINT_QUOTA ? POINT_REWARD : 0;
     }
     const old = typeof h.award === "number" ? h.award : 0;
     if (want === old) continue;

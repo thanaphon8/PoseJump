@@ -3,7 +3,12 @@ import type { Db } from "mongodb";
 import { getDb } from "../../../lib/mongodb";
 import { currentUser } from "../../../lib/auth";
 import { addUserPoints, getUserPoints } from "../../../lib/points";
-import { goalOfDate, gameDayStart, gameDayKey } from "../../components/goal";
+import {
+  goalOfDate,
+  gameDayStart,
+  gameDayKey,
+  pointsEnabledOfDate,
+} from "../../components/goal";
 import {
   BANS_COLLECTION,
   activeBanOf,
@@ -29,6 +34,8 @@ const num = (v: unknown, min: number, max: number) =>
 /* ------------------------------------------------------------------ */
 
 // 100 คนแรกของวัน (วันเกม เวลาไทย รีเซ็ต 06:00 น.) ที่ทำเป้าหมายรายวันสำเร็จ ได้ 50 point
+// ตั้งแต่วันเกม POINTS_END_DAY (app/components/goal.ts) ไม่ให้ point แล้ว
+// แต่ยังบันทึกการถึงเป้า (goal_hits) และเก็บคะแนน ranking ตามปกติ
 const POINT_QUOTA = 100;
 const POINT_REWARD = 50;
 
@@ -100,7 +107,9 @@ async function settleDailyGoal(db: Db, userId: unknown, now: number) {
     ? (res as unknown as { value: { seq: number } | null }).value
     : res) as { seq: number } | null;
   const seq = doc?.seq ?? 1;
-  const award = seq <= POINT_QUOTA ? POINT_REWARD : 0;
+  // วันเกมตั้งแต่ POINTS_END_DAY ไม่ให้ point (award = 0)
+  const award =
+    pointsEnabledOfDate(key) && seq <= POINT_QUOTA ? POINT_REWARD : 0;
 
   try {
     await db.collection("goal_hits").insertOne({

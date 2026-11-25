@@ -22,6 +22,7 @@ import {
   fmtGoalRange,
   gameDayStart,
   gameDayKey,
+  pointsEnabledOfTime,
 } from "./components/goal";
 import type { Tab } from "./components/Navbar";
 import type { Session } from "./components/History";
@@ -84,6 +85,12 @@ type Settings = {
   facing: "user" | "environment";
   sound: boolean;
 };
+
+// การ์ดแสดงผลหลังถึงเป้า
+// points = ได้ point (ก่อน POINTS_END_DAY) / praise = คำชม แสดงคะแนนรอบที่เพิ่งเล่น ไม่มี point
+type Reward =
+  | { kind: "points"; gain: number; total: number }
+  | { kind: "praise"; score: number };
 
 type DayShots = { day: string; start: string | null; end: string | null };
 const EMPTY_SHOTS: DayShots = { day: "", start: null, end: null };
@@ -383,18 +390,20 @@ function Confetti({
 
 function RewardModal({
   name,
-  gain,
-  total,
+  reward,
   onClose,
 }: {
   name: string;
-  gain: number;
-  total: number;
+  reward: Reward;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const praise = reward.kind === "praise";
   // ข้อความแชร์ใช้ชื่อเต็ม
-  const text = `ฉันเป็น ${POINT_QUOTA} คนแรกที่โดดถึงเป้าวันนี้ ได้ +${gain} point จาก ${APP_NAME}! มาโดดเชือกด้วยกันนะ`;
+  const text =
+    reward.kind === "praise"
+      ? `ฉันโดดได้ ${fmtNum(reward.score)} ครั้ง ถึงเป้าวันนี้แล้ว จาก ${APP_NAME}! มาโดดเชือกด้วยกันนะ`
+      : `ฉันเป็น ${POINT_QUOTA} คนแรกที่โดดถึงเป้าวันนี้ ได้ +${reward.gain} point จาก ${APP_NAME}! มาโดดเชือกด้วยกันนะ`;
 
   const share = async () => {
     const url = window.location.origin;
@@ -442,19 +451,28 @@ function RewardModal({
           <Icon d={ICONS.star} size={52} fill />
         </span>
         <h2 className="mt-4 text-[26px] font-bold leading-tight">
-          สุดยอด {name}!
+          {praise ? `ยินดีด้วย ${name}!` : `สุดยอด ${name}!`}
         </h2>
         <p className="mt-1 text-[14px] text-[#6B7A6E]">
-          คุณคือ 1 ใน {POINT_QUOTA} คนแรกที่โดดถึงเป้าวันนี้ รับ point ไปเลย
+          {praise
+            ? "ยินดีด้วย ที่ทำคะแนนได้"
+            : `คุณคือ 1 ใน ${POINT_QUOTA} คนแรกที่โดดถึงเป้าวันนี้ รับ point ไปเลย`}
         </p>
         <div className="mt-4 rounded-3xl bg-[#1B2A21] py-4 text-white">
           <div className="text-[56px] font-semibold leading-none tabular-nums tracking-tight text-[#C9F25B]">
-            +<CountUp value={gain} />
+            {reward.kind === "points" && "+"}
+            <CountUp
+              value={reward.kind === "points" ? reward.gain : reward.score}
+            />
           </div>
-          <div className="mt-1 text-[14px] text-white/70">point</div>
-          <div className="mt-2 text-[12px] text-white/50">
-            point สะสมทั้งหมด {fmtNum(total)}
+          <div className="mt-1 text-[14px] text-white/70">
+            {praise ? "ครั้ง" : "point"}
           </div>
+          {reward.kind === "points" && (
+            <div className="mt-2 text-[12px] text-white/50">
+              point สะสมทั้งหมด {fmtNum(reward.total)}
+            </div>
+          )}
         </div>
         <p className="mt-4 text-[13px] text-[#4B5E3A]">
           แคปหน้าจอนี้ไปอวดเพื่อน แล้วชวนมาโดดเชือกด้วยกัน
@@ -591,9 +609,7 @@ export default function Home() {
     : null;
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [reward, setReward] = useState<{ gain: number; total: number } | null>(
-    null
-  );
+  const [reward, setReward] = useState<Reward | null>(null);
   const [shots, setShots] = useState<DayShots>(EMPTY_SHOTS);
   const [dayMode, setDayMode] = useState(false);
   const [facing, setFacing] = useState<"user" | "environment">("user");
@@ -940,6 +956,14 @@ export default function Home() {
         mode: settingsRef.current.mode,
         kcal: Math.round(result.total * KCAL_PER_JUMP),
       };
+      // ตั้งแต่วันที่เลิกให้ point (goal.ts): ทุกรอบที่ยอดรวมวันนี้ถึงเป้า แสดงการ์ดคำชม (ไม่มี point)
+      const gk = dayKey(ts);
+      const dayBase = prev.reduce(
+        (a, x) => (dayKey(x.ts) === gk ? a + x.total : a),
+        0
+      );
+      const praise =
+        !pointsEnabledOfTime(ts) && dayBase + result.total >= goalOfTime(ts);
       setNow0(ts);
       const loggedIn = !!userRef.current;
       setHistory((p) => {
@@ -983,7 +1007,11 @@ export default function Home() {
             }
             const pts = d?.points;
             if (typeof pts === "number") {
-              if (pts > before) setReward({ gain: POINT_REWARD, total: pts });
+              if (pts > before) {
+                setReward({ kind: "points", gain: POINT_REWARD, total: pts });
+              } else if (praise) {
+                setReward({ kind: "praise", score: result.total });
+              }
               setUser((u) => (u ? { ...u, points: pts } : u));
             }
           })
@@ -1448,8 +1476,7 @@ export default function Home() {
       {reward && !dayMode && (
         <RewardModal
           name={user?.name ?? ""}
-          gain={reward.gain}
-          total={reward.total}
+          reward={reward}
           onClose={() => setReward(null)}
         />
       )}
