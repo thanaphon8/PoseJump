@@ -746,6 +746,8 @@ function PhoneExample() {
 function PoseSession(props: PoseProps) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [count, setCount] = useState(0);
+  // ยอดรวมวันนี้ก่อนเริ่มรอบนี้ ตัวนับที่แสดง = base + count (นับต่อจากยอดสะสมของวัน)
+  const [base, setBase] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [bodyOk, setBodyOk] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -1135,7 +1137,9 @@ function PoseSession(props: PoseProps) {
           setCount(n);
           if (navigator.vibrate) navigator.vibrate(12);
           if (settingsRef.current.sound) {
-            if (n % 10 === 0) beep(audio.current, 1320, 0.15);
+            // เสียงทุก 10 ครั้งนับจากยอดรวมวันนี้
+            if ((todayBaseRef.current + n) % 10 === 0)
+              beep(audio.current, 1320, 0.15);
             else beep(audio.current, 1000, 0.04);
           }
         }
@@ -1188,7 +1192,13 @@ function PoseSession(props: PoseProps) {
         finish("time", s.seconds * 1000);
         return;
       }
-      if (s.mode === "count" && jumpsRef.current.length >= s.target) {
+      // โหมดนับครั้ง: จบอัตโนมัติเมื่อยอดรวมวันนี้ (ก่อนรอบนี้ + รอบนี้) ถึงเป้า
+      // ถ้าเริ่มรอบนี้ตอนถึงเป้าแล้ว (base >= เป้า) ไม่จบอัตโนมัติ นับต่อจนกดจบเอง
+      if (
+        s.mode === "count" &&
+        todayBaseRef.current < s.target &&
+        todayBaseRef.current + jumpsRef.current.length >= s.target
+      ) {
         const last = jumpsRef.current[jumpsRef.current.length - 1] ?? el;
         finish("count", last);
         return;
@@ -1255,8 +1265,9 @@ function PoseSession(props: PoseProps) {
     const gyroPromise = P.current.gyroPromise;
     const audio = P.current.audioRef;
 
-    // ยอดรวมวันนี้ก่อนรอบนี้ ใช้ตัดสินว่าเมื่อไรใกล้ถึงเป้าประจำวัน
+    // ยอดรวมวันนี้ก่อนรอบนี้ ใช้เป็นจุดเริ่มของตัวนับ และตัดสินว่าเมื่อไรถึง/ใกล้ถึงเป้าประจำวัน
     todayBaseRef.current = P.current.getTodayBase();
+    setBase(todayBaseRef.current);
 
     // โหลดโมเดลเบื้องหลังตั้งแต่ต้น ระหว่างผู้ใช้ตั้งมือถือ เน็ตช้าจะได้ไม่ต้องรอซ้ำ
     const modelPromise = loadLandmarker();
@@ -1457,6 +1468,9 @@ function PoseSession(props: PoseProps) {
 
   /* ------------------------------- หน้ากล้อง --------------------------- */
 
+  // ตัวนับที่แสดง = ยอดรวมวันนี้ (ก่อนรอบนี้ + รอบนี้) ส่วน count = เฉพาะรอบนี้
+  const shown = base + count;
+
   const remaining = Math.max(0, seconds * 1000 - elapsed);
   const timerText =
     mode === "time"
@@ -1470,7 +1484,7 @@ function PoseSession(props: PoseProps) {
       ? 0
       : mode === "time"
         ? Math.min(1, elapsed / (seconds * 1000))
-        : Math.min(1, count / target);
+        : Math.min(1, shown / Math.max(1, target));
 
   const glass = "bg-black/45 backdrop-blur-xl";
   const isPrep = phase === "positioning" || phase === "countdown";
@@ -1535,12 +1549,12 @@ function PoseSession(props: PoseProps) {
                 color={LIME}
               >
                 <span
-                  key={count}
+                  key={shown}
                   className={`text-[38px] font-semibold leading-none tabular-nums ${
                     count > 0 ? "pj-pop" : ""
                   }`}
                 >
-                  {count}
+                  {shown}
                 </span>
               </Ring>
               <div className="min-w-0 flex-1">
@@ -1834,12 +1848,12 @@ function PoseSession(props: PoseProps) {
                 >
                   <span className="text-[13px] text-white/60">จำนวนครั้ง</span>
                   <span
-                    key={count}
+                    key={shown}
                     className={`text-[84px] font-semibold leading-none tabular-nums tracking-tight ${
                       count > 0 ? "pj-pop" : ""
                     }`}
                   >
-                    {count}
+                    {shown}
                   </span>
                   <span className="mt-1 text-[13px] text-white/60">
                     {mode === "count" ? `/ ${target} ครั้ง` : "ครั้ง"}

@@ -1025,7 +1025,8 @@ export default function Home() {
               if (pts > before) {
                 setReward({ kind: "points", gain: POINT_REWARD, total: pts });
               } else if (praise) {
-                setReward({ kind: "praise", score: result.total });
+                // แสดงยอดรวมวันนี้ (รวมรอบก่อนหน้า) เพราะตัวนับนับต่อจากยอดสะสมของวัน
+                setReward({ kind: "praise", score: dayBase + result.total });
               }
               setUser((u) => (u ? { ...u, points: pts } : u));
             }
@@ -1295,6 +1296,10 @@ export default function Home() {
 
   if (!summary) return null;
 
+  // ช่องจำนวนครั้งใหญ่: ยังไม่ถึงเป้ารายวัน = ยอดเฉพาะรอบนี้ / ถึงเป้าแล้ว = ยอดรวมวันนี้
+  const showDayTotal = dayMode || reached;
+  const bigTotal = showDayTotal ? todayTotal : summary.total;
+
   // วันที่ที่แสดงในหน้า "ผลวันนี้" = วันเกม (ก่อน 06:00 น. ยังนับเป็นวันก่อนหน้า)
   const sub = dayMode
     ? `${new Date(gameDayStart(now0 ?? Date.now())).toLocaleDateString(
@@ -1363,10 +1368,10 @@ export default function Home() {
           {!dayMode && summary.total > 0 && (
             <Confetti count={summary.record ? 110 : 70} />
           )}
-          <div className="text-[13px] text-white/60">{dayMode ? "ครั้งรวมวันนี้" : "จำนวนครั้งทั้งหมด"}</div>
+          <div className="text-[13px] text-white/60">{showDayTotal ? "ครั้งรวมวันนี้" : "จำนวนครั้งทั้งหมด"}</div>
           <div className="mt-1 flex items-baseline justify-center gap-2">
             <span className="pj-pop text-[88px] font-semibold leading-none tabular-nums tracking-tight">
-              <CountUp value={summary.total} />
+              <CountUp value={bigTotal} />
             </span>
             <span className="text-[18px] text-white/70">ครั้ง</span>
           </div>
